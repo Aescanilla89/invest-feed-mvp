@@ -21,7 +21,12 @@ class Settings(BaseSettings):
     explanation_min_score: int = 40
     explanation_max_per_run: int = 50
 
-    cors_allow_origins: list[str] = ["http://localhost:3000", "http://localhost:3010"]
+    cors_allow_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:3010",
+        "https://frontend-inky-nine-48.vercel.app",
+        "https://frontend-reputafyseo-2857s-projects.vercel.app",
+    ]
 
     # Scheduler: el screener diario corre automáticamente si enabled=True.
     # screener_schedule_hour/minute en UTC (06:00 UTC = 08:00 CEST).
