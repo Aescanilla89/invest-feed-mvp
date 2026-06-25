@@ -13,7 +13,21 @@ import time
 from dataclasses import dataclass
 
 import pandas as pd
+import requests
 import yfinance as yf
+
+# Yahoo Finance bloquea IPs de cloud sin User-Agent de navegador.
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+_SESSION = requests.Session()
+_SESSION.headers.update(_BROWSER_HEADERS)
 
 
 @dataclass
@@ -36,7 +50,7 @@ class YFinanceDataSource:
     def get_weekly_prices(self, symbol: str, lookback_weeks: int = 104) -> pd.DataFrame:
         """OHLCV semanal. lookback_weeks=104 (~2 años) da margen suficiente
         para una media móvil de 30 semanas con histórico previo a la ventana."""
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(symbol, session=_SESSION)
         daily = ticker.history(period=f"{lookback_weeks * 7 + 30}d", interval="1d")
         if self._delay:
             time.sleep(self._delay)
@@ -51,7 +65,7 @@ class YFinanceDataSource:
         # `Ticker.quarterly_earnings` / `Ticker.earnings` están deprecados y
         # ya no devuelven datos (Yahoo retiró ese endpoint) -- se usa el EPS
         # de income_stmt, que sigue activo.
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(symbol, session=_SESSION)
         q_eps = self._extract_eps_series(ticker.quarterly_income_stmt)
         a_eps = self._extract_eps_series(ticker.income_stmt)
         if self._delay:
@@ -85,7 +99,7 @@ class YFinanceDataSource:
         Nunca debe bloquear el score si falla.
         Tercer elemento: fracción 0-1 (ej. 0.62 = 62%) o None si no disponible."""
         try:
-            info = yf.Ticker(symbol).info
+            info = yf.Ticker(symbol, session=_SESSION).info
         except Exception:
             return None, None, None
         if self._delay:
