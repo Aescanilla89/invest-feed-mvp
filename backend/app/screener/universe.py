@@ -8,6 +8,8 @@ silencio con una lista vacía -- mejor abortar la corrida del día.
 """
 from __future__ import annotations
 
+import io
+
 import pandas as pd
 import requests
 
@@ -24,7 +26,7 @@ class UniverseScrapeError(RuntimeError):
 def _fetch_tables(url: str) -> list[pd.DataFrame]:
     resp = requests.get(url, headers=_HEADERS, timeout=15)
     resp.raise_for_status()
-    return pd.read_html(resp.text)
+    return pd.read_html(io.StringIO(resp.text))
 
 
 def get_sp500_tickers() -> list[str]:
