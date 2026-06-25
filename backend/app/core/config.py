@@ -6,6 +6,12 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./invest_feed.db"
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Railway entrega postgres:// (legacy); SQLAlchemy 2.0 requiere postgresql://
+        if self.database_url.startswith("postgres://"):
+            self.database_url = self.database_url.replace("postgres://", "postgresql://", 1)
+
     # Nunca hardcodear -- se inyecta vía variable de entorno ANTHROPIC_API_KEY.
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
