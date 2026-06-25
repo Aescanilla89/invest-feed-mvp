@@ -17,5 +17,11 @@ class Settings(BaseSettings):
 
     cors_allow_origins: list[str] = ["http://localhost:3000", "http://localhost:3010"]
 
+    # Scheduler: el screener diario corre automáticamente si enabled=True.
+    # screener_schedule_hour/minute en UTC (06:00 UTC = 08:00 CEST).
+    screener_schedule_enabled: bool = True
+    screener_schedule_hour: int = 6
+    screener_schedule_minute: int = 0
+
 
 settings = Settings()

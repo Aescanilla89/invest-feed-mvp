@@ -79,17 +79,24 @@ class YFinanceDataSource:
         row = row.sort_index()  # las columnas son Timestamps de fin de periodo
         return [float(v) for v in row.tolist()]
 
-    def get_profile(self, symbol: str) -> tuple[str | None, str | None]:
-        """Nombre y sector. Best-effort: `.info` es una llamada pesada y
-        propensa a fallos en yfinance, así que nunca debe bloquear el
-        cálculo del score si falla."""
+    def get_profile(self, symbol: str) -> tuple[str | None, str | None, float | None]:
+        """Nombre, sector y % de acciones en manos institucionales.
+        Best-effort: `.info` es pesado y propenso a fallos en yfinance.
+        Nunca debe bloquear el score si falla.
+        Tercer elemento: fracción 0-1 (ej. 0.62 = 62%) o None si no disponible."""
         try:
             info = yf.Ticker(symbol).info
         except Exception:
-            return None, None
+            return None, None, None
         if self._delay:
             time.sleep(self._delay)
-        return info.get("shortName") or info.get("longName"), info.get("sector")
+        name = info.get("shortName") or info.get("longName")
+        sector = info.get("sector")
+        # Yahoo expone el campo con dos nombres distintos según la versión.
+        pct_institutional: float | None = (
+            info.get("heldPercentInstitutions") or info.get("institutionPercentHeld")
+        )
+        return name, sector, pct_institutional
 
     @staticmethod
     def _yoy_growth(series: list[float], periods_back: int) -> float | None:

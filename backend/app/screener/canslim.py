@@ -97,11 +97,25 @@ def evaluate_s(supply_signal: SupplySignal) -> CriterionResult:
     return CriterionResult(supply_signal.is_buyback_trend, detail)
 
 
-def evaluate_i() -> CriterionResult:
+INSTITUTIONAL_MIN_PCT = 0.15   # <15% = insuficiente respaldo institucional
+INSTITUTIONAL_MAX_PCT = 0.90   # >90% = sobre-poseído, riesgo de venta masiva
+
+
+def evaluate_i(institutional_pct: float | None = None) -> CriterionResult:
+    """Usa heldPercentInstitutions de yfinance como proxy del criterio I.
+    Aproximación: O'Neil busca acumulación creciente, aquí solo medimos el
+    nivel actual. Un rango 15-90% indica respaldo sin sobre-concentración."""
+    if institutional_pct is None:
+        return CriterionResult(
+            None,
+            "Sin datos de tenencia institucional disponibles vía yfinance para este ticker.",
+        )
+    passed = INSTITUTIONAL_MIN_PCT <= institutional_pct <= INSTITUTIONAL_MAX_PCT
     return CriterionResult(
-        None,
-        "No verificable en este MVP: requiere agregar Form 13F de todos los filers "
-        "(dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2.",
+        passed,
+        f"Tenencia institucional: {institutional_pct:.1%} "
+        f"(umbral {INSTITUTIONAL_MIN_PCT:.0%}-{INSTITUTIONAL_MAX_PCT:.0%}). "
+        "Proxy del criterio I; no mide variacion trimestral de posiciones.",
     )
 
 
@@ -117,6 +131,7 @@ def evaluate_all(
     benchmark_weekly: pd.DataFrame,
     benchmark_weinstein: WeinsteinResult,
     supply_signal: SupplySignal,
+    institutional_pct: float | None = None,
 ) -> dict[str, CriterionResult]:
     return {
         "C": evaluate_c(fundamentals),
@@ -124,6 +139,6 @@ def evaluate_all(
         "N": evaluate_n(ticker_weekly),
         "S": evaluate_s(supply_signal),
         "L": evaluate_l(ticker_weekly, benchmark_weekly),
-        "I": evaluate_i(),
+        "I": evaluate_i(institutional_pct),
         "M": evaluate_m(benchmark_weinstein),
     }

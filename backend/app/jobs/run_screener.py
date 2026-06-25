@@ -24,7 +24,7 @@ from app.ai import cache as ai_cache
 from app.ai.explainer import ClaudeExplainer, ExplanationError
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
-from app.models.orm import Opportunity, Ticker
+from app.models.orm import Opportunity, PriceSnapshot, Ticker
 from app.screener import canslim, scoring, universe
 from app.screener.data_source import YFinanceDataSource
 from app.screener.sec_edgar import get_supply_signal
@@ -54,6 +54,39 @@ def _get_or_create_ticker(db: Session, symbol: str, universe_name: str, name: st
         ticker.name = name or ticker.name
         ticker.sector = sector or ticker.sector
     return ticker
+
+
+def _upsert_price_snapshots(db: Session, ticker: Ticker, weekly: "pd.DataFrame") -> int:
+    """Inserta las filas de OHLCV semanal que no existan todavía. No sobreescribe
+    datos históricos ya persistidos (los precios del pasado no cambian)."""
+    if weekly.empty:
+        return 0
+
+    existing_dates = {
+        row[0]
+        for row in db.query(PriceSnapshot.date).filter(PriceSnapshot.ticker_id == ticker.id).all()
+    }
+
+    new_rows = []
+    for dt, row in weekly.iterrows():
+        snapshot_date = dt.date() if hasattr(dt, "date") else dt
+        if snapshot_date not in existing_dates:
+            new_rows.append(
+                PriceSnapshot(
+                    ticker_id=ticker.id,
+                    date=snapshot_date,
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=float(row["Volume"]),
+                )
+            )
+
+    if new_rows:
+        db.add_all(new_rows)
+
+    return len(new_rows)
 
 
 def _upsert_opportunity(db: Session, ticker: Ticker, run_date: date, score: scoring.CombinedScore,
@@ -101,11 +134,15 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
                 weinstein_result = analyze(weekly)
                 fundamentals = source.get_fundamentals(symbol)
                 supply_signal = get_supply_signal(symbol)
-                criteria = canslim.evaluate_all(fundamentals, weekly, benchmark_weekly, benchmark_weinstein, supply_signal)
+                name, sector, institutional_pct = source.get_profile(symbol)
+                criteria = canslim.evaluate_all(
+                    fundamentals, weekly, benchmark_weekly, benchmark_weinstein,
+                    supply_signal, institutional_pct,
+                )
                 score = scoring.compute_combined_score(weinstein_result, criteria, weekly)
-                name, sector = source.get_profile(symbol)
 
                 ticker = _get_or_create_ticker(db, symbol, universe_name, name, sector)
+                _upsert_price_snapshots(db, ticker, weekly)
                 _upsert_opportunity(db, ticker, run_date, score, weinstein_result, criteria)
                 db.commit()
                 processed += 1

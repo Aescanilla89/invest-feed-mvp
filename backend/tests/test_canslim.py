@@ -69,11 +69,20 @@ def test_evaluate_s_none_when_no_sec_data():
     assert evaluate_s(signal).value is None
 
 
-def test_evaluate_i_always_none():
-    # Criterio explícitamente no verificable en el MVP (ver docstring de canslim.py)
-    result = evaluate_i()
-    assert result.value is None
-    assert "13F" in result.detail
+def test_evaluate_i_none_when_no_data():
+    assert evaluate_i(None).value is None
+
+
+def test_evaluate_i_passes_in_valid_range():
+    assert evaluate_i(0.60).value is True   # 60% -- respaldo institucional normal
+
+
+def test_evaluate_i_fails_below_minimum():
+    assert evaluate_i(0.10).value is False  # 10% -- insuficiente
+
+
+def test_evaluate_i_fails_above_maximum():
+    assert evaluate_i(0.95).value is False  # 95% -- sobre-poseído
 
 
 def test_evaluate_m_stage2_benchmark_passes():
