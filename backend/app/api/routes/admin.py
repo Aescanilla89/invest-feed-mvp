@@ -74,22 +74,28 @@ def generate_explanations(_: None = Depends(_verify_token)) -> dict:
 
         results = []
         for opp, ticker in top10:
-            weinstein = WeinsteinResult(
-                stage=opp.weinstein_stage,
-                weeks_in_stage=opp.weeks_in_stage,
-                ma_slope_pct=opp.weinstein_ma_slope_pct,
-                relative_volume=opp.weinstein_relative_volume,
-                is_transition_1_to_2=opp.weinstein_transition,
-            )
-            criteria = {
-                k: CriterionResult(value=v["value"], detail=v["detail"])
-                for k, v in opp.canslim_criteria.items()
-            }
-            exp = get_or_create_explanation(db, ticker, run_date, opp.combined_score, weinstein, criteria, explainer)
-            db.commit()
-            results.append({"ticker": ticker.symbol, "ok": exp is not None})
+            try:
+                weinstein = WeinsteinResult(
+                    stage=opp.weinstein_stage,
+                    weeks_in_stage=opp.weeks_in_stage,
+                    ma_slope_pct=opp.weinstein_ma_slope_pct,
+                    relative_volume=opp.weinstein_relative_volume,
+                    is_transition_1_to_2=opp.weinstein_transition,
+                )
+                criteria = {
+                    k: CriterionResult(value=v["value"], detail=v["detail"])
+                    for k, v in opp.canslim_criteria.items()
+                }
+                exp = get_or_create_explanation(db, ticker, run_date, opp.combined_score, weinstein, criteria, explainer)
+                db.commit()
+                results.append({"ticker": ticker.symbol, "ok": exp is not None})
+            except Exception:
+                db.rollback()
+                results.append({"ticker": ticker.symbol, "ok": False, "error": traceback.format_exc()})
 
         return {"run_date": run_date.isoformat(), "results": results}
+    except Exception:
+        return {"error": traceback.format_exc()}
     finally:
         db.close()
 
