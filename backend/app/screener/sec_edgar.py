@@ -2,16 +2,17 @@
 primaria oficial. Se usa para los criterios CAN SLIM S, C y A.
 
 - Criterio S (supply/demand): histórico de shares outstanding via companyfacts.
-  Si las acciones en circulación bajan trimestre a trimestre → señal de buyback.
-- Criterios C y A (EPS growth): EPS diluido de 10-Q/10-K via companyfacts XBRL
-  (us-gaap/EarningsPerShareDiluted). Misma fuente, misma llamada, sin Yahoo.
-- Criterio I (institutional sponsorship): NO implementado. Requiere agregar
-  Form 13F de todos los filers (~GB de datos bulk), se deja para fase 2.
+- Criterios C y A (EPS growth): EPS diluido de 10-Q/10-K via companyfacts XBRL.
+- Criterio I (institutional sponsorship): NO implementado (Form 13F bulk, fase 2).
+
+IMPORTANTE: usar get_edgar_data() en lugar de get_supply_signal() + get_eps_series()
+por separado — hace una sola petición HTTP a companyfacts por ticker en vez de dos.
 
 Rate limit de SEC: ~10 req/seg razonable; identificar con User-Agent de contacto.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -25,6 +26,9 @@ SHARES_OUTSTANDING_TAGS = (
     "EntityCommonStockSharesOutstanding",
     "CommonStockSharesOutstanding",
 )
+_EPS_TAGS = ("EarningsPerShareDiluted", "EarningsPerShareBasic")
+
+SEC_REQUEST_DELAY = 0.12  # ~8 req/s, dentro del límite de SEC
 
 
 class SECEdgarError(RuntimeError):
@@ -32,16 +36,16 @@ class SECEdgarError(RuntimeError):
 
 
 @dataclass
-class EpsSeriesData:
-    quarterly: list[float] = field(default_factory=list)  # ascendente, periodos 10-Q (~90 días)
-    annual: list[float] = field(default_factory=list)     # ascendente, periodos 10-K (~365 días)
+class SupplySignal:
+    is_buyback_trend: bool | None
+    shares_outstanding_change_pct: float | None
+    quarters_compared: int
 
 
 @dataclass
-class SupplySignal:
-    is_buyback_trend: bool | None  # None = sin datos suficientes
-    shares_outstanding_change_pct: float | None
-    quarters_compared: int
+class EpsSeriesData:
+    quarterly: list[float] = field(default_factory=list)
+    annual: list[float] = field(default_factory=list)
 
 
 _cik_map_cache: dict[str, int] | None = None
@@ -62,22 +66,40 @@ def get_cik(symbol: str) -> int | None:
     return _load_cik_map().get(symbol.upper())
 
 
-def get_supply_signal(symbol: str, quarters_to_compare: int = 4) -> SupplySignal:
-    """Compara shares outstanding actuales vs. hace `quarters_to_compare`
-    trimestres. Una reducción sostenida es señal de buyback (criterio S)."""
-    cik = get_cik(symbol)
-    if cik is None:
-        return SupplySignal(None, None, 0)
-
+def _fetch_companyfacts(cik: int) -> dict | None:
+    time.sleep(SEC_REQUEST_DELAY)
     resp = requests.get(COMPANYFACTS_URL.format(cik=cik), headers=_HEADERS, timeout=15)
     if resp.status_code == 404:
-        return SupplySignal(None, None, 0)
+        return None
     resp.raise_for_status()
-    facts = resp.json()
+    return resp.json()
 
+
+def get_edgar_data(symbol: str, quarters_to_compare: int = 4) -> tuple[SupplySignal, EpsSeriesData]:
+    """Una sola petición a companyfacts extrae criterio S (supply) y C/A (EPS).
+    Usar siempre esta función en lugar de get_supply_signal + get_eps_series por separado."""
+    cik = get_cik(symbol)
+    if cik is None:
+        return SupplySignal(None, None, 0), EpsSeriesData()
+
+    try:
+        facts = _fetch_companyfacts(cik)
+    except Exception:
+        return SupplySignal(None, None, 0), EpsSeriesData()
+
+    if facts is None:
+        return SupplySignal(None, None, 0), EpsSeriesData()
+
+    return _extract_supply(facts, quarters_to_compare), _extract_eps(facts)
+
+
+def _extract_supply(facts: dict, quarters_to_compare: int) -> SupplySignal:
     series = None
     for tag in SHARES_OUTSTANDING_TAGS:
-        node = facts.get("facts", {}).get("dei", {}).get(tag) or facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        node = (
+            facts.get("facts", {}).get("dei", {}).get(tag)
+            or facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        )
         if node:
             units = node.get("units", {}).get("shares", [])
             if units:
@@ -94,36 +116,13 @@ def get_supply_signal(symbol: str, quarters_to_compare: int = 4) -> SupplySignal
 
     change_pct = (current - prior) / prior
     return SupplySignal(
-        is_buyback_trend=change_pct < -0.01,  # >1% de reducción acumulada
+        is_buyback_trend=change_pct < -0.01,
         shares_outstanding_change_pct=change_pct,
         quarters_compared=quarters_to_compare,
     )
 
 
-_EPS_TAGS = ("EarningsPerShareDiluted", "EarningsPerShareBasic")
-
-
-def get_eps_series(symbol: str) -> EpsSeriesData:
-    """EPS diluido de 10-Q (trimestral) y 10-K (anual) vía companyfacts XBRL.
-    Reutiliza la misma URL que get_supply_signal para no añadir dependencias nuevas.
-    Devuelve listas vacías si no hay datos (criterios C/A quedan como None en CAN SLIM)."""
-    cik = get_cik(symbol)
-    if cik is None:
-        return EpsSeriesData()
-
-    try:
-        resp = requests.get(COMPANYFACTS_URL.format(cik=cik), headers=_HEADERS, timeout=15)
-        if resp.status_code == 404:
-            return EpsSeriesData()
-        resp.raise_for_status()
-        facts = resp.json()
-    except Exception:
-        return EpsSeriesData()
-
-    return _extract_eps_from_facts(facts)
-
-
-def _extract_eps_from_facts(facts: dict) -> EpsSeriesData:
+def _extract_eps(facts: dict) -> EpsSeriesData:
     units: list[dict] = []
     for tag in _EPS_TAGS:
         node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
@@ -136,10 +135,7 @@ def _extract_eps_from_facts(facts: dict) -> EpsSeriesData:
     if not units:
         return EpsSeriesData()
 
-    # Ordenar por filed date ascendente: los restatements (filed más tarde)
-    # sobreescriben el valor original del mismo periodo.
     sorted_units = sorted(units, key=lambda u: u.get("filed", ""))
-
     quarterly: dict[date, float] = {}
     annual: dict[date, float] = {}
 
@@ -158,7 +154,6 @@ def _extract_eps_from_facts(facts: dict) -> EpsSeriesData:
             continue
 
         period_days = (end_date - start_date).days
-
         if form == "10-Q" and 60 <= period_days <= 120:
             quarterly[end_date] = float(val)
         elif form == "10-K" and 330 <= period_days <= 400:
@@ -170,8 +165,16 @@ def _extract_eps_from_facts(facts: dict) -> EpsSeriesData:
     )
 
 
+# Wrappers de compatibilidad (llaman a get_edgar_data internamente)
+def get_supply_signal(symbol: str, quarters_to_compare: int = 4) -> SupplySignal:
+    supply, _ = get_edgar_data(symbol, quarters_to_compare)
+    return supply
+
+
+def get_eps_series(symbol: str) -> EpsSeriesData:
+    _, eps = get_edgar_data(symbol)
+    return eps
+
+
 def get_institutional_sponsorship(symbol: str) -> None:
-    """Placeholder explícito: ver docstring del módulo. Devuelve siempre
-    None -- no fingir un valor que no se puede calcular con la infra
-    actual del MVP."""
     return None

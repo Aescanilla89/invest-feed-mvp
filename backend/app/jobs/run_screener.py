@@ -26,8 +26,8 @@ from app.core.config import settings
 from app.core.db import SessionLocal, init_db
 from app.models.orm import Opportunity, PriceSnapshot, Ticker
 from app.screener import canslim, scoring, universe
-from app.screener.data_source import AlpacaDataSource, YFinanceDataSource
-from app.screener.sec_edgar import get_supply_signal
+from app.screener.data_source import AlpacaDataSource, FundamentalData, YFinanceDataSource, _yoy_growth
+from app.screener.sec_edgar import get_edgar_data
 from app.screener.weinstein import InsufficientDataError, WeinsteinResult, analyze
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -137,8 +137,17 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
             try:
                 weekly = source.get_weekly_prices(symbol)
                 weinstein_result = analyze(weekly)
-                fundamentals = source.get_fundamentals(symbol)
-                supply_signal = get_supply_signal(symbol)
+                # Una sola llamada a SEC EDGAR extrae supply (S) y EPS (C/A)
+                supply_signal, edgar_eps = get_edgar_data(symbol)
+                if isinstance(source, AlpacaDataSource):
+                    fundamentals = FundamentalData(
+                        eps_quarterly_yoy_growth=_yoy_growth(edgar_eps.quarterly, 4) if len(edgar_eps.quarterly) >= 5 else None,
+                        eps_annual_growth=_yoy_growth(edgar_eps.annual, 1) if len(edgar_eps.annual) >= 2 else None,
+                        raw_quarterly_eps=edgar_eps.quarterly,
+                        raw_annual_eps=edgar_eps.annual,
+                    )
+                else:
+                    fundamentals = source.get_fundamentals(symbol)
                 name, sector, institutional_pct = source.get_profile(symbol)
                 criteria = canslim.evaluate_all(
                     fundamentals, weekly, benchmark_weekly, benchmark_weinstein,
