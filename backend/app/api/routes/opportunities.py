@@ -71,7 +71,18 @@ def list_opportunities(
     else:
         query = query.order_by(Opportunity.weinstein_stage.asc(), Opportunity.combined_score.desc())
 
-    rows = query.limit(limit).all()
+    rows = query.all()
+
+    # Filtro estricto: solo oportunidades con señal de entrada clara
+    # - Transición Stage 1→2 reciente (≤8 semanas) con volumen confirmado
+    # - O rotura de máximos con volumen (criterio N = True)
+    def _is_actionable(opp: Opportunity) -> bool:
+        fresh_transition = opp.weinstein_transition and opp.weeks_in_stage <= 8
+        n_criterion = opp.canslim_criteria.get("N", {}).get("value") is True
+        return fresh_transition or n_criterion
+
+    rows = [(opp, ticker) for opp, ticker in rows if _is_actionable(opp)]
+    rows = rows[:limit]
 
     explanations = {
         e.ticker_id: e.text
