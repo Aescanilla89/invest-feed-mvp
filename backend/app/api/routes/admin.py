@@ -39,6 +39,61 @@ def trigger_screener(
     return {"status": "started", "tickers": tickers_approx}
 
 
+@router.post("/generate-explanations")
+def generate_explanations(_: None = Depends(_verify_token)) -> dict:
+    """Genera explicaciones para el top 10 de la última corrida.
+    Se puede llamar en cualquier momento — no requiere que el screener haya terminado."""
+    from sqlalchemy import func
+
+    from app.ai.cache import get_or_create_explanation
+    from app.ai.explainer import ClaudeExplainer, ExplanationError
+    from app.core.db import SessionLocal
+    from app.models.orm import Opportunity, Ticker
+    from app.screener.canslim import CriterionResult
+    from app.screener.weinstein import WeinsteinResult
+
+    db = SessionLocal()
+    try:
+        run_date = db.query(func.max(Opportunity.run_date)).scalar()
+        if not run_date:
+            return {"error": "No hay corridas en BD"}
+
+        top10 = (
+            db.query(Opportunity, Ticker)
+            .join(Ticker, Opportunity.ticker_id == Ticker.id)
+            .filter(Opportunity.run_date == run_date)
+            .order_by(Opportunity.combined_score.desc())
+            .limit(10)
+            .all()
+        )
+
+        try:
+            explainer = ClaudeExplainer()
+        except ExplanationError as exc:
+            return {"error": str(exc)}
+
+        results = []
+        for opp, ticker in top10:
+            weinstein = WeinsteinResult(
+                stage=opp.weinstein_stage,
+                weeks_in_stage=opp.weeks_in_stage,
+                ma_slope_pct=opp.weinstein_ma_slope_pct,
+                relative_volume=opp.weinstein_relative_volume,
+                is_transition_1_to_2=opp.weinstein_transition,
+            )
+            criteria = {
+                k: CriterionResult(value=v["value"], detail=v["detail"])
+                for k, v in opp.canslim_criteria.items()
+            }
+            exp = get_or_create_explanation(db, ticker, run_date, opp.combined_score, weinstein, criteria, explainer)
+            db.commit()
+            results.append({"ticker": ticker.symbol, "ok": exp is not None})
+
+        return {"run_date": run_date.isoformat(), "results": results}
+    finally:
+        db.close()
+
+
 @router.get("/diagnose")
 def diagnose(_: None = Depends(_verify_token)) -> dict:
     """Diagnóstico síncrono: verifica config, data source y 2 tickers. Devuelve errores inline."""
