@@ -58,14 +58,20 @@ def generate_explanations(_: None = Depends(_verify_token)) -> dict:
         if not run_date:
             return {"error": "No hay corridas en BD"}
 
-        top10 = (
+        candidates = (
             db.query(Opportunity, Ticker)
             .join(Ticker, Opportunity.ticker_id == Ticker.id)
             .filter(Opportunity.run_date == run_date)
             .order_by(Opportunity.combined_score.desc())
-            .limit(10)
             .all()
         )
+
+        def _is_actionable(opp: Opportunity) -> bool:
+            fresh_transition = opp.weinstein_transition and opp.weeks_in_stage <= 8
+            n_criterion = opp.canslim_criteria.get("N", {}).get("value") is True
+            return fresh_transition or n_criterion
+
+        top10 = [(opp, t) for opp, t in candidates if _is_actionable(opp)][:10]
 
         try:
             explainer = ClaudeExplainer()
