@@ -108,7 +108,7 @@ def evaluate_i(institutional_pct: float | None = None) -> CriterionResult:
     if institutional_pct is None:
         return CriterionResult(
             None,
-            "Sin datos de tenencia institucional disponibles vía yfinance para este ticker.",
+            "Sin datos de tenencia institucional disponibles para este ticker.",
         )
     passed = INSTITUTIONAL_MIN_PCT <= institutional_pct <= INSTITUTIONAL_MAX_PCT
     return CriterionResult(
