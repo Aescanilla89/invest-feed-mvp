@@ -108,10 +108,11 @@ def get_opportunity_detail(symbol: str, db: Session = Depends(get_db)) -> Opport
     snapshots = (
         db.query(PriceSnapshot)
         .filter(PriceSnapshot.ticker_id == ticker.id)
-        .order_by(PriceSnapshot.date.asc())
+        .order_by(PriceSnapshot.date.desc())
         .limit(52)
         .all()
     )
+    snapshots = list(reversed(snapshots))
     price_history = [
         {"date": s.date.isoformat(), "close": s.close, "volume": s.volume}
         for s in snapshots
