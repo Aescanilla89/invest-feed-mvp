@@ -39,13 +39,21 @@ def build_user_prompt(
         for key, c in criteria.items()
     )
 
+    weeks = weinstein.weeks_in_stage
+    if weinstein.is_transition_1_to_2 and weeks <= 4:
+        transition_line = f"Breakout Stage 1→2 reciente (hace {weeks} semana{'s' if weeks != 1 else ''})"
+    elif weinstein.is_transition_1_to_2:
+        transition_line = f"Breakout Stage 1→2 confirmado en su momento (lleva {weeks} semanas en Stage 2, NO es reciente)"
+    else:
+        transition_line = "Sin señal de breakout Stage 1→2"
+
     return f"""Ticker: {symbol} ({name or 'nombre desconocido'}, sector {sector or 'desconocido'})
 Score combinado: {combined_score}/100
 
 Weinstein Stage Analysis:
 - Stage actual: {weinstein.stage}
-- Semanas en este stage: {weinstein.weeks_in_stage}
-- Transición 1->2 detectada esta semana: {"sí" if weinstein.is_transition_1_to_2 else "no"}
+- Semanas en este stage: {weeks}
+- {transition_line}
 - Pendiente de la media móvil de 30 semanas: {weinstein.ma_slope_pct:+.1%}
 - Volumen relativo (vs media 10 semanas): {weinstein.relative_volume:.2f}x
 
