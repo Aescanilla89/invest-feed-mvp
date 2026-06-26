@@ -26,7 +26,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal, init_db
 from app.models.orm import Opportunity, PriceSnapshot, Ticker
 from app.screener import canslim, scoring, universe
-from app.screener.data_source import YFinanceDataSource
+from app.screener.data_source import AlpacaDataSource, YFinanceDataSource
 from app.screener.sec_edgar import get_supply_signal
 from app.screener.weinstein import InsufficientDataError, WeinsteinResult, analyze
 
@@ -113,7 +113,12 @@ def _upsert_opportunity(db: Session, ticker: Ticker, run_date: date, score: scor
 def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -> None:
     init_db()
     db = SessionLocal()
-    source = YFinanceDataSource(request_delay_seconds=delay_seconds)
+    if settings.alpaca_api_key and settings.alpaca_secret_key:
+        source = AlpacaDataSource(settings.alpaca_api_key, settings.alpaca_secret_key, delay_seconds)
+        logger.info("Data source: Alpaca Markets API (Railway-compatible)")
+    else:
+        source = YFinanceDataSource(request_delay_seconds=delay_seconds)
+        logger.info("Data source: yfinance (solo local; Railway bloqueará Yahoo Finance)")
     run_date = date.today()
 
     try:

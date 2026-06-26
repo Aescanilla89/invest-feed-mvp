@@ -1,29 +1,19 @@
 """Cliente SEC EDGAR (data.sec.gov) -- gratuito, sin API key, fuente
-primaria oficial. Se usa para complementar yfinance en los criterios
-CAN SLIM que peor cubre (S e I).
+primaria oficial. Se usa para los criterios CAN SLIM S, C y A.
 
-IMPORTANTE -- corrección respecto a lo planteado inicialmente:
-- Criterio S (supply/demand): SÍ se implementa aquí, vía el histórico de
-  `shares outstanding` del endpoint companyfacts. Si las acciones en
-  circulación bajan trimestre a trimestre, es señal de buyback (supply
-  favorable). Esto es directo y fiable.
-- Criterio I (institutional sponsorship): NO se implementa en este MVP.
-  Para calcularlo de verdad (cuántas instituciones tienen el valor y si
-  ese número crece) hace falta agregar los Form 13F de todos los
-  filers que reportan ese CUSIP, y eso solo está disponible como dataset
-  bulk trimestral (varios GB, ver sec.gov/data-research/sec-markets-data
-  /form-13f-data-sets) -- no como endpoint por ticker. Se deja para fase 2.
-  get_institutional_sponsorship() existe como contrato/placeholder y
-  devuelve siempre None con el motivo, para que canslim.py lo marque
-  explícitamente como no verificable en lugar de omitirlo en silencio.
+- Criterio S (supply/demand): histórico de shares outstanding via companyfacts.
+  Si las acciones en circulación bajan trimestre a trimestre → señal de buyback.
+- Criterios C y A (EPS growth): EPS diluido de 10-Q/10-K via companyfacts XBRL
+  (us-gaap/EarningsPerShareDiluted). Misma fuente, misma llamada, sin Yahoo.
+- Criterio I (institutional sponsorship): NO implementado. Requiere agregar
+  Form 13F de todos los filers (~GB de datos bulk), se deja para fase 2.
 
-Rate limit de SEC: sin límite oficial publicado, pero piden identificar
-al cliente con un User-Agent de contacto real y no abusar (~10 req/seg
-es razonable). No usar en paralelo masivo sin pausas.
+Rate limit de SEC: ~10 req/seg razonable; identificar con User-Agent de contacto.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 
 import requests
 
@@ -39,6 +29,12 @@ SHARES_OUTSTANDING_TAGS = (
 
 class SECEdgarError(RuntimeError):
     pass
+
+
+@dataclass
+class EpsSeriesData:
+    quarterly: list[float] = field(default_factory=list)  # ascendente, periodos 10-Q (~90 días)
+    annual: list[float] = field(default_factory=list)     # ascendente, periodos 10-K (~365 días)
 
 
 @dataclass
@@ -101,6 +97,76 @@ def get_supply_signal(symbol: str, quarters_to_compare: int = 4) -> SupplySignal
         is_buyback_trend=change_pct < -0.01,  # >1% de reducción acumulada
         shares_outstanding_change_pct=change_pct,
         quarters_compared=quarters_to_compare,
+    )
+
+
+_EPS_TAGS = ("EarningsPerShareDiluted", "EarningsPerShareBasic")
+
+
+def get_eps_series(symbol: str) -> EpsSeriesData:
+    """EPS diluido de 10-Q (trimestral) y 10-K (anual) vía companyfacts XBRL.
+    Reutiliza la misma URL que get_supply_signal para no añadir dependencias nuevas.
+    Devuelve listas vacías si no hay datos (criterios C/A quedan como None en CAN SLIM)."""
+    cik = get_cik(symbol)
+    if cik is None:
+        return EpsSeriesData()
+
+    try:
+        resp = requests.get(COMPANYFACTS_URL.format(cik=cik), headers=_HEADERS, timeout=15)
+        if resp.status_code == 404:
+            return EpsSeriesData()
+        resp.raise_for_status()
+        facts = resp.json()
+    except Exception:
+        return EpsSeriesData()
+
+    return _extract_eps_from_facts(facts)
+
+
+def _extract_eps_from_facts(facts: dict) -> EpsSeriesData:
+    units: list[dict] = []
+    for tag in _EPS_TAGS:
+        node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        if node:
+            candidate = node.get("units", {}).get("USD/shares", [])
+            if candidate:
+                units = candidate
+                break
+
+    if not units:
+        return EpsSeriesData()
+
+    # Ordenar por filed date ascendente: los restatements (filed más tarde)
+    # sobreescriben el valor original del mismo periodo.
+    sorted_units = sorted(units, key=lambda u: u.get("filed", ""))
+
+    quarterly: dict[date, float] = {}
+    annual: dict[date, float] = {}
+
+    for item in sorted_units:
+        start_str = item.get("start")
+        end_str = item.get("end")
+        val = item.get("val")
+        form = item.get("form", "")
+
+        if not start_str or not end_str or val is None:
+            continue
+        try:
+            start_date = date.fromisoformat(start_str)
+            end_date = date.fromisoformat(end_str)
+        except ValueError:
+            continue
+
+        period_days = (end_date - start_date).days
+
+        if form == "10-Q" and 60 <= period_days <= 120:
+            quarterly[end_date] = float(val)
+        elif form == "10-K" and 330 <= period_days <= 400:
+            annual[end_date] = float(val)
+
+    return EpsSeriesData(
+        quarterly=[v for _, v in sorted(quarterly.items())],
+        annual=[v for _, v in sorted(annual.items())],
     )
 
 

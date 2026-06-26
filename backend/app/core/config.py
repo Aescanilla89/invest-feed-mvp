@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"
 
+    # Alpaca Markets API (free tier: IEX feed, US stocks, sin bloqueo en datacenter).
+    # Si no están configuradas, el screener usa yfinance como fallback (solo local).
+    alpaca_api_key: str | None = None
+    alpaca_secret_key: str | None = None
+
     # Control de coste: solo se generan explicaciones para las mejores
     # oportunidades de la corrida, no para todo el universo escaneado.
     explanation_min_score: int = 40
