@@ -7,9 +7,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.models.orm import Explanation, Opportunity, Ticker
+from app.models.orm import Explanation, Opportunity, PriceSnapshot, Ticker
 from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunitySchema, WeinsteinSchema
-from app.screener.data_source import YFinanceDataSource
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -45,6 +44,7 @@ def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -
 
 @router.get("", response_model=list[OpportunitySchema])
 def list_opportunities(
+    limit: int = Query(10, ge=1, le=100),
     min_score: int = Query(0, ge=0, le=100),
     risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"),
     sector: str | None = None,
@@ -71,7 +71,7 @@ def list_opportunities(
     else:
         query = query.order_by(Opportunity.weinstein_stage.asc(), Opportunity.combined_score.desc())
 
-    rows = query.all()
+    rows = query.limit(limit).all()
 
     explanations = {
         e.ticker_id: e.text
@@ -94,7 +94,7 @@ def get_opportunity_detail(symbol: str, db: Session = Depends(get_db)) -> Opport
         .first()
     )
     if opp is None:
-        raise HTTPException(status_code=404, detail=f"Sin datos de screener para {symbol} todavía")
+        raise HTTPException(status_code=404, detail=f"Sin datos de screener para {symbol} todavia")
 
     explanation = (
         db.query(Explanation)
@@ -104,18 +104,17 @@ def get_opportunity_detail(symbol: str, db: Session = Depends(get_db)) -> Opport
 
     base = _to_schema(opp, ticker, explanation.text if explanation else None)
 
-    # El histórico de precio para el gráfico se trae en vivo de yfinance --
-    # price_snapshots existe en el esquema para una futura persistencia,
-    # pero el job actual no la escribe (no hace falta para calcular el
-    # score, que se recalcula desde cero en cada corrida).
-    price_history: list[dict] = []
-    try:
-        weekly = YFinanceDataSource().get_weekly_prices(symbol.upper(), lookback_weeks=52)
-        price_history = [
-            {"date": idx.date().isoformat(), "close": float(row["Close"]), "volume": float(row["Volume"])}
-            for idx, row in weekly.iterrows()
-        ]
-    except Exception:
-        pass  # el detalle sigue siendo útil sin el gráfico si yfinance falla puntualmente
+    # Historial de precios desde price_snapshots (acumulado por el screener diario)
+    snapshots = (
+        db.query(PriceSnapshot)
+        .filter(PriceSnapshot.ticker_id == ticker.id)
+        .order_by(PriceSnapshot.date.asc())
+        .limit(52)
+        .all()
+    )
+    price_history = [
+        {"date": s.date.isoformat(), "close": s.close, "volume": s.volume}
+        for s in snapshots
+    ]
 
     return OpportunityDetailSchema(**base.model_dump(), price_history=price_history)
