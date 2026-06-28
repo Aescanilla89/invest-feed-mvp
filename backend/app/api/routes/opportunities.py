@@ -142,16 +142,24 @@ def get_opportunity_detail(symbol: str, db: Session = Depends(get_db)) -> Opport
     base = _to_schema(opp, ticker, explanation.text if explanation else None)
 
     # Historial de precios desde price_snapshots (acumulado por el screener diario)
+    # 130 semanas (~2.5 años): suficiente para mostrar MA30 con contexto histórico
     snapshots = (
         db.query(PriceSnapshot)
         .filter(PriceSnapshot.ticker_id == ticker.id)
         .order_by(PriceSnapshot.date.desc())
-        .limit(52)
+        .limit(130)
         .all()
     )
     snapshots = list(reversed(snapshots))
     price_history = [
-        {"date": s.date.isoformat(), "close": s.close, "volume": s.volume}
+        {
+            "date": s.date.isoformat(),
+            "open": s.open,
+            "high": s.high,
+            "low": s.low,
+            "close": s.close,
+            "volume": s.volume,
+        }
         for s in snapshots
     ]
 

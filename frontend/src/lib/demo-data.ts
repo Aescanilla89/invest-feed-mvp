@@ -215,6 +215,15 @@ export const DEMO_LIMITATIONS: DataLimitations = {
   ],
 };
 
+function toPriceBars(rows: { date: string; close: number; volume: number }[]): import("./api").PriceBar[] {
+  return rows.map((r, i) => {
+    const prevClose = i > 0 ? rows[i - 1].close : r.close * 0.99;
+    const high = Math.max(prevClose, r.close) * 1.008;
+    const low = Math.min(prevClose, r.close) * 0.992;
+    return { date: r.date, open: prevClose, high, low, close: r.close, volume: r.volume };
+  });
+}
+
 const REAL_PRICE_HISTORY: Record<string, { date: string; close: number; volume: number }[]> = {
   NVDA: [
     { date: "2025-07-04", close: 159.13, volume: 722664100 }, { date: "2025-07-11", close: 164.70, volume: 823265800 },
@@ -274,26 +283,27 @@ const REAL_PRICE_HISTORY: Record<string, { date: string; close: number; volume: 
   ],
 };
 
-function syntheticPriceHistory(opportunity: Opportunity): { date: string; close: number; volume: number }[] {
+function syntheticPriceHistory(opportunity: Opportunity): import("./api").PriceBar[] {
   const endClose = 100;
   const trendUp = opportunity.weinstein.stage === 2;
-  const points: { date: string; close: number; volume: number }[] = [];
+  const raw: { date: string; close: number; volume: number }[] = [];
   const start = new Date("2025-07-04");
   let price = trendUp ? endClose * 0.78 : endClose * 1.35;
   for (let i = 0; i < 52; i++) {
-    const date = new Date(start);
-    date.setDate(date.getDate() + i * 7);
+    const d = new Date(start);
+    d.setDate(d.getDate() + i * 7);
     const drift = trendUp ? 0.012 : -0.012;
     const noise = Math.sin(i * 1.3 + opportunity.ticker.length) * 0.025;
     price = price * (1 + drift + noise);
-    points.push({ date: date.toISOString().slice(0, 10), close: Math.round(price * 100) / 100, volume: 50_000_000 + Math.abs(Math.sin(i)) * 40_000_000 });
+    raw.push({ date: d.toISOString().slice(0, 10), close: Math.round(price * 100) / 100, volume: 50_000_000 + Math.abs(Math.sin(i)) * 40_000_000 });
   }
-  return points;
+  return toPriceBars(raw);
 }
 
 export function getDemoDetail(ticker: string): OpportunityDetail | null {
   const opportunity = DEMO_OPPORTUNITIES.find((o) => o.ticker === ticker.toUpperCase());
   if (!opportunity) return null;
-  const priceHistory = REAL_PRICE_HISTORY[opportunity.ticker] ?? syntheticPriceHistory(opportunity);
+  const rawHistory = REAL_PRICE_HISTORY[opportunity.ticker];
+  const priceHistory = rawHistory ? toPriceBars(rawHistory) : syntheticPriceHistory(opportunity);
   return { ...opportunity, price_history: priceHistory };
 }

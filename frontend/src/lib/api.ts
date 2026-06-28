@@ -35,8 +35,17 @@ export interface Opportunity {
   signal_type?: SignalType;
 }
 
+export interface PriceBar {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export interface OpportunityDetail extends Opportunity {
-  price_history: { date: string; close: number; volume: number }[];
+  price_history: PriceBar[];
 }
 
 export interface DataLimitation {

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { CanslimPatternDiagram } from "@/components/canslim-pattern-diagram";
 import { CriteriaChips } from "@/components/criteria-chips";
-import { PriceChart } from "@/components/price-chart";
+import { WeinsteinChart } from "@/components/weinstein-chart";
 import { RiskBadge } from "@/components/risk-badge";
 import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
@@ -59,9 +59,16 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
       </section>
 
       <section className="mt-6 rounded-xl border border-border/60 bg-card p-5">
-        <h2 className="font-heading text-base font-semibold">Precio — últimas 52 semanas</h2>
-        <div className="mt-4">
-          <PriceChart points={price_history} />
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="font-heading text-base font-semibold">Precio semanal · MA30 Weinstein</h2>
+          <span className="text-xs text-muted-foreground">Velas semanales · volumen · MA30 (ámbar)</span>
+        </div>
+        <div className="mt-4 -mx-5">
+          <WeinsteinChart
+            bars={price_history}
+            weeksInStage={weinstein.weeks_in_stage}
+            isTransition={weinstein.is_transition}
+          />
         </div>
       </section>
 
