@@ -29,8 +29,10 @@ from app.core.config import settings
 from app.core.db import SessionLocal, init_db
 from app.models.orm import Opportunity, PriceSnapshot, Ticker
 from app.screener import canslim, scoring, universe
+from app.screener.canslim import InstitutionalData
 from app.screener.data_source import AlpacaDataSource, FundamentalData, YFinanceDataSource, _yoy_growth
 from app.screener.sec_edgar import get_edgar_data
+from app.screener.sec_13f import latest_available_quarter, prior_quarter_end
 from app.screener.weinstein import InsufficientDataError, WeinsteinResult, analyze
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -88,6 +90,39 @@ def _get_universe_ath(db: Session) -> dict[str, float]:
     """)
     rows = db.execute(sql).fetchall()
     return {row[0]: float(row[1]) for row in rows if row[1] is not None}
+
+
+def _get_universe_institutional(db: Session) -> dict[str, InstitutionalData]:
+    """Pre-carga conteo de holders institucionales (trimestre actual y anterior)
+    desde institutional_holdings. Si la tabla está vacía devuelve {}."""
+    current_q = latest_available_quarter()
+    prior_q = prior_quarter_end(current_q)
+    sql = text("""
+        SELECT t.symbol,
+               COUNT(CASE WHEN ih.quarter = :current_q THEN 1 END) AS current_holders,
+               COUNT(CASE WHEN ih.quarter = :prior_q   THEN 1 END) AS prior_holders,
+               COALESCE(SUM(CASE WHEN ih.quarter = :current_q THEN ih.shares ELSE 0 END), 0) AS current_shares,
+               COALESCE(SUM(CASE WHEN ih.quarter = :prior_q   THEN ih.shares ELSE 0 END), 0) AS prior_shares
+        FROM tickers t
+        JOIN institutional_holdings ih ON ih.ticker_id = t.id
+        WHERE ih.quarter IN (:current_q, :prior_q)
+        GROUP BY t.symbol
+    """)
+    try:
+        rows = db.execute(sql, {"current_q": current_q, "prior_q": prior_q}).fetchall()
+    except Exception:
+        # La tabla puede no existir todavía si aún no se ha ejecutado update_institutional
+        return {}
+    result: dict[str, InstitutionalData] = {}
+    for row in rows:
+        symbol, cur_h, pri_h, cur_s, pri_s = row
+        result[symbol] = InstitutionalData(
+            current_holders=int(cur_h or 0),
+            prior_holders=int(pri_h) if pri_h else None,
+            current_shares=int(cur_s or 0),
+            prior_shares=int(pri_s) if pri_s else None,
+        )
+    return result
 
 
 def _get_universe_returns(db: Session, lookback_weeks: int = 52) -> list[float]:
@@ -190,10 +225,14 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
         db.close()
         return
 
-    logger.info("Pre-cargando ATH histórico y retornos de universo desde price_snapshots...")
+    logger.info("Pre-cargando ATH histórico, retornos de universo y datos institucionales...")
     universe_ath = _get_universe_ath(db)
     universe_returns = _get_universe_returns(db)
-    logger.info("ATH cargado para %d tickers; retornos de %d tickers para RS Rating", len(universe_ath), len(universe_returns))
+    universe_institutional = _get_universe_institutional(db)
+    logger.info(
+        "ATH: %d tickers | RS returns: %d | datos 13F: %d tickers",
+        len(universe_ath), len(universe_returns), len(universe_institutional),
+    )
 
     processed, skipped = 0, 0
     screened: list[ScreenedTicker] = []
@@ -223,6 +262,7 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
                     supply_signal, institutional_pct,
                     all_time_high=all_time_high,
                     universe_returns=universe_returns if universe_returns else None,
+                    institutional_data=universe_institutional.get(symbol),
                 )
                 score = scoring.compute_combined_score(weinstein_result, criteria, weekly)
                 signal_type = _compute_signal_type(weinstein_result, criteria)

@@ -91,6 +91,23 @@ class Opportunity(Base):
     ticker: Mapped["Ticker"] = relationship(back_populates="opportunities")
 
 
+class InstitutionalHolding(Base):
+    """Posición de una institución en un ticker para un trimestre dado.
+    Poblada trimestralmente por update_institutional.py desde 13F-HR de SEC EDGAR."""
+    __tablename__ = "institutional_holdings"
+    __table_args__ = (
+        UniqueConstraint("ticker_id", "quarter", "institution_cik", name="uq_inst_holding"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticker_id: Mapped[int] = mapped_column(ForeignKey("tickers.id"), nullable=False, index=True)
+    quarter: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    institution_cik: Mapped[str] = mapped_column(String(20), nullable=False)
+    institution_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    shares: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    value_usd_k: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class Explanation(Base):
     __tablename__ = "explanations"
     __table_args__ = (UniqueConstraint("ticker_id", "run_date", name="uq_explanation_ticker_date"),)

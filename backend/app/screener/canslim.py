@@ -171,24 +171,78 @@ def evaluate_s(supply_signal: SupplySignal) -> CriterionResult:
     return CriterionResult(supply_signal.is_buyback_trend, detail)
 
 
-INSTITUTIONAL_MIN_PCT = 0.15   # <15% = insuficiente respaldo institucional
-INSTITUTIONAL_MAX_PCT = 0.90   # >90% = sobre-poseído, riesgo de venta masiva
+INSTITUTIONAL_MIN_HOLDERS = 3   # mínimo fondos top-30 con posición abierta
+INSTITUTIONAL_MIN_PCT = 0.15   # fallback: <15% = insuficiente respaldo
+INSTITUTIONAL_MAX_PCT = 0.90   # fallback: >90% = sobre-poseído
 
 
-def evaluate_i(institutional_pct: float | None = None) -> CriterionResult:
-    """Criterio I: tenencia institucional en rango saludable 15-90%.
-    Pendiente Fase 2: detectar acumulación creciente via Form 13F bulk de SEC."""
-    if institutional_pct is None:
+@dataclass
+class InstitutionalData:
+    """Datos de tenencia institucional para el trimestre actual y el anterior."""
+    current_holders: int       # fondos del top-30 con posición este trimestre
+    prior_holders: int | None  # ídem trimestre anterior (None si no hay datos)
+    current_shares: int
+    prior_shares: int | None
+
+
+def evaluate_i(
+    institutional_data: InstitutionalData | None = None,
+    institutional_pct: float | None = None,
+) -> CriterionResult:
+    """Criterio I: acumulación institucional detectada via 13F-HR de SEC EDGAR.
+
+    Prioridad:
+    1. institutional_data (datos reales de 13F trimestral) si está disponible
+    2. institutional_pct (% de tenencia) como fallback
+    3. None si no hay ningún dato
+    """
+    if institutional_data is not None:
+        count = institutional_data.current_holders
+        prior = institutional_data.prior_holders
+
+        if count < INSTITUTIONAL_MIN_HOLDERS:
+            return CriterionResult(
+                False,
+                f"Solo {count} instituciones top con posición (mínimo {INSTITUTIONAL_MIN_HOLDERS}); "
+                "insuficiente respaldo institucional.",
+            )
+
+        if prior is not None:
+            delta = count - prior
+            if delta > 0:
+                trend = f"acumulando ↑ (+{delta} fondos)"
+                passed = True
+            elif delta == 0:
+                trend = "estable →"
+                passed = True
+            else:
+                trend = f"distribuyendo ↓ ({delta} fondos)"
+                passed = False
+            return CriterionResult(
+                passed,
+                f"Tenencia institucional (top-30 fondos): {count} fondos este trimestre "
+                f"vs {prior} anterior — {trend}.",
+            )
+
         return CriterionResult(
-            None,
-            "Sin datos de tenencia institucional (Form 13F fase 2 pendiente).",
+            True,
+            f"Tenencia institucional (top-30 fondos): {count} fondos con posición "
+            "(sin dato de trimestre anterior para comparar tendencia).",
         )
-    passed = INSTITUTIONAL_MIN_PCT <= institutional_pct <= INSTITUTIONAL_MAX_PCT
+
+    # Fallback: % de tenencia institucional genérico
+    if institutional_pct is not None:
+        passed = INSTITUTIONAL_MIN_PCT <= institutional_pct <= INSTITUTIONAL_MAX_PCT
+        return CriterionResult(
+            passed,
+            f"Tenencia institucional: {institutional_pct:.1%} "
+            f"(umbral {INSTITUTIONAL_MIN_PCT:.0%}–{INSTITUTIONAL_MAX_PCT:.0%}). "
+            "Proxy de criterio I; sin desglose trimestral de posiciones.",
+        )
+
     return CriterionResult(
-        passed,
-        f"Tenencia institucional: {institutional_pct:.1%} "
-        f"(umbral {INSTITUTIONAL_MIN_PCT:.0%}-{INSTITUTIONAL_MAX_PCT:.0%}). "
-        "Proxy del criterio I; no mide variacion trimestral de posiciones.",
+        None,
+        "Sin datos de tenencia institucional. Ejecutar /admin/update-institutional para cargar 13F de SEC.",
     )
 
 
@@ -207,6 +261,7 @@ def evaluate_all(
     institutional_pct: float | None = None,
     all_time_high: float | None = None,
     universe_returns: list[float] | None = None,
+    institutional_data: InstitutionalData | None = None,
 ) -> dict[str, CriterionResult]:
     return {
         "C": evaluate_c(fundamentals),
@@ -214,6 +269,6 @@ def evaluate_all(
         "N": evaluate_n(ticker_weekly, all_time_high=all_time_high),
         "S": evaluate_s(supply_signal),
         "L": evaluate_l(ticker_weekly, benchmark_weekly, universe_returns=universe_returns),
-        "I": evaluate_i(institutional_pct),
+        "I": evaluate_i(institutional_data=institutional_data, institutional_pct=institutional_pct),
         "M": evaluate_m(benchmark_weinstein),
     }

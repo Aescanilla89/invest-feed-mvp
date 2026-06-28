@@ -193,19 +193,49 @@ def test_evaluate_s_none_when_no_sec_data():
 
 
 def test_evaluate_i_none_when_no_data():
-    assert evaluate_i(None).value is None
+    assert evaluate_i().value is None
 
 
-def test_evaluate_i_passes_in_valid_range():
-    assert evaluate_i(0.60).value is True
+def test_evaluate_i_fallback_pct_passes_in_valid_range():
+    assert evaluate_i(institutional_pct=0.60).value is True
 
 
-def test_evaluate_i_fails_below_minimum():
-    assert evaluate_i(0.10).value is False
+def test_evaluate_i_fallback_pct_fails_below_minimum():
+    assert evaluate_i(institutional_pct=0.10).value is False
 
 
-def test_evaluate_i_fails_above_maximum():
-    assert evaluate_i(0.95).value is False
+def test_evaluate_i_fallback_pct_fails_above_maximum():
+    assert evaluate_i(institutional_pct=0.95).value is False
+
+
+def test_evaluate_i_13f_accumulation_passes():
+    from app.screener.canslim import InstitutionalData
+    data = InstitutionalData(current_holders=5, prior_holders=3, current_shares=1_000_000, prior_shares=800_000)
+    result = evaluate_i(institutional_data=data)
+    assert result.value is True
+    assert "acumulando" in result.detail.lower()
+
+
+def test_evaluate_i_13f_distribution_fails():
+    from app.screener.canslim import InstitutionalData
+    data = InstitutionalData(current_holders=4, prior_holders=7, current_shares=800_000, prior_shares=1_500_000)
+    result = evaluate_i(institutional_data=data)
+    assert result.value is False
+    assert "distribuy" in result.detail.lower()
+
+
+def test_evaluate_i_13f_too_few_holders_fails():
+    from app.screener.canslim import InstitutionalData
+    data = InstitutionalData(current_holders=2, prior_holders=2, current_shares=500_000, prior_shares=500_000)
+    result = evaluate_i(institutional_data=data)
+    assert result.value is False
+
+
+def test_evaluate_i_13f_stable_passes():
+    from app.screener.canslim import InstitutionalData
+    data = InstitutionalData(current_holders=5, prior_holders=5, current_shares=1_000_000, prior_shares=1_000_000)
+    result = evaluate_i(institutional_data=data)
+    assert result.value is True
 
 
 def test_evaluate_m_stage2_benchmark_passes():

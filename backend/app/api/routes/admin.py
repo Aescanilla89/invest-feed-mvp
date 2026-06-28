@@ -2,6 +2,7 @@
 Protegidos por ADMIN_SECRET — no exponer públicamente sin token."""
 import threading
 import traceback
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 
@@ -104,6 +105,44 @@ def generate_explanations(_: None = Depends(_verify_token)) -> dict:
         return {"error": traceback.format_exc()}
     finally:
         db.close()
+
+
+@router.post("/update-institutional")
+def trigger_institutional_update(
+    quarter: str | None = None,
+    institutions: str | None = None,
+    force: bool = False,
+    _: None = Depends(_verify_token),
+) -> dict:
+    """Descarga 13F-HR de las top-30 instituciones y actualiza institutional_holdings.
+    Ejecutar una vez por trimestre (≈ 45 días después del cierre de cada trimestre).
+    - quarter: fecha fin de trimestre en YYYY-MM-DD (por defecto: último disponible)
+    - institutions: lista separada por comas (por defecto: top-30 hardcodeadas)
+    - force: re-procesar aunque el trimestre ya esté en BD
+    """
+    from app.jobs.update_institutional import run as run_institutional
+
+    target_quarter = date.fromisoformat(quarter) if quarter else None
+    names = [n.strip() for n in institutions.split(",")] if institutions else None
+
+    result_container: dict = {}
+
+    def _job() -> None:
+        try:
+            result_container.update(run_institutional(
+                quarter=target_quarter,
+                institution_names=names,
+                force=force,
+            ))
+        except Exception:
+            import logging
+            logging.getLogger("admin").exception("update_institutional background job falló")
+
+    thread = threading.Thread(target=_job, daemon=True)
+    thread.start()
+    thread.join(timeout=600)  # máx 10 min — síncrono para poder ver el resultado
+
+    return result_container if result_container else {"status": "running (timeout 10min excedido)"}
 
 
 @router.get("/diagnose")
