@@ -106,9 +106,14 @@ def analyze(weekly_prices: pd.DataFrame) -> WeinsteinResult:
             idx_pos = stages.index.get_loc(last_crossover)
             if idx_pos > 0:
                 prior_stage = int(stages.iloc[idx_pos - 1])
-                vol_window_dates = stages.index[idx_pos:]
-                max_rel_vol = relative_volume_series.loc[vol_window_dates].max()
-                if prior_stage == 1 and pd.notna(max_rel_vol) and max_rel_vol >= BREAKOUT_VOLUME_RATIO:
+                # Volumen confirmatorio exigido en la semana exacta del cruce
+                # (no en ventana amplia, para evitar falsos positivos)
+                crossover_vol = (
+                    relative_volume_series.loc[last_crossover]
+                    if last_crossover in relative_volume_series.index
+                    else float("nan")
+                )
+                if prior_stage == 1 and pd.notna(crossover_vol) and crossover_vol >= BREAKOUT_VOLUME_RATIO:
                     is_transition = True
 
     return WeinsteinResult(

@@ -18,6 +18,9 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
+from datetime import timedelta
+
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.ai import cache as ai_cache
@@ -54,6 +57,44 @@ def _get_or_create_ticker(db: Session, symbol: str, universe_name: str, name: st
         ticker.name = name or ticker.name
         ticker.sector = sector or ticker.sector
     return ticker
+
+
+def _get_universe_ath(db: Session) -> dict[str, float]:
+    """ATH histórico por símbolo desde price_snapshots acumulado."""
+    sql = text("""
+        SELECT t.symbol, MAX(ps.high) AS ath
+        FROM price_snapshots ps
+        JOIN tickers t ON t.id = ps.ticker_id
+        GROUP BY t.symbol
+    """)
+    rows = db.execute(sql).fetchall()
+    return {row[0]: float(row[1]) for row in rows if row[1] is not None}
+
+
+def _get_universe_returns(db: Session, lookback_weeks: int = 52) -> list[float]:
+    """Retorno a 52 semanas de cada ticker activo desde price_snapshots.
+    Usado para calcular el RS Rating percentil (criterio L estilo IBD)."""
+    year_ago = date.today() - timedelta(weeks=lookback_weeks)
+    sql = text("""
+        WITH oldest AS (
+            SELECT ticker_id, close,
+                   ROW_NUMBER() OVER (PARTITION BY ticker_id ORDER BY date ASC) AS rn
+            FROM price_snapshots
+            WHERE date >= :year_ago
+        ),
+        newest AS (
+            SELECT ticker_id, close,
+                   ROW_NUMBER() OVER (PARTITION BY ticker_id ORDER BY date DESC) AS rn
+            FROM price_snapshots
+        )
+        SELECT (n.close - o.close) / NULLIF(o.close, 0) AS return_52w
+        FROM oldest o
+        JOIN newest n ON n.ticker_id = o.ticker_id AND n.rn = 1
+        WHERE o.rn = 1
+          AND o.close > 0
+    """)
+    rows = db.execute(sql, {"year_ago": year_ago}).fetchall()
+    return [float(row[0]) for row in rows if row[0] is not None]
 
 
 def _upsert_price_snapshots(db: Session, ticker: Ticker, weekly: "pd.DataFrame") -> int:
@@ -130,6 +171,11 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
         db.close()
         return
 
+    logger.info("Pre-cargando ATH histórico y retornos de universo desde price_snapshots...")
+    universe_ath = _get_universe_ath(db)
+    universe_returns = _get_universe_returns(db)
+    logger.info("ATH cargado para %d tickers; retornos de %d tickers para RS Rating", len(universe_ath), len(universe_returns))
+
     processed, skipped = 0, 0
     screened: list[ScreenedTicker] = []
     for universe_name, symbols in symbols_by_universe.items():
@@ -149,9 +195,15 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
                 else:
                     fundamentals = source.get_fundamentals(symbol)
                 name, sector, institutional_pct = source.get_profile(symbol)
+                # ATH: máximo entre histórico acumulado en BD y lo descargado hoy
+                ath_from_db = universe_ath.get(symbol)
+                ath_from_download = float(weekly["High"].max()) if not weekly.empty else None
+                all_time_high = max(filter(None, [ath_from_db, ath_from_download])) if (ath_from_db or ath_from_download) else None
                 criteria = canslim.evaluate_all(
                     fundamentals, weekly, benchmark_weekly, benchmark_weinstein,
                     supply_signal, institutional_pct,
+                    all_time_high=all_time_high,
+                    universe_returns=universe_returns if universe_returns else None,
                 )
                 score = scoring.compute_combined_score(weinstein_result, criteria, weekly)
 

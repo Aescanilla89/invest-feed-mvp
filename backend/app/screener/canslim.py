@@ -2,13 +2,12 @@
 datos gratuitas elegidas (yfinance + SEC EDGAR).
 
 Cobertura real (ver README para la tabla completa):
-  C - Current quarterly EPS growth   -> calculable (yfinance)
-  A - Annual EPS growth              -> calculable (yfinance)
-  N - New highs con volumen          -> calculable, parcial (solo precio/volumen,
-                                         no la parte de "nuevo producto/gestión")
+  C - Current quarterly EPS growth   -> calculable; incluye aceleración YoY
+  A - Annual EPS growth              -> calculable; incluye consistencia 3/5 años
+  N - New highs con volumen          -> ATH desde price_snapshots acumulado
   S - Supply/demand (buybacks)       -> calculable (SEC EDGAR shares outstanding)
-  L - Leader (fuerza relativa)       -> calculable (ticker vs benchmark)
-  I - Institutional sponsorship      -> NO calculable en este MVP (ver sec_edgar.py)
+  L - Leader (fuerza relativa)       -> RS Rating percentil vs universo
+  I - Institutional sponsorship      -> NO calculable (Form 13F, fase 2 pendiente)
   M - Market direction               -> calculable (Weinstein sobre el benchmark)
 
 Cada función devuelve un CriterionResult con value=True/False/None.
@@ -20,14 +19,16 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from app.screener.data_source import FundamentalData
+from app.screener.data_source import FundamentalData, _yoy_growth
 from app.screener.sec_edgar import SupplySignal
 from app.screener.weinstein import WeinsteinResult
 
 EPS_GROWTH_THRESHOLD = 0.25  # 25%, umbral clásico de O'Neil
-NEW_HIGH_PROXIMITY_PCT = 0.98  # cierre dentro del 2% del máximo de 52 semanas
+NEW_HIGH_PROXIMITY_PCT = 0.98  # cierre dentro del 2% del ATH
 NEW_HIGH_VOLUME_RATIO = 1.5
-RELATIVE_STRENGTH_OUTPERFORM_PCT = 0.0  # ticker debe superar al benchmark
+RS_RATING_THRESHOLD = 80  # percentil mínimo vs universo (IBD style)
+ANNUAL_CONSISTENCY_MIN_YEARS = 3  # mínimo años positivos de los últimos 5
+ANNUAL_CONSISTENCY_LOOKBACK = 5
 
 
 @dataclass
@@ -37,52 +38,125 @@ class CriterionResult:
 
 
 def evaluate_c(fundamentals: FundamentalData) -> CriterionResult:
+    """Criterio C: crecimiento EPS trimestral YoY >= 25% Y acelerando."""
     growth = fundamentals.eps_quarterly_yoy_growth
     if growth is None:
-        return CriterionResult(None, "Sin suficiente histórico de EPS trimestral en yfinance")
-    passed = growth >= EPS_GROWTH_THRESHOLD
-    return CriterionResult(passed, f"Crecimiento EPS trimestral YoY: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%})")
+        return CriterionResult(None, "Sin suficiente histórico de EPS trimestral")
+
+    if growth < EPS_GROWTH_THRESHOLD:
+        return CriterionResult(
+            False,
+            f"Crecimiento EPS trimestral YoY: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%})",
+        )
+
+    eps = fundamentals.raw_quarterly_eps
+    if len(eps) >= 7:
+        # growth_prev = crecimiento YoY del trimestre anterior al más reciente
+        growth_prev = _yoy_growth(eps[:-1], periods_back=4)
+        if growth_prev is not None:
+            accelerating = growth > growth_prev
+            direction = "acelerando" if accelerating else "desacelerando"
+            detail = (
+                f"Crecimiento EPS trimestral YoY: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%}); "
+                f"{direction} ({growth:.1%} vs {growth_prev:.1%} trimestre anterior)"
+            )
+            return CriterionResult(accelerating, detail)
+
+    return CriterionResult(
+        True,
+        f"Crecimiento EPS trimestral YoY: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%}); "
+        "sin datos suficientes para verificar aceleración",
+    )
 
 
 def evaluate_a(fundamentals: FundamentalData) -> CriterionResult:
+    """Criterio A: crecimiento EPS anual >= 25% Y consistente (3/5 años positivos)."""
     growth = fundamentals.eps_annual_growth
     if growth is None:
-        return CriterionResult(None, "Sin suficiente histórico de EPS anual en yfinance")
-    passed = growth >= EPS_GROWTH_THRESHOLD
-    return CriterionResult(passed, f"Crecimiento EPS anual: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%})")
+        return CriterionResult(None, "Sin suficiente histórico de EPS anual")
+
+    if growth < EPS_GROWTH_THRESHOLD:
+        return CriterionResult(
+            False,
+            f"Crecimiento EPS anual: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%})",
+        )
+
+    eps = fundamentals.raw_annual_eps
+    if len(eps) >= ANNUAL_CONSISTENCY_LOOKBACK + 1:
+        positive_years = sum(
+            1
+            for i in range(-1, -(ANNUAL_CONSISTENCY_LOOKBACK + 1), -1)
+            if eps[i - 1] != 0 and eps[i] > eps[i - 1]
+        )
+        consistent = positive_years >= ANNUAL_CONSISTENCY_MIN_YEARS
+        detail = (
+            f"Crecimiento EPS anual: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%}); "
+            f"consistencia: {positive_years}/{ANNUAL_CONSISTENCY_LOOKBACK} años positivos "
+            f"(mínimo {ANNUAL_CONSISTENCY_MIN_YEARS})"
+        )
+        return CriterionResult(consistent, detail)
+
+    return CriterionResult(
+        True,
+        f"Crecimiento EPS anual: {growth:.1%} (umbral {EPS_GROWTH_THRESHOLD:.0%}); "
+        "sin datos suficientes para verificar consistencia",
+    )
 
 
-def evaluate_n(weekly_prices: pd.DataFrame) -> CriterionResult:
+def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) -> CriterionResult:
+    """Criterio N: cierre cerca del ATH (histórico acumulado) con volumen confirmatorio."""
     if len(weekly_prices) < 52:
-        return CriterionResult(None, "Menos de 52 semanas de histórico, no se puede evaluar máximo anual")
+        return CriterionResult(None, "Menos de 52 semanas de histórico, no se puede evaluar")
 
-    last_52 = weekly_prices.tail(52)
-    high_52w = last_52["High"].max()
+    ath = all_time_high if all_time_high is not None else float(weekly_prices["High"].max())
     current_close = weekly_prices["Close"].iloc[-1]
     current_volume = weekly_prices["Volume"].iloc[-1]
     avg_volume = weekly_prices["Volume"].tail(10).mean()
 
-    near_high = current_close >= high_52w * NEW_HIGH_PROXIMITY_PCT
+    near_high = current_close >= ath * NEW_HIGH_PROXIMITY_PCT
     volume_confirms = avg_volume > 0 and (current_volume / avg_volume) >= NEW_HIGH_VOLUME_RATIO
     passed = bool(near_high and volume_confirms)
     detail = (
-        f"Cierre {current_close:.2f} vs máx 52sem {high_52w:.2f} "
-        f"({current_close / high_52w:.1%} del máximo); volumen relativo "
+        f"Cierre {current_close:.2f} vs ATH {ath:.2f} "
+        f"({current_close / ath:.1%} del máximo); volumen relativo "
         f"{(current_volume / avg_volume):.2f}x (umbral {NEW_HIGH_VOLUME_RATIO}x). "
         "No evalúa 'nuevo producto/gestión' (no verificable con datos)."
     )
     return CriterionResult(passed, detail)
 
 
-def evaluate_l(ticker_weekly: pd.DataFrame, benchmark_weekly: pd.DataFrame, lookback_weeks: int = 52) -> CriterionResult:
-    if len(ticker_weekly) < lookback_weeks or len(benchmark_weekly) < lookback_weeks:
-        return CriterionResult(None, f"Menos de {lookback_weeks} semanas de histórico para comparar con el benchmark")
+def evaluate_l(
+    ticker_weekly: pd.DataFrame,
+    benchmark_weekly: pd.DataFrame,
+    lookback_weeks: int = 52,
+    universe_returns: list[float] | None = None,
+) -> CriterionResult:
+    """Criterio L: RS Rating >= 80 (percentil vs universo) cuando está disponible;
+    si no, comparación simple vs benchmark SPY."""
+    if len(ticker_weekly) < lookback_weeks:
+        return CriterionResult(None, f"Menos de {lookback_weeks} semanas de histórico")
 
     ticker_return = ticker_weekly["Close"].iloc[-1] / ticker_weekly["Close"].iloc[-lookback_weeks] - 1
+
+    if universe_returns and len(universe_returns) >= 10:
+        rs_rating = round(sum(1 for r in universe_returns if ticker_return > r) / len(universe_returns) * 100)
+        passed = rs_rating >= RS_RATING_THRESHOLD
+        detail = (
+            f"RS Rating: {rs_rating} (percentil vs {len(universe_returns)} tickers del universo); "
+            f"retorno {lookback_weeks}sem: {ticker_return:.1%} (umbral percentil {RS_RATING_THRESHOLD})"
+        )
+        return CriterionResult(passed, detail)
+
+    # Fallback: comparación vs benchmark
+    if len(benchmark_weekly) < lookback_weeks:
+        return CriterionResult(None, f"Menos de {lookback_weeks} semanas de histórico del benchmark")
     benchmark_return = benchmark_weekly["Close"].iloc[-1] / benchmark_weekly["Close"].iloc[-lookback_weeks] - 1
     outperformance = ticker_return - benchmark_return
-    passed = bool(outperformance > RELATIVE_STRENGTH_OUTPERFORM_PCT)
-    detail = f"Retorno {lookback_weeks}sem: ticker {ticker_return:.1%} vs benchmark {benchmark_return:.1%} (diff {outperformance:+.1%})"
+    passed = bool(outperformance > 0)
+    detail = (
+        f"Retorno {lookback_weeks}sem: ticker {ticker_return:.1%} vs benchmark {benchmark_return:.1%} "
+        f"(diff {outperformance:+.1%}) — sin datos de universo para RS Rating percentil"
+    )
     return CriterionResult(passed, detail)
 
 
@@ -102,13 +176,12 @@ INSTITUTIONAL_MAX_PCT = 0.90   # >90% = sobre-poseído, riesgo de venta masiva
 
 
 def evaluate_i(institutional_pct: float | None = None) -> CriterionResult:
-    """Usa heldPercentInstitutions de yfinance como proxy del criterio I.
-    Aproximación: O'Neil busca acumulación creciente, aquí solo medimos el
-    nivel actual. Un rango 15-90% indica respaldo sin sobre-concentración."""
+    """Criterio I: tenencia institucional en rango saludable 15-90%.
+    Pendiente Fase 2: detectar acumulación creciente via Form 13F bulk de SEC."""
     if institutional_pct is None:
         return CriterionResult(
             None,
-            "Sin datos de tenencia institucional disponibles para este ticker.",
+            "Sin datos de tenencia institucional (Form 13F fase 2 pendiente).",
         )
     passed = INSTITUTIONAL_MIN_PCT <= institutional_pct <= INSTITUTIONAL_MAX_PCT
     return CriterionResult(
@@ -132,13 +205,15 @@ def evaluate_all(
     benchmark_weinstein: WeinsteinResult,
     supply_signal: SupplySignal,
     institutional_pct: float | None = None,
+    all_time_high: float | None = None,
+    universe_returns: list[float] | None = None,
 ) -> dict[str, CriterionResult]:
     return {
         "C": evaluate_c(fundamentals),
         "A": evaluate_a(fundamentals),
-        "N": evaluate_n(ticker_weekly),
+        "N": evaluate_n(ticker_weekly, all_time_high=all_time_high),
         "S": evaluate_s(supply_signal),
-        "L": evaluate_l(ticker_weekly, benchmark_weekly),
+        "L": evaluate_l(ticker_weekly, benchmark_weekly, universe_returns=universe_returns),
         "I": evaluate_i(institutional_pct),
         "M": evaluate_m(benchmark_weinstein),
     }
