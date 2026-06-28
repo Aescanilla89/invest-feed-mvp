@@ -18,7 +18,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Energy",
     combined_score: 75,
     risk_bucket: "medio",
-    weinstein: { stage: 2, is_transition: true, weeks_in_stage: 35, ma_slope_pct: 0.0346, relative_volume: 0.573 },
+    weinstein: { stage: 2, is_transition: true, weeks_in_stage: 35, ma_slope_pct: 0.0346, relative_volume: 0.573, rsi: 62.4 },
     canslim: {
       score: "3/6 verificables",
       criteria: {
@@ -41,7 +41,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Technology",
     combined_score: 68,
     risk_bucket: "medio",
-    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 11, ma_slope_pct: 0.0168, relative_volume: 0.5698 },
+    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 11, ma_slope_pct: 0.0168, relative_volume: 0.5698, rsi: 58.1 },
     canslim: {
       score: "4/6 verificables",
       criteria: {
@@ -64,7 +64,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Communication Services",
     combined_score: 68,
     risk_bucket: "medio",
-    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 44, ma_slope_pct: 0.0382, relative_volume: 0.9159 },
+    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 44, ma_slope_pct: 0.0382, relative_volume: 0.9159, rsi: 67.3 },
     canslim: {
       score: "4/6 verificables",
       criteria: {
@@ -87,7 +87,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Technology",
     combined_score: 60,
     risk_bucket: "bajo",
-    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 39, ma_slope_pct: 0.0178, relative_volume: 0.6549 },
+    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 39, ma_slope_pct: 0.0178, relative_volume: 0.6549, rsi: 55.8 },
     canslim: {
       score: "3/6 verificables",
       criteria: {
@@ -110,7 +110,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Financial Services",
     combined_score: 52,
     risk_bucket: "bajo",
-    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 2, ma_slope_pct: 0.0072, relative_volume: 0.6398 },
+    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 2, ma_slope_pct: 0.0072, relative_volume: 0.6398, rsi: 52.1 },
     canslim: {
       score: "2/6 verificables",
       criteria: {
@@ -133,7 +133,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Consumer Defensive",
     combined_score: 43,
     risk_bucket: "bajo",
-    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 22, ma_slope_pct: 0.0226, relative_volume: 0.7761 },
+    weinstein: { stage: 2, is_transition: false, weeks_in_stage: 22, ma_slope_pct: 0.0226, relative_volume: 0.7761, rsi: 59.4 },
     canslim: {
       score: "1/6 verificables",
       criteria: {
@@ -156,7 +156,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Consumer Cyclical",
     combined_score: 17,
     risk_bucket: "alto",
-    weinstein: { stage: 4, is_transition: false, weeks_in_stage: 1, ma_slope_pct: -0.0082, relative_volume: 0.5591 },
+    weinstein: { stage: 4, is_transition: false, weeks_in_stage: 1, ma_slope_pct: -0.0082, relative_volume: 0.5591, rsi: 38.2 },
     canslim: {
       score: "2/6 verificables",
       criteria: {
@@ -178,7 +178,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     sector: "Technology",
     combined_score: 8,
     risk_bucket: "medio",
-    weinstein: { stage: 4, is_transition: false, weeks_in_stage: 22, ma_slope_pct: -0.0361, relative_volume: 0.7685 },
+    weinstein: { stage: 4, is_transition: false, weeks_in_stage: 22, ma_slope_pct: -0.0361, relative_volume: 0.7685, rsi: 31.6 },
     canslim: {
       score: "1/6 verificables",
       criteria: {

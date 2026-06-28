@@ -78,6 +78,7 @@ class Opportunity(Base):
     weeks_in_stage: Mapped[int] = mapped_column(Integer, nullable=False)
     weinstein_ma_slope_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     weinstein_relative_volume: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    weinstein_rsi: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
 
     # {"C": {"value": true, "detail": "Crecimiento EPS trimestral YoY: 30.0% ..."}, ...}
     canslim_criteria: Mapped[dict] = mapped_column(JSON, nullable=False)

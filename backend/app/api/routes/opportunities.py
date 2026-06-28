@@ -62,6 +62,7 @@ def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -
             weeks_in_stage=opp.weeks_in_stage,
             ma_slope_pct=opp.weinstein_ma_slope_pct,
             relative_volume=opp.weinstein_relative_volume,
+            rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0,
         ),
         canslim=CanslimSchema(
             criteria=opp.canslim_criteria,

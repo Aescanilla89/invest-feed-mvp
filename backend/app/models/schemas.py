@@ -13,6 +13,7 @@ class WeinsteinSchema(BaseModel):
     weeks_in_stage: int
     ma_slope_pct: float
     relative_volume: float
+    rsi: float = 50.0
 
 
 class CanslimCriterionSchema(BaseModel):

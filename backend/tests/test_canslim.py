@@ -239,10 +239,10 @@ def test_evaluate_i_13f_stable_passes():
 
 
 def test_evaluate_m_stage2_benchmark_passes():
-    benchmark_result = WeinsteinResult(stage=2, weeks_in_stage=5, ma_slope_pct=0.02, relative_volume=1.2, is_transition_1_to_2=False)
+    benchmark_result = WeinsteinResult(stage=2, weeks_in_stage=5, ma_slope_pct=0.02, relative_volume=1.2, is_transition_1_to_2=False, rsi=55.0)
     assert evaluate_m(benchmark_result).value is True
 
 
 def test_evaluate_m_stage4_benchmark_fails():
-    benchmark_result = WeinsteinResult(stage=4, weeks_in_stage=5, ma_slope_pct=-0.02, relative_volume=1.2, is_transition_1_to_2=False)
+    benchmark_result = WeinsteinResult(stage=4, weeks_in_stage=5, ma_slope_pct=-0.02, relative_volume=1.2, is_transition_1_to_2=False, rsi=42.0)
     assert evaluate_m(benchmark_result).value is False

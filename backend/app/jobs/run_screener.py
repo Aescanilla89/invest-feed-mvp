@@ -197,6 +197,7 @@ def _upsert_opportunity(db: Session, ticker: Ticker, run_date: date, score: scor
     existing.weeks_in_stage = weinstein_result.weeks_in_stage
     existing.weinstein_ma_slope_pct = weinstein_result.ma_slope_pct
     existing.weinstein_relative_volume = 0.0 if math.isnan(weinstein_result.relative_volume) else weinstein_result.relative_volume
+    existing.weinstein_rsi = weinstein_result.rsi
     existing.canslim_criteria = criteria_json
     existing.canslim_score = score.canslim_component
     existing.canslim_verifiable_count = score.canslim_verifiable_count

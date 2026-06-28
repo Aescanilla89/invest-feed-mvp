@@ -24,8 +24,10 @@ import pandas as pd
 MA_WINDOW_WEEKS = 30
 SLOPE_LOOKBACK_WEEKS = 5
 SLOPE_FLAT_THRESHOLD = 0.005  # 0.5% de variación de la MA en slope_lookback_weeks
-BREAKOUT_VOLUME_RATIO = 1.5
+BREAKOUT_VOLUME_RATIO = 2.0   # 2x volumen medio: confirmación institucional (Weinstein)
 VOLUME_AVG_WINDOW = 10
+RSI_WINDOW = 14               # RSI estándar de Wilder (semanal)
+RSI_BREAKOUT_THRESHOLD = 50   # RSI > 50 requerido en la semana del cruce 1→2
 MIN_WEEKS_REQUIRED = MA_WINDOW_WEEKS + SLOPE_LOOKBACK_WEEKS + 1
 
 
@@ -40,6 +42,19 @@ class WeinsteinResult:
     ma_slope_pct: float
     relative_volume: float
     is_transition_1_to_2: bool
+    rsi: float  # RSI(14) semanal actual; 50 como neutro si no hay suficientes datos
+
+
+def _compute_rsi(close: pd.Series, period: int = RSI_WINDOW) -> pd.Series:
+    """RSI de Wilder (EMA con alpha=1/period). Devuelve serie alineada con close."""
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta.clip(upper=0))
+    avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0.0, float("nan"))
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    return rsi.fillna(50.0)  # 50 = neutro cuando avg_loss == 0
 
 
 def _stage_series(close: pd.Series, ma: pd.Series, slope_pct: pd.Series) -> pd.Series:
@@ -74,6 +89,7 @@ def analyze(weekly_prices: pd.DataFrame) -> WeinsteinResult:
     slope_pct = ma.pct_change(periods=SLOPE_LOOKBACK_WEEKS)
     avg_volume = volume.rolling(VOLUME_AVG_WINDOW).mean()
     relative_volume_series = volume / avg_volume
+    rsi_series = _compute_rsi(close)
 
     stages = _stage_series(close, ma, slope_pct).dropna()
     if stages.empty:
@@ -113,7 +129,14 @@ def analyze(weekly_prices: pd.DataFrame) -> WeinsteinResult:
                     if last_crossover in relative_volume_series.index
                     else float("nan")
                 )
-                if prior_stage == 1 and pd.notna(crossover_vol) and crossover_vol >= BREAKOUT_VOLUME_RATIO:
+                crossover_rsi = (
+                    float(rsi_series.loc[last_crossover])
+                    if last_crossover in rsi_series.index
+                    else 50.0
+                )
+                volume_ok = pd.notna(crossover_vol) and crossover_vol >= BREAKOUT_VOLUME_RATIO
+                rsi_ok = crossover_rsi > RSI_BREAKOUT_THRESHOLD
+                if prior_stage == 1 and volume_ok and rsi_ok:
                     is_transition = True
 
     return WeinsteinResult(
@@ -122,4 +145,5 @@ def analyze(weekly_prices: pd.DataFrame) -> WeinsteinResult:
         ma_slope_pct=float(slope_pct.iloc[-1]) if pd.notna(slope_pct.iloc[-1]) else 0.0,
         relative_volume=float(relative_volume_series.iloc[-1]) if pd.notna(relative_volume_series.iloc[-1]) else float("nan"),
         is_transition_1_to_2=is_transition,
+        rsi=float(rsi_series.iloc[-1]) if pd.notna(rsi_series.iloc[-1]) else 50.0,
     )

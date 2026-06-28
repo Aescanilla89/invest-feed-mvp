@@ -88,6 +88,7 @@ def generate_explanations(_: None = Depends(_verify_token)) -> dict:
                     ma_slope_pct=opp.weinstein_ma_slope_pct,
                     relative_volume=opp.weinstein_relative_volume,
                     is_transition_1_to_2=opp.weinstein_transition,
+                    rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0,
                 )
                 criteria = {
                     k: CriterionResult(value=v["value"], detail=v["detail"])

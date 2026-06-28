@@ -8,6 +8,7 @@ export interface Weinstein {
   weeks_in_stage: number;
   ma_slope_pct: number;
   relative_volume: number;
+  rsi: number;
 }
 
 export interface CanslimCriterion {

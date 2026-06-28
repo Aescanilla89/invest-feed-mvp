@@ -17,7 +17,7 @@ def _all_fail_criteria() -> dict[str, CriterionResult]:
 
 
 def test_stage2_transition_with_all_canslim_passing_scores_high():
-    weinstein = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.03, relative_volume=2.0, is_transition_1_to_2=True)
+    weinstein = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.03, relative_volume=2.0, is_transition_1_to_2=True, rsi=55.0)
     df = make_weekly_df(steady_uptrend())
     score = compute_combined_score(weinstein, _all_pass_criteria(), df)
     assert score.combined_score == 100
@@ -26,14 +26,14 @@ def test_stage2_transition_with_all_canslim_passing_scores_high():
 
 
 def test_stage4_with_all_canslim_failing_scores_zero():
-    weinstein = WeinsteinResult(stage=4, weeks_in_stage=10, ma_slope_pct=-0.03, relative_volume=0.8, is_transition_1_to_2=False)
+    weinstein = WeinsteinResult(stage=4, weeks_in_stage=10, ma_slope_pct=-0.03, relative_volume=0.8, is_transition_1_to_2=False, rsi=38.0)
     df = make_weekly_df(steady_downtrend())
     score = compute_combined_score(weinstein, _all_fail_criteria(), df)
     assert score.combined_score == 0
 
 
 def test_i_criterion_excluded_from_canslim_denominator():
-    weinstein = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.03, relative_volume=2.0, is_transition_1_to_2=False)
+    weinstein = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.03, relative_volume=2.0, is_transition_1_to_2=False, rsi=55.0)
     df = make_weekly_df(steady_uptrend())
     criteria = _all_pass_criteria()
     score = compute_combined_score(weinstein, criteria, df)
@@ -43,7 +43,7 @@ def test_i_criterion_excluded_from_canslim_denominator():
 
 
 def test_no_verifiable_criteria_gives_zero_canslim_component():
-    weinstein = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.03, relative_volume=2.0, is_transition_1_to_2=False)
+    weinstein = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.03, relative_volume=2.0, is_transition_1_to_2=False, rsi=55.0)
     df = make_weekly_df(steady_uptrend())
     criteria = {k: CriterionResult(None, "sin datos") for k in ["C", "A", "N", "S", "L", "I", "M"]}
     score = compute_combined_score(weinstein, criteria, df)
