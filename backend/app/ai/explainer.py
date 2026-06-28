@@ -41,8 +41,9 @@ class ClaudeExplainer:
         combined_score: int,
         weinstein: WeinsteinResult,
         criteria: dict[str, CriterionResult],
+        signal_type: str | None = None,
     ) -> str:
-        user_prompt = build_user_prompt(symbol, name, sector, combined_score, weinstein, criteria)
+        user_prompt = build_user_prompt(symbol, name, sector, combined_score, weinstein, criteria, signal_type)
         try:
             response = self._client.messages.create(
                 model=self.model,

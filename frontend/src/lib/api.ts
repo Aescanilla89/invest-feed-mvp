@@ -20,6 +20,8 @@ export interface Canslim {
   score: string;
 }
 
+export type SignalType = "weinstein" | "canslim" | "both" | null;
+
 export interface Opportunity {
   ticker: string;
   name: string | null;
@@ -30,6 +32,7 @@ export interface Opportunity {
   canslim: Canslim;
   explanation: string | null;
   last_updated: string;
+  signal_type?: SignalType;
 }
 
 export interface OpportunityDetail extends Opportunity {

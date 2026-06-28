@@ -16,14 +16,33 @@ que entienden de bolsa pero no quieren jerga vacía.
 
 Reglas estrictas:
 - Responde en español, 2-3 frases, nada más.
-- Cita al menos un dato numérico concreto de los que se te dan (stage, semanas, \
-porcentaje de crecimiento, volumen relativo, etc.).
-- Explica qué señal técnica y/o fundamental se ha activado y POR QUÉ importa para \
-esa empresa en concreto -- no frases genéricas de mercado.
+- Empieza citando la señal activada (Weinstein 1→2 o rotura CAN SLIM) con el dato numérico \
+clave que la confirma (volumen relativo, semanas en Stage 2, crecimiento EPS, etc.).
+- Explica por qué esa señal importa para esa empresa concreta.
 - Nunca recomiendes comprar o vender, ni uses imperativos de inversión ("compra", "entra ahora"). \
-Esto es información educativa, no asesoramiento ni una orden de ejecución.
-- Si los criterios CAN SLIM verificables son pocos o débiles, dilo explícitamente en vez de \
-inflar la explicación."""
+Esto es información educativa, no asesoramiento.
+- Si la señal es doble (Weinstein + CAN SLIM), menciona ambas."""
+
+_SIGNAL_CONTEXT = {
+    "weinstein": (
+        "SEÑAL ACTIVA — ENTRADA WEINSTEIN STAGE 1→2: "
+        "El precio acaba de cruzar por encima de la media móvil de 30 semanas con volumen confirmatorio. "
+        "Centra la explicación en esta señal técnica: cuántas semanas lleva en Stage 2, "
+        "el volumen relativo en el cruce y la pendiente de la MA30."
+    ),
+    "canslim": (
+        "SEÑAL ACTIVA — ROTURA CAN SLIM: "
+        "El ticker está rompiendo máximos históricos con volumen Y cumple TODOS los criterios CAN SLIM verificables. "
+        "Centra la explicación en los criterios fundamentales más fuertes (EPS, aceleración, fuerza relativa) "
+        "y en que la rotura de ATH coincide con volumen superior al 1.5x la media."
+    ),
+    "both": (
+        "SEÑAL DOBLE ACTIVA — WEINSTEIN + CAN SLIM: "
+        "Rotura Stage 1→2 con volumen Y todos los criterios CAN SLIM verificables en verde. "
+        "Destaca que ambas señales (técnica y fundamental) confirman la oportunidad simultáneamente. "
+        "Es la configuración más sólida del método."
+    ),
+}
 
 
 def build_user_prompt(
@@ -33,6 +52,7 @@ def build_user_prompt(
     combined_score: int,
     weinstein: WeinsteinResult,
     criteria: dict[str, CriterionResult],
+    signal_type: str | None = None,
 ) -> str:
     criteria_lines = "\n".join(
         f"- {key}: {'cumple' if c.value is True else 'no cumple' if c.value is False else 'no verificable'} -- {c.detail}"
@@ -43,18 +63,21 @@ def build_user_prompt(
     if weinstein.is_transition_1_to_2 and weeks <= 4:
         transition_line = f"Breakout Stage 1→2 reciente (hace {weeks} semana{'s' if weeks != 1 else ''})"
     elif weinstein.is_transition_1_to_2:
-        transition_line = f"Breakout Stage 1→2 confirmado en su momento (lleva {weeks} semanas en Stage 2, NO es reciente)"
+        transition_line = f"Breakout Stage 1→2 confirmado (lleva {weeks} semanas en Stage 2)"
     else:
         transition_line = "Sin señal de breakout Stage 1→2"
 
+    signal_context = _SIGNAL_CONTEXT.get(signal_type or "", "") if signal_type else ""
+
     return f"""Ticker: {symbol} ({name or 'nombre desconocido'}, sector {sector or 'desconocido'})
 Score combinado: {combined_score}/100
+{signal_context and f'{signal_context}'}
 
 Weinstein Stage Analysis:
 - Stage actual: {weinstein.stage}
 - Semanas en este stage: {weeks}
 - {transition_line}
-- Pendiente de la media móvil de 30 semanas: {weinstein.ma_slope_pct:+.1%}
+- Pendiente MA30: {weinstein.ma_slope_pct:+.1%}
 - Volumen relativo (vs media 10 semanas): {weinstein.relative_volume:.2f}x
 
 Criterios CAN SLIM:

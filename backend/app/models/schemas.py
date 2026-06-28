@@ -35,6 +35,7 @@ class OpportunitySchema(BaseModel):
     canslim: CanslimSchema
     explanation: str | None
     last_updated: date
+    signal_type: str | None = None  # "weinstein" | "canslim" | "both"
 
     model_config = {"from_attributes": True}
 

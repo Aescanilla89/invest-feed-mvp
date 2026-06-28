@@ -25,6 +25,7 @@ def get_or_create_explanation(
     weinstein: WeinsteinResult,
     criteria: dict[str, CriterionResult],
     explainer: ClaudeExplainer,
+    signal_type: str | None = None,
 ) -> Explanation | None:
     existing_today = db.query(Explanation).filter_by(ticker_id=ticker.id, run_date=run_date).one_or_none()
     if existing_today is not None:
@@ -50,7 +51,7 @@ def get_or_create_explanation(
         return reused
 
     try:
-        text = explainer.generate(ticker.symbol, ticker.name, ticker.sector, combined_score, weinstein, criteria)
+        text = explainer.generate(ticker.symbol, ticker.name, ticker.sector, combined_score, weinstein, criteria, signal_type)
     except ExplanationError as exc:
         logger.warning("No se pudo generar explicación para %s: %s", ticker.symbol, exc)
         return None

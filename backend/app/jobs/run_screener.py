@@ -45,6 +45,25 @@ class ScreenedTicker:
     score: scoring.CombinedScore
     weinstein_result: WeinsteinResult
     criteria: dict[str, canslim.CriterionResult]
+    signal_type: str | None = None
+
+
+_WEINSTEIN_MAX_WEEKS = 8
+
+
+def _compute_signal_type(weinstein_result: WeinsteinResult, criteria: dict[str, canslim.CriterionResult]) -> str | None:
+    """Mismo criterio que la capa API: Weinstein 1→2 fresco O CAN SLIM completo."""
+    is_weinstein = weinstein_result.is_transition_1_to_2 and weinstein_result.weeks_in_stage <= _WEINSTEIN_MAX_WEEKS
+    n_passes = criteria.get("N", canslim.CriterionResult(None, "")).value is True
+    all_verifiable_pass = all(c.value is True for c in criteria.values() if c.value is not None)
+    is_canslim = n_passes and all_verifiable_pass
+    if is_weinstein and is_canslim:
+        return "both"
+    if is_weinstein:
+        return "weinstein"
+    if is_canslim:
+        return "canslim"
+    return None
 
 
 def _get_or_create_ticker(db: Session, symbol: str, universe_name: str, name: str | None, sector: str | None) -> Ticker:
@@ -206,13 +225,14 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
                     universe_returns=universe_returns if universe_returns else None,
                 )
                 score = scoring.compute_combined_score(weinstein_result, criteria, weekly)
+                signal_type = _compute_signal_type(weinstein_result, criteria)
 
                 ticker = _get_or_create_ticker(db, symbol, universe_name, name, sector)
                 _upsert_price_snapshots(db, ticker, weekly)
                 _upsert_opportunity(db, ticker, run_date, score, weinstein_result, criteria)
                 db.commit()
                 processed += 1
-                screened.append(ScreenedTicker(ticker, score, weinstein_result, criteria))
+                screened.append(ScreenedTicker(ticker, score, weinstein_result, criteria, signal_type))
                 logger.info("%s: stage=%s score=%s risk=%s", symbol, weinstein_result.stage, score.combined_score, score.risk_bucket)
             except InsufficientDataError as exc:
                 logger.warning("%s: histórico insuficiente, se omite (%s)", symbol, exc)
@@ -240,16 +260,25 @@ def _generate_explanations(db: Session, run_date: date, screened: list[ScreenedT
         logger.warning("Generación de explicaciones desactivada: %s", exc)
         return
 
-    candidates = [s for s in screened if s.score.combined_score >= settings.explanation_min_score]
+    # Solo se generan explicaciones para tickers con señal de entrada real.
+    # Esto acota el gasto de API de Claude a lo que realmente aparece en el feed.
+    candidates = [
+        s for s in screened
+        if s.signal_type is not None and s.score.combined_score >= settings.explanation_min_score
+    ]
     candidates.sort(key=lambda s: s.score.combined_score, reverse=True)
     candidates = candidates[: settings.explanation_max_per_run]
 
-    logger.info("Generando explicaciones para %d/%d tickers (umbral %d, máx %d)",
-                len(candidates), len(screened), settings.explanation_min_score, settings.explanation_max_per_run)
+    logger.info(
+        "Generando explicaciones para %d/%d tickers con señal (umbral score %d, máx %d)",
+        len(candidates), len(screened), settings.explanation_min_score, settings.explanation_max_per_run,
+    )
 
     for item in candidates:
         explanation = ai_cache.get_or_create_explanation(
-            db, item.ticker, run_date, item.score.combined_score, item.weinstein_result, item.criteria, explainer
+            db, item.ticker, run_date, item.score.combined_score,
+            item.weinstein_result, item.criteria, explainer,
+            signal_type=item.signal_type,
         )
         db.commit()
         if explanation is not None:

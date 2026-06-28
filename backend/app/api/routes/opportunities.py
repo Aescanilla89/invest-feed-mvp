@@ -17,6 +17,36 @@ def _latest_run_date(db: Session) -> date | None:
     return db.query(func.max(Opportunity.run_date)).scalar()
 
 
+_WEINSTEIN_MAX_WEEKS = 8  # entrada fresca: máximo 8 semanas desde el cruce 1→2
+
+
+def _compute_signal_type(opp: Opportunity) -> str | None:
+    """Determina el tipo de señal de entrada según criterios estrictos:
+    - weinstein: Stage 2 + transición 1→2 con volumen confirmado en <= 8 semanas
+    - canslim: criterio N en verde (rotura ATH con volumen) + TODOS los criterios
+               verificables en verde
+    - both: ambas condiciones simultáneas
+    """
+    is_weinstein = bool(opp.weinstein_transition) and opp.weeks_in_stage <= _WEINSTEIN_MAX_WEEKS
+
+    criteria = opp.canslim_criteria
+    n_passes = criteria.get("N", {}).get("value") is True
+    all_verifiable_pass = all(
+        v["value"] is True
+        for v in criteria.values()
+        if v.get("value") is not None
+    )
+    is_canslim = n_passes and all_verifiable_pass
+
+    if is_weinstein and is_canslim:
+        return "both"
+    if is_weinstein:
+        return "weinstein"
+    if is_canslim:
+        return "canslim"
+    return None
+
+
 def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -> OpportunitySchema:
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
@@ -39,6 +69,7 @@ def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -
         ),
         explanation=explanation_text,
         last_updated=opp.run_date,
+        signal_type=_compute_signal_type(opp),
     )
 
 
@@ -73,15 +104,10 @@ def list_opportunities(
 
     rows = query.all()
 
-    # Filtro estricto: solo oportunidades con señal de entrada clara
-    # - Transición Stage 1→2 reciente (≤8 semanas) con volumen confirmado
-    # - O rotura de máximos con volumen (criterio N = True)
-    def _is_actionable(opp: Opportunity) -> bool:
-        fresh_transition = opp.weinstein_transition and opp.weeks_in_stage <= 8
-        n_criterion = opp.canslim_criteria.get("N", {}).get("value") is True
-        return fresh_transition or n_criterion
-
-    rows = [(opp, ticker) for opp, ticker in rows if _is_actionable(opp)]
+    # Solo oportunidades con señal de entrada real:
+    # - weinstein: Stage 2 con transición 1→2 confirmada con volumen (≤8 semanas)
+    # - canslim: rotura de ATH con volumen Y TODOS los criterios verificables en verde
+    rows = [(opp, ticker) for opp, ticker in rows if _compute_signal_type(opp) is not None]
     rows = rows[:limit]
 
     explanations = {
