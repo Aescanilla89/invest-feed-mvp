@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { StrategyTabs, type ActiveStrategy } from "@/components/strategy-tabs";
 import { getOpportunities, type Opportunity } from "@/lib/api";
 
-const DEFAULT_FILTERS: FeedFilters = { minScore: 0, risk: "todos", sector: "todos", sort: "score" };
+const DEFAULT_FILTERS: FeedFilters = { minScore: 80, risk: "todos", sector: "todos", sort: "score" };
 
 const container = {
   hidden: { opacity: 0 },

@@ -104,22 +104,28 @@ def evaluate_a(fundamentals: FundamentalData) -> CriterionResult:
 
 
 def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) -> CriterionResult:
-    """Criterio N: cierre cerca del ATH (histórico acumulado) con volumen confirmatorio."""
+    """Criterio N: rotura de máximo 52 semanas con volumen confirmatorio.
+    Usamos el máximo de 52 semanas (no el ATH histórico) para capturar breakouts reales
+    desde una base — muchos stocks válidos nunca recuperan su ATH de años anteriores."""
     if len(weekly_prices) < 52:
         return CriterionResult(None, "Menos de 52 semanas de histórico, no se puede evaluar")
 
-    ath = all_time_high if all_time_high is not None else float(weekly_prices["High"].max())
+    high_52w = float(weekly_prices["High"].tail(52).max())
     current_close = weekly_prices["Close"].iloc[-1]
-    current_volume = weekly_prices["Volume"].iloc[-1]
-    avg_volume = weekly_prices["Volume"].tail(10).mean()
+    avg_volume_10w = weekly_prices["Volume"].tail(10).mean()
+    # Volumen confirmatorio: media de las últimas 4 semanas vs media 10 semanas
+    recent_vol = weekly_prices["Volume"].tail(4).mean()
+    rel_volume = (recent_vol / avg_volume_10w) if avg_volume_10w > 0 else 0
 
-    near_high = current_close >= ath * NEW_HIGH_PROXIMITY_PCT
-    volume_confirms = avg_volume > 0 and (current_volume / avg_volume) >= NEW_HIGH_VOLUME_RATIO
+    near_high = current_close >= high_52w * NEW_HIGH_PROXIMITY_PCT
+    volume_confirms = rel_volume >= NEW_HIGH_VOLUME_RATIO
     passed = bool(near_high and volume_confirms)
+
+    ath_str = f" (ATH histórico: {all_time_high:.2f})" if all_time_high and all_time_high > high_52w * 1.05 else ""
     detail = (
-        f"Cierre {current_close:.2f} vs ATH {ath:.2f} "
-        f"({current_close / ath:.1%} del máximo); volumen relativo "
-        f"{(current_volume / avg_volume):.2f}x (umbral {NEW_HIGH_VOLUME_RATIO}x). "
+        f"Cierre {current_close:.2f} vs máx 52w {high_52w:.2f} "
+        f"({current_close / high_52w:.1%} del máximo){ath_str}; "
+        f"volumen relativo 4w {rel_volume:.2f}x (umbral {NEW_HIGH_VOLUME_RATIO}x). "
         "No evalúa 'nuevo producto/gestión' (no verificable con datos)."
     )
     return CriterionResult(passed, detail)
