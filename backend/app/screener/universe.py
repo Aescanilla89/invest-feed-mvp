@@ -96,50 +96,51 @@ def get_russell2000_tickers() -> list[str]:
     """Obtiene los componentes del Russell 2000 desde el CSV de holdings del ETF iShares IWM.
 
     El CSV de iShares incluye filas de metadatos al principio y posiciones de cash al
-    final; se localizan automáticamente la cabecera real y se filtran las filas equity.
+    final; se localizan la cabecera real y se filtran las filas equity.
+    Usa csv.DictReader (no pandas) para manejar correctamente los campos con comas.
     """
+    import csv as _csv
+
     try:
         resp = requests.get(RUSSELL2000_ISHARES_URL, headers=_ISHARES_HEADERS, timeout=30)
         resp.raise_for_status()
     except Exception as exc:
         raise UniverseScrapeError(f"No se pudo descargar IWM holdings de iShares: {exc}") from exc
 
-    lines = resp.text.splitlines()
+    text = resp.text
+    if text.lstrip().startswith("<"):
+        raise UniverseScrapeError(
+            "iShares IWM devolvió HTML en lugar de CSV (bot detection). "
+            "El screener continuará sin Russell 2000 en esta corrida."
+        )
 
-    # Localizar la fila de cabecera real (contiene tanto "Ticker" como "Name")
+    lines = text.splitlines()
+
+    # Localizar la fila de cabecera real: primera línea donde "Ticker" es un campo separado
     header_idx = None
     for i, line in enumerate(lines):
-        if "Ticker" in line and "Name" in line:
+        fields = [f.strip().strip('"') for f in line.split(",")]
+        if "Ticker" in fields and "Name" in fields:
             header_idx = i
             break
 
     if header_idx is None:
         raise UniverseScrapeError(
-            "iShares IWM CSV: no se encontró fila de cabecera con 'Ticker' y 'Name'. "
-            "Puede que iShares haya cambiado el formato del archivo."
+            "iShares IWM CSV: no se encontró fila de cabecera con columnas 'Ticker' y 'Name'."
         )
 
     csv_text = "\n".join(lines[header_idx:])
-    try:
-        df = pd.read_csv(io.StringIO(csv_text))
-    except Exception as exc:
-        raise UniverseScrapeError(f"Error al parsear CSV de IWM: {exc}") from exc
+    reader = _csv.DictReader(io.StringIO(csv_text))
 
-    if "Ticker" not in df.columns:
-        raise UniverseScrapeError(
-            f"iShares IWM CSV: columna 'Ticker' no encontrada. Columnas disponibles: {list(df.columns)}"
-        )
-
-    # Filtrar solo posiciones de renta variable (excluye cash, derivados, etc.)
-    if "Asset Class" in df.columns:
-        df = df[df["Asset Class"].astype(str).str.strip() == "Equity"]
-
-    raw = df["Ticker"].astype(str).str.strip()
-    tickers = [
-        t.replace(".", "-")
-        for t in raw
-        if t and t not in ("-", "nan", "CASH_USD", "") and not t.startswith("nan")
-    ]
+    tickers: list[str] = []
+    for row in reader:
+        ticker = (row.get("Ticker") or "").strip().strip('"')
+        asset_class = (row.get("Asset Class") or "").strip()
+        if not ticker or ticker in ("-", "CASH_USD"):
+            continue
+        if asset_class and asset_class != "Equity":
+            continue
+        tickers.append(ticker.replace(".", "-"))
 
     if len(tickers) < 1500:
         raise UniverseScrapeError(
@@ -213,14 +214,17 @@ def get_universe() -> dict[str, list[str]]:
     Estructura: {"sp500": [...], "nasdaq100": [...], "russell2000": [...],
                  "ftse100": [...], "dax40": [...], ...}
 
-    Los tickers pueden solaparse entre índices (p.ej. AAPL en sp500 y nasdaq100);
-    el screener los procesa y hace upsert de la oportunidad, así que no hay duplicados
-    en base de datos aunque sí se procesen dos veces en la misma corrida.
+    S&P500 y Nasdaq100 son obligatorios (fallo → UniverseScrapeError).
+    Russell 2000 y Europa fallan gracefully (warning + continúa sin ellos).
     """
     universes: dict[str, list[str]] = {
         "sp500": get_sp500_tickers(),
         "nasdaq100": get_nasdaq100_tickers(),
-        "russell2000": get_russell2000_tickers(),
     }
+    try:
+        universes["russell2000"] = get_russell2000_tickers()
+        logger.info("Russell 2000: %d tickers cargados", len(universes["russell2000"]))
+    except UniverseScrapeError as exc:
+        logger.warning("Russell 2000 no disponible esta corrida: %s", exc)
     universes.update(get_european_tickers())
     return universes
