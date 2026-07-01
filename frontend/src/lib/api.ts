@@ -23,6 +23,14 @@ export interface Canslim {
 
 export type SignalType = "weinstein" | "canslim" | "both" | null;
 
+export type StrategyName = "minervini" | "lynch" | "berkshire" | "dividendos";
+
+export interface StrategyResult {
+  passed: boolean | null;
+  score: number | null;
+  details: string;
+}
+
 export interface Opportunity {
   ticker: string;
   name: string | null;
@@ -34,6 +42,7 @@ export interface Opportunity {
   explanation: string | null;
   last_updated: string;
   signal_type?: SignalType;
+  strategies: Record<StrategyName, StrategyResult>;
 }
 
 export interface PriceBar {
@@ -65,6 +74,8 @@ export interface OpportunityFilters {
   risk?: RiskBucket;
   sector?: string;
   sort?: "score" | "stage";
+  strategy?: StrategyName | "weinstein" | "canslim";
+  limit?: number;
 }
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -91,6 +102,8 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
   if (filters.risk) params.set("risk", filters.risk);
   if (filters.sector) params.set("sector", filters.sector);
   if (filters.sort) params.set("sort", filters.sort);
+  if (filters.strategy) params.set("strategy", filters.strategy);
+  if (filters.limit) params.set("limit", String(filters.limit));
   const query = params.toString();
   return fetchJson<Opportunity[]>(`/opportunities${query ? `?${query}` : ""}`);
 }

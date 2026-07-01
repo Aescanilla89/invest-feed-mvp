@@ -36,6 +36,13 @@ _SESSION.headers.update(_BROWSER_HEADERS)
 
 
 @dataclass
+class DividendData:
+    yield_pct: float | None       # e.g. 0.025 para 2.5% anual
+    payout_ratio: float | None    # 0-1; >1 = dividendo no cubierto por beneficios
+    annual_dividend: float | None # dividendo anual por acción en moneda local
+
+
+@dataclass
 class FundamentalData:
     eps_quarterly_yoy_growth: float | None
     eps_annual_growth: float | None
@@ -110,6 +117,22 @@ class YFinanceDataSource:
             info.get("heldPercentInstitutions") or info.get("institutionPercentHeld")
         )
         return name, sector, pct_institutional
+
+    def get_dividend_data(self, symbol: str) -> DividendData:
+        try:
+            info = yf.Ticker(symbol, session=_SESSION).info
+        except Exception:
+            return DividendData(None, None, None)
+        if self._delay:
+            time.sleep(self._delay)
+        yield_pct = info.get("dividendYield") or info.get("trailingAnnualDividendYield")
+        payout = info.get("payoutRatio")
+        div_rate = info.get("dividendRate") or info.get("trailingAnnualDividendRate")
+        return DividendData(
+            yield_pct=float(yield_pct) if yield_pct else None,
+            payout_ratio=float(payout) if payout else None,
+            annual_dividend=float(div_rate) if div_rate else None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +212,9 @@ class AlpacaDataSource:
             raw_quarterly_eps=eps.quarterly,
             raw_annual_eps=eps.annual,
         )
+
+    def get_dividend_data(self, symbol: str) -> DividendData:
+        return DividendData(None, None, None)  # no disponible en Alpaca free tier
 
     def get_profile(self, symbol: str) -> tuple[str | None, str | None, float | None]:
         """Nombre via Alpaca /v2/assets. Sector e institutional_pct no disponibles

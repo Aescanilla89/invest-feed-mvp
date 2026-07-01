@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.orm import Explanation, Opportunity, PriceSnapshot, Ticker
-from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunitySchema, WeinsteinSchema
+from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunitySchema, StrategyResultSchema, WeinsteinSchema
+
+_STRATEGY_NAMES = {"minervini", "lynch", "berkshire", "dividendos"}
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -47,9 +49,27 @@ def _compute_signal_type(opp: Opportunity) -> str | None:
     return None
 
 
+def _strategies_to_schema(raw: dict) -> dict[str, StrategyResultSchema]:
+    result = {}
+    for name, data in (raw or {}).items():
+        if isinstance(data, dict):
+            result[name] = StrategyResultSchema(
+                passed=data.get("passed"),
+                score=data.get("score"),
+                details=data.get("details", ""),
+            )
+    return result
+
+
+def _has_strategy_signal(opp: Opportunity, strategy: str) -> bool:
+    raw = getattr(opp, "strategies", None) or {}
+    return bool((raw.get(strategy) or {}).get("passed"))
+
+
 def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -> OpportunitySchema:
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
+    raw_strategies = getattr(opp, "strategies", None) or {}
     return OpportunitySchema(
         ticker=ticker.symbol,
         name=ticker.name,
@@ -71,6 +91,7 @@ def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -
         explanation=explanation_text,
         last_updated=opp.run_date,
         signal_type=_compute_signal_type(opp),
+        strategies=_strategies_to_schema(raw_strategies),
     )
 
 
@@ -81,6 +102,7 @@ def list_opportunities(
     risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"),
     sector: str | None = None,
     sort: str = Query("score", pattern="^(score|stage)$"),
+    strategy: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> list[OpportunitySchema]:
     run_date = _latest_run_date(db)
@@ -105,10 +127,17 @@ def list_opportunities(
 
     rows = query.all()
 
-    # Solo oportunidades con señal de entrada real:
-    # - weinstein: Stage 2 con transición 1→2 confirmada con volumen (≤8 semanas)
-    # - canslim: rotura de ATH con volumen Y TODOS los criterios verificables en verde
-    rows = [(opp, ticker) for opp, ticker in rows if _compute_signal_type(opp) is not None]
+    # Filtro por señal activa según la estrategia seleccionada
+    if strategy and strategy in _STRATEGY_NAMES:
+        rows = [(opp, ticker) for opp, ticker in rows if _has_strategy_signal(opp, strategy)]
+    else:
+        # Vista por defecto: señales Weinstein + CAN SLIM, más cualquiera que pase al menos una estrategia
+        rows = [
+            (opp, ticker) for opp, ticker in rows
+            if _compute_signal_type(opp) is not None
+            or any(_has_strategy_signal(opp, s) for s in _STRATEGY_NAMES)
+        ]
+
     rows = rows[:limit]
 
     explanations = {

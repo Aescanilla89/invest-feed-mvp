@@ -89,6 +89,9 @@ class Opportunity(Base):
     combined_score: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     risk_bucket: Mapped[str] = mapped_column(String(16), nullable=False)
 
+    # {"minervini": {"passed": bool|None, "score": int|None, "details": str}, "lynch": {...}, ...}
+    strategies: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
     ticker: Mapped["Ticker"] = relationship(back_populates="opportunities")
 
 

@@ -7,6 +7,7 @@ import { FilterBar, type FeedFilters } from "@/components/filter-bar";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { StrategyTabs, type ActiveStrategy } from "@/components/strategy-tabs";
 import { getOpportunities, type Opportunity } from "@/lib/api";
 
 const DEFAULT_FILTERS: FeedFilters = { minScore: 0, risk: "todos", sector: "todos", sort: "score" };
@@ -25,10 +26,13 @@ export function FeedSection() {
   const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FeedFilters>(DEFAULT_FILTERS);
+  const [activeStrategy, setActiveStrategy] = useState<ActiveStrategy>("todas");
 
   useEffect(() => {
     let cancelled = false;
-    getOpportunities()
+    setOpportunities(null);
+    const strategy = activeStrategy !== "todas" ? activeStrategy : undefined;
+    getOpportunities({ strategy, limit: 100 } as Parameters<typeof getOpportunities>[0])
       .then((data) => {
         if (!cancelled) setOpportunities(data);
       })
@@ -38,7 +42,7 @@ export function FeedSection() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeStrategy]);
 
   const sectors = useMemo(() => {
     if (!opportunities) return [];
@@ -67,6 +71,8 @@ export function FeedSection() {
 
   return (
     <div className="flex flex-col gap-6">
+      <StrategyTabs active={activeStrategy} onChange={setActiveStrategy} />
+
       <div className="flex flex-wrap items-center justify-between gap-4">
         <FilterBar filters={filters} sectors={sectors} onChange={setFilters} />
         {opportunities && (

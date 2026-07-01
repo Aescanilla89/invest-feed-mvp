@@ -26,6 +26,12 @@ class CanslimSchema(BaseModel):
     score: str  # ej. "4/6 verificables"
 
 
+class StrategyResultSchema(BaseModel):
+    passed: bool | None
+    score: int | None
+    details: str
+
+
 class OpportunitySchema(BaseModel):
     ticker: str
     name: str | None
@@ -37,6 +43,7 @@ class OpportunitySchema(BaseModel):
     explanation: str | None
     last_updated: date
     signal_type: str | None = None  # "weinstein" | "canslim" | "both"
+    strategies: dict[str, StrategyResultSchema] = {}
 
     model_config = {"from_attributes": True}
 

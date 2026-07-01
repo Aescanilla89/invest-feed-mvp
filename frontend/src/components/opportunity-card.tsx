@@ -5,6 +5,7 @@ import { CriteriaChips } from "@/components/criteria-chips";
 import { RiskBadge } from "@/components/risk-badge";
 import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
+import { StrategyBadges } from "@/components/strategy-badges";
 import { TradingViewMiniChart } from "@/components/tradingview-mini-chart";
 import type { Opportunity, SignalType } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -49,7 +50,7 @@ function SignalBadge({ signal_type }: { signal_type: SignalType }) {
 }
 
 export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
-  const { ticker, name, sector, combined_score, risk_bucket, weinstein, canslim, last_updated, signal_type } =
+  const { ticker, name, sector, combined_score, risk_bucket, weinstein, canslim, last_updated, signal_type, strategies } =
     opportunity;
 
   return (
@@ -76,6 +77,9 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
       <div className="relative z-10 pointer-events-none">
         <SignalBadge signal_type={signal_type ?? null} />
       </div>
+
+      {/* Fila 2b: badges de estrategias adicionales (solo las que pasan) */}
+      {strategies && <StrategyBadges strategies={strategies} className="relative z-10 pointer-events-none" />}
 
       {/* Fila 3: stage + riesgo */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">

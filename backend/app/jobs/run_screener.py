@@ -33,6 +33,7 @@ from app.screener.canslim import InstitutionalData
 from app.screener.data_source import AlpacaDataSource, FundamentalData, YFinanceDataSource, _yoy_growth
 from app.screener.sec_edgar import get_edgar_data
 from app.screener.sec_13f import latest_available_quarter, prior_quarter_end
+from app.screener.strategies import evaluate_all_strategies
 from app.screener.weinstein import InsufficientDataError, WeinsteinResult, analyze
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -185,7 +186,8 @@ def _upsert_price_snapshots(db: Session, ticker: Ticker, weekly: "pd.DataFrame")
 
 
 def _upsert_opportunity(db: Session, ticker: Ticker, run_date: date, score: scoring.CombinedScore,
-                         weinstein_result, criteria: dict[str, canslim.CriterionResult]) -> None:
+                         weinstein_result, criteria: dict[str, canslim.CriterionResult],
+                         strategies: dict | None = None) -> None:
     criteria_json = {k: {"value": v.value, "detail": v.detail} for k, v in criteria.items()}
     existing = db.query(Opportunity).filter_by(ticker_id=ticker.id, run_date=run_date).one_or_none()
     if existing is None:
@@ -204,6 +206,8 @@ def _upsert_opportunity(db: Session, ticker: Ticker, run_date: date, score: scor
     existing.canslim_passed_count = score.canslim_passed_count
     existing.combined_score = score.combined_score
     existing.risk_bucket = score.risk_bucket
+    if strategies is not None:
+        existing.strategies = strategies
 
 
 def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -> None:
@@ -242,8 +246,8 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
             try:
                 weekly = source.get_weekly_prices(symbol)
                 weinstein_result = analyze(weekly)
-                # Una sola llamada a SEC EDGAR extrae supply (S) y EPS (C/A)
-                supply_signal, edgar_eps = get_edgar_data(symbol)
+                # Una sola llamada a SEC EDGAR extrae supply (S), EPS (C/A) y métricas de calidad
+                supply_signal, edgar_eps, quality = get_edgar_data(symbol)
                 if isinstance(source, AlpacaDataSource):
                     fundamentals = FundamentalData(
                         eps_quarterly_yoy_growth=_yoy_growth(edgar_eps.quarterly, 4) if len(edgar_eps.quarterly) >= 5 else None,
@@ -254,6 +258,7 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
                 else:
                     fundamentals = source.get_fundamentals(symbol)
                 name, sector, institutional_pct = source.get_profile(symbol)
+                dividend_data = source.get_dividend_data(symbol)
                 # ATH: máximo entre histórico acumulado en BD y lo descargado hoy
                 ath_from_db = universe_ath.get(symbol)
                 ath_from_download = float(weekly["High"].max()) if not weekly.empty else None
@@ -267,10 +272,14 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
                 )
                 score = scoring.compute_combined_score(weinstein_result, criteria, weekly)
                 signal_type = _compute_signal_type(weinstein_result, criteria)
+                strategies = evaluate_all_strategies(
+                    weekly, fundamentals, supply_signal, quality, dividend_data,
+                    universe_returns=universe_returns if universe_returns else None,
+                )
 
                 ticker = _get_or_create_ticker(db, symbol, universe_name, name, sector)
                 _upsert_price_snapshots(db, ticker, weekly)
-                _upsert_opportunity(db, ticker, run_date, score, weinstein_result, criteria)
+                _upsert_opportunity(db, ticker, run_date, score, weinstein_result, criteria, strategies)
                 db.commit()
                 processed += 1
                 screened.append(ScreenedTicker(ticker, score, weinstein_result, criteria, signal_type))

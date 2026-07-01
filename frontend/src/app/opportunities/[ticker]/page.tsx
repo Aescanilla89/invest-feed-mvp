@@ -9,6 +9,7 @@ import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
 import { WeinsteinCycleDiagram } from "@/components/weinstein-cycle-diagram";
 import { ExplanationBullets } from "@/components/explanation-bullets";
+import { StrategyBadges } from "@/components/strategy-badges";
 import { getOpportunityDetail } from "@/lib/api";
 
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
@@ -21,7 +22,7 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
     notFound();
   }
 
-  const { name, sector, combined_score, risk_bucket, weinstein, canslim, explanation, last_updated, price_history } =
+  const { name, sector, combined_score, risk_bucket, weinstein, canslim, explanation, last_updated, price_history, strategies } =
     detail;
 
   return (
@@ -41,6 +42,7 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
             <StagePill weinstein={weinstein} />
             <RiskBadge risk={risk_bucket} />
           </div>
+          {strategies && <StrategyBadges strategies={strategies} className="mt-2" />}
         </div>
         <ScoreBadge score={combined_score} />
       </div>
@@ -85,6 +87,22 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
           <WeinsteinCycleDiagram weinstein={weinstein} />
         </div>
       </section>
+
+      {strategies && Object.values(strategies).some((r) => r.passed) && (
+        <section className="mt-6 rounded-xl border border-border/60 bg-card p-5">
+          <h2 className="font-heading text-base font-semibold">Estrategias adicionales</h2>
+          <ul className="mt-4 space-y-3">
+            {(Object.entries(strategies) as [string, { passed: boolean | null; score: number | null; details: string }][])
+              .filter(([, r]) => r.passed)
+              .map(([name, r]) => (
+                <li key={name} className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium capitalize">{name} {r.score !== null && `· ${r.score}/100`}</span>
+                  <span className="text-xs text-muted-foreground">{r.details}</span>
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-6 rounded-xl border border-border/60 bg-card p-5">
         <div className="flex items-center justify-between gap-3">

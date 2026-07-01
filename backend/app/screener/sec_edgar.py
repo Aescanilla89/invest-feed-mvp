@@ -48,6 +48,16 @@ class EpsSeriesData:
     annual: list[float] = field(default_factory=list)
 
 
+@dataclass
+class QualityMetrics:
+    """Métricas de calidad para el criterio Berkshire: márgenes, OCF/NI, ROE.
+    None significa que el dato no está disponible en EDGAR para este ticker."""
+    gross_margin: float | None       # GrossProfit / Revenues (3y avg)
+    net_margin: float | None         # NetIncomeLoss / Revenues (3y avg)
+    ocf_to_ni: float | None          # OperatingCF / NetIncomeLoss (3y avg)
+    roe: float | None                # NetIncomeLoss / StockholdersEquity (latest)
+
+
 _cik_map_cache: dict[str, int] | None = None
 
 
@@ -75,22 +85,22 @@ def _fetch_companyfacts(cik: int) -> dict | None:
     return resp.json()
 
 
-def get_edgar_data(symbol: str, quarters_to_compare: int = 4) -> tuple[SupplySignal, EpsSeriesData]:
-    """Una sola petición a companyfacts extrae criterio S (supply) y C/A (EPS).
+def get_edgar_data(symbol: str, quarters_to_compare: int = 4) -> tuple[SupplySignal, EpsSeriesData, QualityMetrics]:
+    """Una sola petición a companyfacts extrae S (supply), C/A (EPS) y métricas de calidad.
     Usar siempre esta función en lugar de get_supply_signal + get_eps_series por separado."""
     cik = get_cik(symbol)
     if cik is None:
-        return SupplySignal(None, None, 0), EpsSeriesData()
+        return SupplySignal(None, None, 0), EpsSeriesData(), QualityMetrics(None, None, None, None)
 
     try:
         facts = _fetch_companyfacts(cik)
     except Exception:
-        return SupplySignal(None, None, 0), EpsSeriesData()
+        return SupplySignal(None, None, 0), EpsSeriesData(), QualityMetrics(None, None, None, None)
 
     if facts is None:
-        return SupplySignal(None, None, 0), EpsSeriesData()
+        return SupplySignal(None, None, 0), EpsSeriesData(), QualityMetrics(None, None, None, None)
 
-    return _extract_supply(facts, quarters_to_compare), _extract_eps(facts)
+    return _extract_supply(facts, quarters_to_compare), _extract_eps(facts), _extract_quality(facts)
 
 
 def _extract_supply(facts: dict, quarters_to_compare: int) -> SupplySignal:
@@ -165,14 +175,79 @@ def _extract_eps(facts: dict) -> EpsSeriesData:
     )
 
 
+def _annual_series(facts: dict, *tags: str, unit: str = "USD") -> list[float]:
+    """Extrae la serie anual (10-K) de un concepto XBRL. Prueba tags en orden."""
+    for tag in tags:
+        node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        if not node:
+            continue
+        items = node.get("units", {}).get(unit, [])
+        annual: dict[str, float] = {}
+        for item in items:
+            if item.get("form") != "10-K":
+                continue
+            start, end = item.get("start"), item.get("end")
+            val = item.get("val")
+            if not start or not end or val is None:
+                continue
+            from datetime import date as _date
+            try:
+                days = (_date.fromisoformat(end) - _date.fromisoformat(start)).days
+            except ValueError:
+                continue
+            if 330 <= days <= 400:
+                annual[end] = float(val)
+        if annual:
+            return [v for _, v in sorted(annual.items())]
+    return []
+
+
+def _extract_quality(facts: dict) -> QualityMetrics:
+    """Extrae métricas de calidad del mismo companyfacts que ya descargamos."""
+    gross_profits = _annual_series(facts, "GrossProfit")
+    revenues = _annual_series(
+        facts,
+        "Revenues",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "SalesRevenueNet",
+        "RevenueFromContractWithCustomerIncludingAssessedTax",
+    )
+    net_incomes = _annual_series(facts, "NetIncomeLoss")
+    ocfs = _annual_series(facts, "NetCashProvidedByUsedInOperatingActivities")
+    equities = _annual_series(facts, "StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
+
+    def _avg_ratio(numerators: list[float], denominators: list[float], n_years: int = 3) -> float | None:
+        pairs = [
+            (n, d)
+            for n, d in zip(numerators[-n_years:], denominators[-n_years:])
+            if d and d != 0
+        ]
+        if not pairs:
+            return None
+        ratios = [n / d for n, d in pairs]
+        return sum(ratios) / len(ratios)
+
+    gross_margin = _avg_ratio(gross_profits, revenues)
+    net_margin = _avg_ratio(net_incomes, revenues)
+    ocf_to_ni = _avg_ratio(ocfs, net_incomes) if net_incomes and all(v > 0 for v in net_incomes[-3:]) else None
+    roe = (net_incomes[-1] / equities[-1]) if net_incomes and equities and equities[-1] != 0 else None
+
+    return QualityMetrics(
+        gross_margin=gross_margin,
+        net_margin=net_margin,
+        ocf_to_ni=ocf_to_ni,
+        roe=roe,
+    )
+
+
 # Wrappers de compatibilidad (llaman a get_edgar_data internamente)
 def get_supply_signal(symbol: str, quarters_to_compare: int = 4) -> SupplySignal:
-    supply, _ = get_edgar_data(symbol, quarters_to_compare)
+    supply, _, _ = get_edgar_data(symbol, quarters_to_compare)
     return supply
 
 
 def get_eps_series(symbol: str) -> EpsSeriesData:
-    _, eps = get_edgar_data(symbol)
+    _, eps, _ = get_edgar_data(symbol)
     return eps
 
 

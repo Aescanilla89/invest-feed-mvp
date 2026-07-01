@@ -15,6 +15,7 @@ _ADD_COLUMN_MIGRATIONS = [
     "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS weinstein_rsi FLOAT NOT NULL DEFAULT 50.0",
     "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS weinstein_ma_slope_pct FLOAT NOT NULL DEFAULT 0.0",
     "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS weinstein_relative_volume FLOAT NOT NULL DEFAULT 0.0",
+    "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS strategies TEXT DEFAULT '{}'",
 ]
 
 
