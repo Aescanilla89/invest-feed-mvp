@@ -5,7 +5,7 @@ import { CriteriaChips } from "@/components/criteria-chips";
 import { RiskBadge } from "@/components/risk-badge";
 import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
-import { ExplanationBullets } from "@/components/explanation-bullets";
+import { TradingViewMiniChart } from "@/components/tradingview-mini-chart";
 import type { Opportunity, SignalType } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -49,7 +49,7 @@ function SignalBadge({ signal_type }: { signal_type: SignalType }) {
 }
 
 export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
-  const { ticker, name, sector, combined_score, risk_bucket, weinstein, canslim, explanation, last_updated, signal_type } =
+  const { ticker, name, sector, combined_score, risk_bucket, weinstein, canslim, last_updated, signal_type } =
     opportunity;
 
   return (
@@ -89,15 +89,10 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
         <span className="shrink-0 text-xs text-muted-foreground">{canslim.score}</span>
       </div>
 
-      {/* Fila 5: explicación IA */}
-      <div className="relative z-10 border-l-2 border-(--color-accent) pl-3 pointer-events-none">
-        {explanation ? (
-          <ExplanationBullets explanation={explanation} className="flex flex-col gap-1.5" />
-        ) : (
-          <p className="text-sm italic text-muted-foreground">
-            Explicación pendiente de generar en la próxima corrida.
-          </p>
-        )}
+      {/* Fila 5: gráfica TradingView — overlay transparente encima para que el Link capture los clicks */}
+      <div className="relative z-10 overflow-hidden rounded-lg">
+        <TradingViewMiniChart symbol={ticker} />
+        <div className="absolute inset-0" aria-hidden />
       </div>
 
       {/* Fila 6: fecha + flecha */}
