@@ -8,6 +8,7 @@ import { RiskBadge } from "@/components/risk-badge";
 import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
 import { WeinsteinCycleDiagram } from "@/components/weinstein-cycle-diagram";
+import { ExplanationBullets } from "@/components/explanation-bullets";
 import { getOpportunityDetail } from "@/lib/api";
 
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
@@ -47,9 +48,10 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
       <section className="mt-8 rounded-xl border border-border/60 bg-card p-5">
         <h2 className="font-heading text-base font-semibold">Por qué es una oportunidad ahora</h2>
         {explanation ? (
-          <p className="mt-3 border-l-2 border-(--color-accent) pl-3 text-sm leading-relaxed text-foreground/90">
-            {explanation}
-          </p>
+          <ExplanationBullets
+            explanation={explanation}
+            className="mt-3 flex flex-col gap-2 border-l-2 border-(--color-accent) pl-3"
+          />
         ) : (
           <p className="mt-3 text-sm italic text-muted-foreground">
             Sin explicación generada todavía para esta corrida.

@@ -5,6 +5,7 @@ import { CriteriaChips } from "@/components/criteria-chips";
 import { RiskBadge } from "@/components/risk-badge";
 import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
+import { ExplanationBullets } from "@/components/explanation-bullets";
 import type { Opportunity, SignalType } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -91,7 +92,7 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
       {/* Fila 5: explicación IA */}
       <div className="relative z-10 border-l-2 border-(--color-accent) pl-3 pointer-events-none">
         {explanation ? (
-          <p className="text-sm leading-relaxed text-foreground/90">{explanation}</p>
+          <ExplanationBullets explanation={explanation} className="flex flex-col gap-1.5" />
         ) : (
           <p className="text-sm italic text-muted-foreground">
             Explicación pendiente de generar en la próxima corrida.
