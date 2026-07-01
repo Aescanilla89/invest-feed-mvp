@@ -232,9 +232,10 @@ def evaluate_berkshire(
     # 6. Consistencia EPS (>= 3 de los últimos 5 años con beneficio creciente)
     eps_a = fundamentals.raw_annual_eps
     if len(eps_a) >= 5:
-        positive_years = sum(1 for i in range(-1, -6, -1) if eps_a[i - 1] != 0 and eps_a[i] > eps_a[i - 1])
+        # 4 comparaciones consecutivas entre los últimos 5 años (índices -1..-5)
+        positive_years = sum(1 for i in range(-1, -5, -1) if eps_a[i - 1] != 0 and eps_a[i] > eps_a[i - 1])
         ok = positive_years >= 3
-        criteria.append((ok, f"Consistencia EPS: {positive_years}/5 años positivos (umbral 3)"))
+        criteria.append((ok, f"Consistencia EPS: {positive_years}/4 años creciente (umbral 3)"))
     else:
         criteria.append((None, "Menos de 5 años de EPS anual para evaluar consistencia"))
 
