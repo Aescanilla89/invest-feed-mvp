@@ -61,15 +61,28 @@ def _strategies_to_schema(raw: dict) -> dict[str, StrategyResultSchema]:
     return result
 
 
+def _parse_strategies(opp: Opportunity) -> dict:
+    raw = getattr(opp, "strategies", None)
+    if not raw:
+        return {}
+    if isinstance(raw, str):
+        import json as _json
+        try:
+            raw = _json.loads(raw)
+        except Exception:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
 def _has_strategy_signal(opp: Opportunity, strategy: str) -> bool:
-    raw = getattr(opp, "strategies", None) or {}
+    raw = _parse_strategies(opp)
     return bool((raw.get(strategy) or {}).get("passed"))
 
 
 def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -> OpportunitySchema:
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
-    raw_strategies = getattr(opp, "strategies", None) or {}
+    raw_strategies = _parse_strategies(opp)
     return OpportunitySchema(
         ticker=ticker.symbol,
         name=ticker.name,
