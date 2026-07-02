@@ -122,12 +122,17 @@ def list_opportunities(
     if run_date is None:
         return []
 
+    # Cuando se filtra por estrategia específica, no aplicar min_score
+    # (las estrategias tienen su propio score, independiente del combined_score Weinstein+CAN SLIM)
+    apply_score_filter = not (strategy and strategy in _STRATEGY_NAMES)
+
     query = (
         db.query(Opportunity, Ticker)
         .join(Ticker, Opportunity.ticker_id == Ticker.id)
         .filter(Opportunity.run_date == run_date)
-        .filter(Opportunity.combined_score >= min_score)
     )
+    if apply_score_filter:
+        query = query.filter(Opportunity.combined_score >= min_score)
     if risk:
         query = query.filter(Opportunity.risk_bucket == risk)
     if sector:

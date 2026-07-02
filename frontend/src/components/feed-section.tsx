@@ -1,64 +1,141 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle } from "lucide-react";
-import { FilterBar, type FeedFilters } from "@/components/filter-bar";
+import { AlertTriangle, TrendingUp, Search, Award, DollarSign, Zap } from "lucide-react";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
 import { EmptyState } from "@/components/empty-state";
-import { StrategyTabs, type ActiveStrategy } from "@/components/strategy-tabs";
-import { getOpportunities, type Opportunity } from "@/lib/api";
-
-const DEFAULT_FILTERS: FeedFilters = { minScore: 80, risk: "todos", sector: "todos", sort: "score" };
+import { getOpportunities, type Opportunity, type StrategyName } from "@/lib/api";
 
 const container = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.05 } },
 };
-
 const item = {
   hidden: { opacity: 0, y: 14 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 1, 0.5, 1] as const } },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.25, 1, 0.5, 1] as const } },
 };
 
+const STRATEGY_SECTIONS: {
+  key: StrategyName;
+  label: string;
+  sublabel: string;
+  icon: React.ElementType;
+  classes: string;
+}[] = [
+  {
+    key: "minervini",
+    label: "Minervini SEPA",
+    sublabel: "Trend Template · precio sobre MAs · fuerza relativa",
+    icon: TrendingUp,
+    classes: "text-purple-600 dark:text-purple-400",
+  },
+  {
+    key: "lynch",
+    label: "Lynch GARP",
+    sublabel: "Growth at a Reasonable Price · PEG ratio",
+    icon: Search,
+    classes: "text-emerald-600 dark:text-emerald-400",
+  },
+  {
+    key: "berkshire",
+    label: "Berkshire Quality",
+    sublabel: "Márgenes · OCF/NI · ROE · sin dilución",
+    icon: Award,
+    classes: "text-amber-600 dark:text-amber-400",
+  },
+  {
+    key: "dividendos",
+    label: "Dividendos",
+    sublabel: "Yield ≥2.5% · payout sostenible · EPS creciente",
+    icon: DollarSign,
+    classes: "text-sky-600 dark:text-sky-400",
+  },
+];
+
+interface FeedData {
+  top: Opportunity[];
+  byStrategy: Record<StrategyName, Opportunity[]>;
+}
+
+function CardGrid({ opportunities }: { opportunities: Opportunity[] }) {
+  if (opportunities.length === 0) return null;
+  return (
+    <motion.div
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
+      {opportunities.map((o) => (
+        <motion.div key={o.ticker} variants={item}>
+          <OpportunityCard opportunity={o} />
+        </motion.div>
+      ))}
+    </motion.div>
+  );
+}
+
+function SectionHeader({
+  icon: Icon,
+  label,
+  sublabel,
+  iconClass,
+  count,
+}: {
+  icon: React.ElementType;
+  label: string;
+  sublabel: string;
+  iconClass: string;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`rounded-lg border border-current/20 bg-current/10 p-2 ${iconClass}`}>
+        <Icon className="size-4" aria-hidden />
+      </div>
+      <div>
+        <h2 className="font-heading text-base font-semibold leading-none">{label}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{sublabel}</p>
+      </div>
+      <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        {count}
+      </span>
+    </div>
+  );
+}
+
 export function FeedSection() {
-  const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null);
+  const [data, setData] = useState<FeedData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FeedFilters>(DEFAULT_FILTERS);
-  const [activeStrategy, setActiveStrategy] = useState<ActiveStrategy>("todas");
 
   useEffect(() => {
     let cancelled = false;
-    setOpportunities(null);
-    const strategy = activeStrategy !== "todas" ? activeStrategy : undefined;
-    getOpportunities({ strategy, limit: 100 } as Parameters<typeof getOpportunities>[0])
-      .then((data) => {
-        if (!cancelled) setOpportunities(data);
-      })
-      .catch(() => {
-        if (!cancelled) setError("No se pudo conectar con el backend. ¿Está corriendo la API en el puerto esperado?");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeStrategy]);
 
-  const sectors = useMemo(() => {
-    if (!opportunities) return [];
-    return Array.from(new Set(opportunities.map((o) => o.sector).filter((s): s is string => Boolean(s)))).sort();
-  }, [opportunities]);
+    async function load() {
+      try {
+        const [top, minervini, lynch, berkshire, dividendos] = await Promise.all([
+          getOpportunities({ limit: 4, minScore: 40, sort: "score" }),
+          getOpportunities({ limit: 6, strategy: "minervini" }),
+          getOpportunities({ limit: 6, strategy: "lynch" }),
+          getOpportunities({ limit: 6, strategy: "berkshire" }),
+          getOpportunities({ limit: 6, strategy: "dividendos" }),
+        ]);
+        if (!cancelled) {
+          setData({
+            top,
+            byStrategy: { minervini, lynch, berkshire, dividendos },
+          });
+        }
+      } catch {
+        if (!cancelled) setError("No se pudo conectar con el backend.");
+      }
+    }
 
-  const filtered = useMemo(() => {
-    if (!opportunities) return [];
-    let result = opportunities.filter((o) => o.combined_score >= filters.minScore);
-    if (filters.risk !== "todos") result = result.filter((o) => o.risk_bucket === filters.risk);
-    if (filters.sector !== "todos") result = result.filter((o) => o.sector === filters.sector);
-    result = [...result].sort((a, b) =>
-      filters.sort === "score" ? b.combined_score - a.combined_score : a.weinstein.stage - b.weinstein.stage,
-    );
-    return result;
-  }, [opportunities, filters]);
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   if (error) {
     return (
@@ -69,42 +146,63 @@ export function FeedSection() {
     );
   }
 
-  return (
-    <div className="flex flex-col gap-6">
-      <StrategyTabs active={activeStrategy} onChange={setActiveStrategy} />
-
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <FilterBar filters={filters} sectors={sectors} onChange={setFilters} />
-        {opportunities && (
-          <p className="text-sm tabular text-muted-foreground">
-            <span className="font-semibold text-foreground">{filtered.length}</span> de {opportunities.length}{" "}
-            oportunidades
-          </p>
-        )}
+  if (!data) {
+    return (
+      <div className="flex flex-col gap-10">
+        {[...Array(3)].map((_, s) => (
+          <div key={s} className="flex flex-col gap-4">
+            <div className="h-10 w-48 animate-pulse rounded-lg bg-muted" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[...Array(s === 0 ? 4 : 6)].map((_, i) => <OpportunityCardSkeleton key={i} />)}
+            </div>
+          </div>
+        ))}
       </div>
+    );
+  }
 
-      {!opportunities ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <OpportunityCardSkeleton key={i} />
-          ))}
+  return (
+    <div className="flex flex-col gap-10">
+      {/* Sección 1: Destacadas (Weinstein + CAN SLIM) */}
+      <section>
+        <SectionHeader
+          icon={Zap}
+          label="Destacadas"
+          sublabel="Mejor combined score · Weinstein + CAN SLIM"
+          iconClass="text-(--color-accent)"
+          count={data.top.length}
+        />
+        <div className="mt-4">
+          {data.top.length === 0 ? (
+            <EmptyState message="Sin señales Weinstein/CAN SLIM activas hoy." />
+          ) : (
+            <CardGrid opportunities={data.top} />
+          )}
         </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState message="No hay oportunidades que cumplan estos filtros ahora mismo. Prueba bajando el score mínimo o ampliando el riesgo." />
-      ) : (
-        <motion.div
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-          variants={container}
-          initial="hidden"
-          animate="show"
-        >
-          {filtered.map((opportunity) => (
-            <motion.div key={opportunity.ticker} variants={item}>
-              <OpportunityCard opportunity={opportunity} />
-            </motion.div>
-          ))}
-        </motion.div>
-      )}
+      </section>
+
+      {/* Secciones por estrategia */}
+      {STRATEGY_SECTIONS.map(({ key, label, sublabel, icon, classes }) => {
+        const opps = data.byStrategy[key];
+        return (
+          <section key={key}>
+            <SectionHeader
+              icon={icon}
+              label={label}
+              sublabel={sublabel}
+              iconClass={classes}
+              count={opps.length}
+            />
+            <div className="mt-4">
+              {opps.length === 0 ? (
+                <EmptyState message={`Sin oportunidades ${label} detectadas hoy.`} />
+              ) : (
+                <CardGrid opportunities={opps} />
+              )}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

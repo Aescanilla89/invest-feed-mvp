@@ -11,13 +11,22 @@ const SUFFIX_TO_EXCHANGE: Record<string, string> = {
   ".AS": "EURONEXT",
 };
 
+// Tickers que usan punto en TradingView pero guión en nuestro DB (formato Alpaca)
+// e.g. BRK-B → BRK.B, BF-B → BF.B
+function normalizeTicker(symbol: string): string {
+  return symbol.replace(/-([A-Z])$/, ".$1");
+}
+
 function getTVSymbol(symbol: string): string {
+  const normalized = normalizeTicker(symbol);
   for (const [suffix, exchange] of Object.entries(SUFFIX_TO_EXCHANGE)) {
-    if (symbol.endsWith(suffix)) {
-      return `${exchange}:${symbol.slice(0, -suffix.length)}`;
+    if (normalized.endsWith(suffix)) {
+      return `${exchange}:${normalized.slice(0, -suffix.length)}`;
     }
   }
-  return symbol;
+  // Para acciones US: usar prefijo NASDAQ por defecto — TradingView redirige
+  // automáticamente al exchange correcto si el ticker existe en NYSE/AMEX
+  return `NASDAQ:${normalized}`;
 }
 
 export function TradingViewMiniChart({ symbol }: { symbol: string }) {
