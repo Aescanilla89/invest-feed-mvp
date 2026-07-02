@@ -429,7 +429,17 @@ _POLYMARKET_USER_AGENT = "invest-feed-mvp research@invest-feed.com"
 _FED_WORD_RE = re.compile(r"\bfed\b")
 _FED_KEYWORDS_RE = re.compile(r"\b(?:rate|fomc|decision|cut|hike)\b")
 _GEOPOLITICAL_KEYWORDS_RE = re.compile(
-    r"\b(?:war|conflict|attack|ceasefire|treaty|sanctions?|invasion)\b"
+    r"\b(?:"
+    # Términos temáticos de conflicto/geopolítica
+    r"war|conflict|attack|ceasefire|treaty|sanctions?|invasion|"
+    r"tariffs?|coup|nuclear|military|troops|missile|strike|blockade|"
+    r"annexation|occupation|nato|un security council|"
+    # Países/regiones con tensión geopolítica activa (riesgo asumido de algún
+    # falso positivo puntual, p.ej. un mercado deportivo que mencione el país;
+    # aceptable dado el objetivo de cobertura amplia de este feed)
+    r"ukraine|russia|taiwan|gaza|israel|palestine|iran|north korea|"
+    r"venezuela|syria|houthi|hezbollah"
+    r")\b"
 )
 
 
@@ -548,25 +558,44 @@ def detect_geopolitical_events(top_n: int = 5) -> list[CatalystData]:
     return results
 
 
-def _fetch_polymarket_markets(limit: int = 100) -> list[dict]:
-    """Descarga mercados activos de Polymarket (API pública gamma, sin auth)."""
-    params = {
-        "active": "true",
-        "closed": "false",
-        "limit": str(limit),
-        "offset": "0",
-        "order": "volume",
-        "ascending": "false",
-    }
-    url = f"{_POLYMARKET_API_URL}?{urllib.parse.urlencode(params)}"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": _POLYMARKET_USER_AGENT})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-        return data if isinstance(data, list) else []
-    except Exception:
-        logger.debug("Error descargando mercados de Polymarket", exc_info=True)
-        return []
+_POLYMARKET_PAGE_SIZE = 100  # límite real por página que respeta la gamma API
+
+
+def _fetch_polymarket_markets(limit: int = 500) -> list[dict]:
+    """Descarga los `limit` mercados activos de mayor volumen de Polymarket
+    (API pública gamma, sin auth). La API cap a 100 resultados por página,
+    así que pagina via `offset` hasta reunir `limit` o agotar resultados."""
+    markets: list[dict] = []
+    offset = 0
+
+    while len(markets) < limit:
+        page_size = min(_POLYMARKET_PAGE_SIZE, limit - len(markets))
+        params = {
+            "active": "true",
+            "closed": "false",
+            "limit": str(page_size),
+            "offset": str(offset),
+            "order": "volume",
+            "ascending": "false",
+        }
+        url = f"{_POLYMARKET_API_URL}?{urllib.parse.urlencode(params)}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _POLYMARKET_USER_AGENT})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                page = json.loads(resp.read())
+        except Exception:
+            logger.debug("Error descargando mercados de Polymarket (offset=%d)", offset, exc_info=True)
+            break
+
+        if not isinstance(page, list) or not page:
+            break
+
+        markets.extend(page)
+        offset += len(page)
+        if len(page) < page_size:
+            break  # última página, no hay más mercados
+
+    return markets
 
 
 def _parse_polymarket_outcomes(market: dict) -> list[tuple[str, float]] | None:
