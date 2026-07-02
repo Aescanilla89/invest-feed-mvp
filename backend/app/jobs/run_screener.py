@@ -310,11 +310,9 @@ def _generate_explanations(db: Session, run_date: date, screened: list[ScreenedT
         logger.warning("Generación de explicaciones desactivada: %s", exc)
         return
 
-    # Solo se generan explicaciones para tickers con señal de entrada real.
-    # Esto acota el gasto de API de Claude a lo que realmente aparece en el feed.
     candidates = [
         s for s in screened
-        if s.signal_type is not None and s.score.combined_score >= settings.explanation_min_score
+        if s.score.combined_score >= settings.explanation_min_score
     ]
     candidates.sort(key=lambda s: s.score.combined_score, reverse=True)
     candidates = candidates[: settings.explanation_max_per_run]
