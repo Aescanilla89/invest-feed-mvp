@@ -7,7 +7,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Header
 
 from app.core.config import settings
-from app.jobs import run_screener
+from app.jobs import detect_catalysts, run_screener
 from app.screener import universe
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -142,6 +142,21 @@ def trigger_institutional_update(
     thread.join(timeout=600)  # máx 10 min — síncrono para poder ver el resultado
 
     return result_container if result_container else {"status": "running (timeout 10min excedido)"}
+
+
+@router.post("/detect-catalysts")
+def trigger_detect_catalysts(_: None = Depends(_verify_token)) -> dict:
+    """Lanza la detección de catalizadores en background. Devuelve inmediatamente."""
+    def _job():
+        try:
+            detect_catalysts.run()
+        except Exception:
+            import logging
+            logging.getLogger("admin").exception("detect_catalysts background job falló")
+
+    thread = threading.Thread(target=_job, daemon=True)
+    thread.start()
+    return {"status": "started"}
 
 
 @router.get("/diagnose")

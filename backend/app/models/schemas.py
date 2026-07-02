@@ -61,3 +61,20 @@ class DataLimitation(BaseModel):
 class DataLimitationsSchema(BaseModel):
     source_notes: list[str]
     canslim_criteria: list[DataLimitation]
+
+
+class CatalystSchema(BaseModel):
+    id: int
+    ticker: str | None
+    company_name: str | None
+    sector: str | None
+    catalyst_type: str
+    title: str
+    description: str | None
+    detected_date: date
+    extra: dict
+    combined_score: int | None
+    classification: str | None  # "oro" | "plata" | "bronce"
+    explanation: str | None
+
+    model_config = {"from_attributes": True}

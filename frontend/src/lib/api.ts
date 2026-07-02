@@ -125,3 +125,25 @@ export async function getDataLimitations(): Promise<DataLimitations> {
   }
   return fetchJson<DataLimitations>("/meta/data-limitations");
 }
+
+export type CatalystType = "earnings" | "insider_buy";
+export type CatalystClassification = "oro" | "plata" | "bronce";
+
+export interface Catalyst {
+  id: number;
+  ticker: string | null;
+  company_name: string | null;
+  sector: string | null;
+  catalyst_type: CatalystType;
+  title: string;
+  description: string | null;
+  detected_date: string;
+  extra: Record<string, unknown>;
+  combined_score: number | null;
+  classification: CatalystClassification | null;
+  explanation: string | null;
+}
+
+export async function getCatalysts(days = 7): Promise<Catalyst[]> {
+  return fetchJson<Catalyst[]>(`/catalysts?days=${days}`);
+}

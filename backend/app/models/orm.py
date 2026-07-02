@@ -125,3 +125,22 @@ class Explanation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     ticker: Mapped["Ticker"] = relationship(back_populates="explanations")
+
+
+class Catalyst(Base):
+    """Catalizador de inversión detectado diariamente.
+    Puede estar ligado a un ticker de nuestro universo o ser un evento macro (ticker_id=None).
+    source_id garantiza idempotencia: mismo catalizador no se inserta dos veces."""
+    __tablename__ = "catalysts"
+    __table_args__ = (UniqueConstraint("source_id", name="uq_catalyst_source"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticker_id: Mapped[int | None] = mapped_column(ForeignKey("tickers.id"), nullable=True, index=True)
+    detected_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    catalyst_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "earnings" | "insider_buy"
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    extra: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+    ticker: Mapped["Ticker | None"] = relationship(foreign_keys=[ticker_id])
