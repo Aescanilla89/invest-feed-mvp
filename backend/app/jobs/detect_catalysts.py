@@ -1,8 +1,10 @@
-"""Job: detecta catalizadores de inversión (earnings + insider buys) para los
-tickers activos y los guarda en la tabla `catalysts`.
+"""Job: detecta catalizadores de inversión (earnings, insider buys y
+catalizadores macro) y los guarda en la tabla `catalysts`.
 
-Ejecutar DESPUÉS del screener diario. Solo analiza los tickers que ya tienen
-oportunidades en BD (no el universo completo) para mantener el tiempo acotado.
+Ejecutar DESPUÉS del screener diario. Earnings/insider buys solo analizan los
+tickers que ya tienen oportunidades en BD (no el universo completo) para
+mantener el tiempo acotado. Los catalizadores macro (FED, geopolítica, datos
+macro EEUU) no dependen de ningún ticker — se ejecutan siempre.
 
 Uso:
     python -m app.jobs.detect_catalysts
@@ -14,7 +16,14 @@ from datetime import date, timedelta
 
 from app.core.db import SessionLocal, init_db
 from app.models.orm import Catalyst, Opportunity, Ticker
-from app.screener.catalysts import CatalystData, detect_earnings, detect_insider_buys
+from app.screener.catalysts import (
+    CatalystData,
+    detect_earnings,
+    detect_fed_meeting,
+    detect_geopolitical_events,
+    detect_insider_buys,
+    detect_macro_data_releases,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("detect_catalysts")
@@ -38,15 +47,19 @@ def run(lookback_days_opps: int = 7) -> dict:
         )
         symbols = [r[0] for r in rows]
 
-        if not symbols:
-            logger.warning("No hay tickers con oportunidades recientes — skipping")
-            return {"status": "skipped", "reason": "no symbols"}
-
-        logger.info("Detectando catalizadores para %d tickers activos", len(symbols))
-
         all_catalysts: list[CatalystData] = []
-        all_catalysts.extend(detect_earnings(symbols, lookback_days=3))
-        all_catalysts.extend(detect_insider_buys(symbols, lookback_days=14))
+
+        if symbols:
+            logger.info("Detectando catalizadores para %d tickers activos", len(symbols))
+            all_catalysts.extend(detect_earnings(symbols, lookback_days=3))
+            all_catalysts.extend(detect_insider_buys(symbols, lookback_days=14))
+        else:
+            logger.warning("No hay tickers con oportunidades recientes — solo catalizadores macro")
+
+        # Catalizadores macro/market-wide (ticker_id=None) — independientes del universo
+        all_catalysts.extend(detect_fed_meeting())
+        all_catalysts.extend(detect_geopolitical_events())
+        all_catalysts.extend(detect_macro_data_releases())
 
         saved, skipped = 0, 0
         for cd in all_catalysts:
@@ -54,7 +67,7 @@ def run(lookback_days_opps: int = 7) -> dict:
                 skipped += 1
                 continue
 
-            ticker = db.query(Ticker).filter_by(symbol=cd.symbol).one_or_none()
+            ticker = db.query(Ticker).filter_by(symbol=cd.symbol).one_or_none() if cd.symbol else None
             db.add(Catalyst(
                 ticker_id=ticker.id if ticker else None,
                 detected_date=today,

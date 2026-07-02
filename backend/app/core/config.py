@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     alpaca_api_key: str | None = None
     alpaca_secret_key: str | None = None
 
+    # FRED (St. Louis Fed) API — usada por detect_macro_data_releases para
+    # próximas fechas de CPI/NFP/PIB. Gratuita: https://fred.stlouisfed.org/docs/api/api_key.html
+    # Si no está configurada, ese detector se omite (no crashea el job).
+    fred_api_key: str | None = None
+
     # Control de coste: solo se generan explicaciones para las mejores
     # oportunidades de la corrida, no para todo el universo escaneado.
     explanation_min_score: int = 40

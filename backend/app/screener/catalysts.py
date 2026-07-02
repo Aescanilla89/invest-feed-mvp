@@ -3,11 +3,18 @@
 Fuentes:
 - Earnings: yfinance ticker.earnings_dates (Q2 season ~11 julio)
 - Insider buying: SEC EDGAR Form 4 por ticker (Railway-compatible; Yahoo Finance no)
+- FED rate decisions: Polymarket gamma API (mercado de predicción, macro/market-wide)
+- Geopolítica: Polymarket gamma API (feed de mercados activos, macro/market-wide)
+- Datos macro EEUU: FRED releases/dates (CPI, NFP, PIB) — requiere FRED_API_KEY
 
 Estrategia insider:
 1. Obtiene CIKs de nuestros tickers via EDGAR company_tickers.json
 2. Para cada CIK, consulta submissions.json → busca Form 4 recientes
 3. Descarga XML del Form 4 → verifica transacción tipo P (Purchase)
+
+Los detectores macro (FED, geopolítica, datos macro) no dependen de nuestro
+universo de tickers: producen catalizadores con ticker_id=None (soportado
+nativamente por el modelo ORM `Catalyst`).
 """
 from __future__ import annotations
 
@@ -15,6 +22,7 @@ import json
 import logging
 import math
 import time
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -28,10 +36,10 @@ _EDGAR_DELAY = 0.12  # 10 req/s max según EDGAR ToS
 
 @dataclass
 class CatalystData:
-    catalyst_type: str  # "earnings" | "insider_buy"
-    symbol: str
+    catalyst_type: str  # "earnings" | "insider_buy" | "fed_meeting" | "geopolitical" | "macro_data"
     title: str
     source_id: str
+    symbol: str | None = None  # None para catalizadores macro/market-wide
     description: str | None = None
     extra: dict = field(default_factory=dict)
 
@@ -405,6 +413,263 @@ def _parse_ownership_xml(root: ET.Element) -> dict | None:
         "shares": shares,
         "value_usd": value_usd,
     }
+
+
+# ---------------------------------------------------------------------------
+# FED rate decisions — Polymarket gamma API (macro, ticker_id=None)
+# ---------------------------------------------------------------------------
+
+_POLYMARKET_API_URL = "https://gamma-api.polymarket.com/markets"
+_POLYMARKET_USER_AGENT = "invest-feed-mvp research@invest-feed.com"
+
+# Mismas listas de keywords que el bot de Polymarket (inferir_categoria)
+_FED_KEYWORDS = ("rate", "fomc", "decision", "cut", "hike")
+_GEOPOLITICAL_KEYWORDS = ("war", "conflict", "attack", "ceasefire", "treaty", "sanctions", "invasion")
+
+
+def detect_fed_meeting() -> list[CatalystData]:
+    """Detecta el mercado de Polymarket sobre la próxima decisión de tipos de la FED.
+
+    Filtra mercados cuya pregunta contiene "fed" + (rate/fomc/decision/cut/hike)
+    y escoge el de mayor volumen (la reunión FOMC más relevante/próxima).
+    """
+    markets = _fetch_polymarket_markets()
+    if not markets:
+        logger.warning("No se pudo obtener mercados de Polymarket para FED")
+        return []
+
+    candidates = []
+    for m in markets:
+        question = (m.get("question") or "").strip().lower()
+        if not question or "fed" not in question:
+            continue
+        if any(kw in question for kw in _FED_KEYWORDS):
+            candidates.append(m)
+
+    if not candidates:
+        logger.info("Sin mercados FED relevantes en Polymarket")
+        return []
+
+    best = max(candidates, key=lambda m: _safe_float(m.get("volume")) or 0.0)
+
+    try:
+        outcomes = _parse_polymarket_outcomes(best)
+        if not outcomes:
+            return []
+
+        outcomes.sort(key=lambda pair: pair[1], reverse=True)
+        description = " · ".join(f"{name}: {price * 100:.0f}%" for name, price in outcomes)
+
+        question = (best.get("question") or "").strip()
+        end_date = best.get("endDate", "") or ""
+        market_key = best.get("id") or best.get("slug") or question[:40]
+        slug = best.get("slug", "")
+
+        return [CatalystData(
+            catalyst_type="fed_meeting",
+            title=f"Reunión FED: {question}"[:255],
+            source_id=f"fed_meeting_{market_key}_{end_date[:10]}",
+            description=description[:1000] if description else None,
+            extra={
+                "question": question,
+                "end_date": end_date,
+                "outcomes": [name for name, _ in outcomes],
+                "prices": [price for _, price in outcomes],
+                "volume": _safe_float(best.get("volume")),
+                "url": f"https://polymarket.com/event/{slug}" if slug else None,
+            },
+        )]
+
+    except Exception:
+        logger.debug("Error procesando mercado FED de Polymarket", exc_info=True)
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Riesgo geopolítico — Polymarket gamma API (feed, macro, ticker_id=None)
+# ---------------------------------------------------------------------------
+
+def detect_geopolitical_events(top_n: int = 5) -> list[CatalystData]:
+    """Detecta los mercados geopolíticos más relevantes de Polymarket (feed continuo).
+
+    A diferencia de `detect_fed_meeting`, no busca un único evento sino los
+    `top_n` mercados por volumen relacionados con guerra/conflicto/sanciones.
+    """
+    markets = _fetch_polymarket_markets()
+    if not markets:
+        logger.warning("No se pudo obtener mercados de Polymarket para geopolítica")
+        return []
+
+    candidates = [
+        m for m in markets
+        if (m.get("question") or "").strip()
+        and any(kw in m["question"].lower() for kw in _GEOPOLITICAL_KEYWORDS)
+    ]
+    candidates.sort(key=lambda m: _safe_float(m.get("volume")) or 0.0, reverse=True)
+
+    results: list[CatalystData] = []
+    for m in candidates[:top_n]:
+        try:
+            outcomes = _parse_polymarket_outcomes(m)
+            if not outcomes:
+                continue
+            outcomes.sort(key=lambda pair: pair[1], reverse=True)
+            leader_name, leader_price = outcomes[0]
+
+            question = m["question"].strip()
+            end_date = m.get("endDate", "") or ""
+            market_key = m.get("id") or m.get("slug") or question[:40]
+            slug = m.get("slug", "")
+
+            results.append(CatalystData(
+                catalyst_type="geopolitical",
+                title=question[:255],
+                source_id=f"geopolitical_{market_key}",
+                description=f"{leader_name}: {leader_price * 100:.0f}%",
+                extra={
+                    "question": question,
+                    "end_date": end_date,
+                    "outcomes": [name for name, _ in outcomes],
+                    "prices": [price for _, price in outcomes],
+                    "volume": _safe_float(m.get("volume")),
+                    "url": f"https://polymarket.com/event/{slug}" if slug else None,
+                },
+            ))
+        except Exception:
+            logger.debug("Error procesando mercado geopolítico de Polymarket", exc_info=True)
+
+    logger.info("Mercados geopolíticos detectados: %d", len(results))
+    return results
+
+
+def _fetch_polymarket_markets(limit: int = 100) -> list[dict]:
+    """Descarga mercados activos de Polymarket (API pública gamma, sin auth)."""
+    params = {
+        "active": "true",
+        "closed": "false",
+        "limit": str(limit),
+        "offset": "0",
+        "order": "volume",
+        "ascending": "false",
+    }
+    url = f"{_POLYMARKET_API_URL}?{urllib.parse.urlencode(params)}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _POLYMARKET_USER_AGENT})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+        return data if isinstance(data, list) else []
+    except Exception:
+        logger.debug("Error descargando mercados de Polymarket", exc_info=True)
+        return []
+
+
+def _parse_polymarket_outcomes(market: dict) -> list[tuple[str, float]] | None:
+    """Extrae pares (nombre, precio 0-1 ~ probabilidad) de un mercado Polymarket.
+
+    `outcomes` y `outcomePrices` vienen codificados como JSON-string. Devuelve
+    None si el mercado no tiene datos de outcomes válidos.
+    """
+    try:
+        outcomes_raw = market.get("outcomes", "[]")
+        prices_raw = market.get("outcomePrices", "[]")
+        outcomes = json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else outcomes_raw
+        prices = json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
+
+        if not outcomes or not prices or len(outcomes) != len(prices):
+            return None
+
+        pairs = []
+        for name, price_raw in zip(outcomes, prices):
+            price = _safe_float(price_raw)
+            if price is None:
+                continue
+            pairs.append((str(name), price))
+
+        return pairs or None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Próximos datos macro EEUU — FRED releases/dates (macro, ticker_id=None)
+# ---------------------------------------------------------------------------
+
+_FRED_API_URL = "https://api.stlouisfed.org/fred/releases/dates"
+
+# release_id conocidos de FRED (St. Louis Fed). GDP verificado manualmente:
+# https://fred.stlouisfed.org/release?rid=53 → "Gross Domestic Product" (BEA).
+_FRED_RELEASES = {
+    10: "CPI (inflación)",
+    50: "Empleo no agrícola (NFP)",
+    53: "PIB (GDP)",
+}
+
+
+def detect_macro_data_releases(days_ahead: int = 30) -> list[CatalystData]:
+    """Detecta próximas fechas de publicación de datos macro EEUU via FRED.
+
+    Requiere la variable de entorno FRED_API_KEY (St. Louis Fed, gratuita).
+    Si no está configurada, se omite el detector sin fallar el job (mismo
+    estilo defensivo que el `except ImportError` de detect_earnings).
+    """
+    from app.core.config import settings
+
+    api_key = settings.fred_api_key
+    if not api_key:
+        logger.warning("FRED_API_KEY no configurada, skipping macro_data releases")
+        return []
+
+    today = date.today()
+    horizon = today + timedelta(days=days_ahead)
+    results: list[CatalystData] = []
+
+    for release_id, label in _FRED_RELEASES.items():
+        try:
+            next_date = _fetch_next_fred_release_date(release_id, api_key, today, horizon)
+            if next_date is None:
+                continue
+
+            results.append(CatalystData(
+                catalyst_type="macro_data",
+                title=f"Próximo dato: {label}",
+                source_id=f"macro_data_{release_id}_{next_date.isoformat()}",
+                description=f"Publicación programada: {next_date.isoformat()}",
+                extra={
+                    "release_id": release_id,
+                    "release_name": label,
+                    "date": next_date.isoformat(),
+                },
+            ))
+        except Exception:
+            logger.debug("Error obteniendo fechas FRED release_id=%s", release_id, exc_info=True)
+
+    logger.info("Datos macro detectados: %d", len(results))
+    return results
+
+
+def _fetch_next_fred_release_date(
+    release_id: int, api_key: str, today: date, horizon: date
+) -> date | None:
+    """Consulta FRED releases/dates y devuelve la próxima fecha dentro del horizonte."""
+    params = {
+        "release_id": str(release_id),
+        "api_key": api_key,
+        "file_type": "json",
+        "include_release_dates_with_no_data": "true",
+        "sort_order": "asc",
+    }
+    url = f"{_FRED_API_URL}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={"User-Agent": _EDGAR_USER_AGENT})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+
+    for entry in data.get("release_dates", []):
+        d = _to_date(entry.get("date"))
+        if d is None:
+            continue
+        if today <= d <= horizon:
+            return d
+    return None
 
 
 # ---------------------------------------------------------------------------
