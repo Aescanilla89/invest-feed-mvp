@@ -1,16 +1,20 @@
 """Detección de catalizadores de inversión.
 
 Fuentes:
-- Earnings: yfinance ticker.earnings_dates (Q2 earnings season arranca ~11 julio)
-- Insider buying: SEC EDGAR Form 4 RSS (funciona desde Railway; Yahoo Finance no)
+- Earnings: yfinance ticker.earnings_dates (Q2 season ~11 julio)
+- Insider buying: SEC EDGAR Form 4 por ticker (Railway-compatible; Yahoo Finance no)
 
-El job corre sobre los tickers activos (con oportunidades recientes) para
-mantener el tiempo de ejecución manejable.
+Estrategia insider:
+1. Obtiene CIKs de nuestros tickers via EDGAR company_tickers.json
+2. Para cada CIK, consulta submissions.json → busca Form 4 recientes
+3. Descarga XML del Form 4 → verifica transacción tipo P (Purchase)
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -19,6 +23,7 @@ from datetime import date, timedelta
 logger = logging.getLogger("catalysts")
 
 _EDGAR_USER_AGENT = "invest-feed-mvp research@invest-feed.com"
+_EDGAR_DELAY = 0.12  # 10 req/s max según EDGAR ToS
 
 
 @dataclass
@@ -105,97 +110,88 @@ def detect_earnings(symbols: list[str], lookback_days: int = 3) -> list[Catalyst
 
 
 # ---------------------------------------------------------------------------
-# Insider buying — SEC EDGAR Form 4 (Railway-compatible)
+# Insider buying — SEC EDGAR submissions por ticker (Railway-compatible)
 # ---------------------------------------------------------------------------
 
 def detect_insider_buys(symbols: list[str], lookback_days: int = 21) -> list[CatalystData]:
-    """Detecta compras de insiders vía SEC EDGAR Form 4 RSS.
+    """Detecta compras de insiders via SEC EDGAR Form 4 por ticker.
 
-    Flujo:
-    1. Descarga EDGAR company_tickers.json (mapa ticker→CIK)
-    2. Descarga RSS de los 100 Form 4 más recientes de EDGAR
-    3. Filtra por tickers en nuestro universo
-    4. Para cada match, descarga el XML del Form 4 para verificar que es compra
+    1. Descarga company_tickers.json → mapa ticker→CIK
+    2. Para cada CIK, consulta submissions.json → filtra Form 4 recientes
+    3. Descarga XML del Form 4 → verifica transacción tipo P (Purchase)
     """
     symbol_set = {s.upper() for s in symbols}
     ticker_cik_map = _fetch_ticker_cik_map(symbol_set)
+
     if not ticker_cik_map:
         logger.warning("No se pudo obtener mapa ticker→CIK de EDGAR")
         return []
 
     cutoff = date.today() - timedelta(days=lookback_days)
-    recent_form4 = _fetch_recent_form4_entries(count=100)
-    if not recent_form4:
-        logger.warning("No se obtuvieron entradas Form 4 de EDGAR RSS")
-        return []
-
-    # CIK → ticker (invertir el mapa)
-    cik_ticker_map = {cik: ticker for ticker, cik in ticker_cik_map.items()}
-
     results: list[CatalystData] = []
-    seen_tickers: set[str] = set()
 
-    for entry in recent_form4:
-        cik = entry.get("cik")
-        ticker = cik_ticker_map.get(cik)
-        if ticker is None or ticker not in symbol_set:
-            continue
-        if ticker in seen_tickers:
-            continue
+    logger.info("Buscando Form 4 en EDGAR para %d tickers (lookback %d días)", len(ticker_cik_map), lookback_days)
 
-        filing_date = _to_date(entry.get("date"))
-        if filing_date is None or filing_date < cutoff:
-            continue
+    for ticker, cik in ticker_cik_map.items():
+        try:
+            recent_form4s = _get_recent_form4_for_cik(cik, cutoff)
+            if not recent_form4s:
+                continue
 
-        # Descarga el XML para confirmar tipo de transacción
-        purchase = _parse_form4_purchase(entry.get("accession"), cik)
-        if purchase is None:
-            continue
+            # Comprueba el más reciente
+            filing = recent_form4s[0]
+            purchase = _parse_form4_purchase(filing["accession"], cik)
+            if purchase is None:
+                continue
 
-        seen_tickers.add(ticker)
-        insider = purchase.get("insider_name", "Directivo")
-        position = purchase.get("position", "")
-        shares = purchase.get("shares")
-        value = purchase.get("value_usd")
+            filing_date = _to_date(filing["date"])
+            insider = purchase.get("insider_name", "Directivo")
+            position = purchase.get("position", "")
+            shares = purchase.get("shares")
+            value_usd = purchase.get("value_usd")
 
-        title = f"Compra insider: {insider}"
-        if position:
-            title += f" ({position})"
+            title = f"Compra insider: {insider}"
+            if position:
+                title += f" ({position})"
 
-        desc_parts = []
-        if shares:
-            desc_parts.append(f"{shares:,} acciones")
-        if value:
-            desc_parts.append(f"${value:,}")
+            desc_parts = []
+            if shares:
+                desc_parts.append(f"{shares:,} acciones")
+            if value_usd:
+                desc_parts.append(f"${value_usd:,}")
 
-        source_key = insider[:30].replace(" ", "_")
-        results.append(CatalystData(
-            catalyst_type="insider_buy",
-            symbol=ticker,
-            title=title[:255],
-            source_id=f"insider_{ticker}_{filing_date.isoformat()}_{source_key}",
-            description=", ".join(desc_parts) if desc_parts else None,
-            extra={
-                "filing_date": filing_date.isoformat(),
-                "accession": entry.get("accession"),
-                "insider": insider,
-                "position": position,
-                "shares": shares,
-                "value_usd": value,
-            },
-        ))
+            source_key = insider[:30].replace(" ", "_")
+            results.append(CatalystData(
+                catalyst_type="insider_buy",
+                symbol=ticker,
+                title=title[:255],
+                source_id=f"insider_{ticker}_{(filing_date or date.today()).isoformat()}_{source_key}",
+                description=", ".join(desc_parts) if desc_parts else None,
+                extra={
+                    "filing_date": filing_date.isoformat() if filing_date else None,
+                    "accession": filing["accession"],
+                    "insider": insider,
+                    "position": position,
+                    "shares": shares,
+                    "value_usd": value_usd,
+                },
+            ))
 
-    logger.info("Insider buys detectados: %d de %d tickers en universo", len(results), len(symbol_set))
+        except Exception:
+            logger.debug("Error procesando insiders de %s", ticker, exc_info=True)
+        finally:
+            time.sleep(_EDGAR_DELAY)
+
+    logger.info("Insider buys detectados: %d de %d tickers en universo", len(results), len(ticker_cik_map))
     return results
 
 
 def _fetch_ticker_cik_map(symbol_set: set[str]) -> dict[str, str]:
-    """Descarga el mapa ticker→CIK de SEC EDGAR y filtra al universo dado."""
+    """Descarga el mapa ticker→CIK de SEC EDGAR (CIK de 10 dígitos con padding)."""
     url = "https://www.sec.gov/files/company_tickers.json"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _EDGAR_USER_AGENT})
         with urllib.request.urlopen(req, timeout=20) as resp:
-            import json
             data = json.loads(resp.read())
         return {
             item["ticker"].upper(): str(item["cik_str"]).zfill(10)
@@ -207,70 +203,44 @@ def _fetch_ticker_cik_map(symbol_set: set[str]) -> dict[str, str]:
         return {}
 
 
-def _fetch_recent_form4_entries(count: int = 100) -> list[dict]:
-    """Descarga el RSS de Form 4 recientes de EDGAR y devuelve lista de entries."""
-    url = (
-        f"https://www.sec.gov/cgi-bin/browse-edgar"
-        f"?action=getcurrent&type=4&dateb=&owner=include"
-        f"&count={count}&search_text=&output=atom"
-    )
+def _get_recent_form4_for_cik(cik: str, cutoff: date) -> list[dict]:
+    """Consulta EDGAR submissions.json para un CIK y devuelve Form 4 recientes."""
+    url = f"https://data.sec.gov/submissions/CIK{cik}.json"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _EDGAR_USER_AGENT})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            content = resp.read()
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
 
-        root = ET.fromstring(content)
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
-        entries = []
+        recent = data.get("filings", {}).get("recent", {})
+        forms = recent.get("form", [])
+        dates = recent.get("filingDate", [])
+        accessions = recent.get("accessionNumber", [])
 
-        for entry in root.findall("atom:entry", ns):
-            link_el = entry.find("atom:link", ns)
-            href = link_el.attrib.get("href", "") if link_el is not None else ""
+        results = []
+        for form, filing_date_str, accession in zip(forms, dates, accessions):
+            if form != "4":
+                continue
+            d = _to_date(filing_date_str)
+            if d is None or d < cutoff:
+                break  # filings están ordenados por fecha desc, stop early
+            results.append({"date": filing_date_str, "accession": accession})
 
-            # href: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320193&type=4&...
-            cik = ""
-            if "CIK=" in href:
-                cik = href.split("CIK=")[1].split("&")[0].zfill(10)
+        return results
 
-            # Filing date from <updated>
-            updated_el = entry.find("atom:updated", ns)
-            date_str = updated_el.text[:10] if updated_el is not None and updated_el.text else None
-
-            # Accession number from content or title — fallback: parse from link
-            accession = ""
-            content_el = entry.find("atom:content", ns)
-            if content_el is not None and content_el.text:
-                import re
-                m = re.search(r"(\d{18})", content_el.text.replace("-", ""))
-                if m:
-                    raw = m.group(1)
-                    accession = f"{raw[:10]}-{raw[10:12]}-{raw[12:]}"
-
-            entries.append({"cik": cik, "date": date_str, "accession": accession})
-
-        return entries
     except Exception:
-        logger.debug("Error descargando Form 4 RSS", exc_info=True)
+        logger.debug("Error obteniendo submissions de CIK %s", cik, exc_info=True)
         return []
 
 
 def _parse_form4_purchase(accession: str, cik: str) -> dict | None:
-    """Descarga y parsea el XML de un Form 4. Devuelve info de la compra o None si es venta."""
+    """Descarga y parsea el XML de un Form 4. Devuelve info de la compra o None si es venta/none."""
     if not accession or not cik:
         return None
 
     acc_nodash = accession.replace("-", "")
-    # Formato: https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/{accession}.txt
-    # Primero intentar el índice para encontrar el XML
-    index_url = (
-        f"https://www.sec.gov/cgi-bin/browse-edgar"
-        f"?action=getcompany&CIK={cik}&type=4&dateb=&owner=include&count=1"
-        f"&search_text=&output=atom"
-    )
-
-    # Construir URL directa al filing XML
+    cik_int = int(cik)
     xml_url = (
-        f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/"
+        f"https://www.sec.gov/Archives/edgar/data/{cik_int}/"
         f"{acc_nodash}/{accession}.xml"
     )
 
@@ -281,10 +251,10 @@ def _parse_form4_purchase(accession: str, cik: str) -> dict | None:
 
         root = ET.fromstring(content)
 
-        # Verificar que hay transacciones de tipo P (Purchase)
-        has_purchase = False
+        # Buscar transacciones no-derivadas tipo P (Purchase)
         shares = None
         price = None
+        has_purchase = False
 
         for tx in root.iter("nonDerivativeTransaction"):
             code_el = tx.find(".//transactionCode")

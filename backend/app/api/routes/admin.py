@@ -165,7 +165,7 @@ def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
     from datetime import date, timedelta
     from app.core.db import SessionLocal
     from app.models.orm import Opportunity, Ticker
-    from app.screener.catalysts import _fetch_ticker_cik_map, _fetch_recent_form4_entries
+    from app.screener.catalysts import _fetch_ticker_cik_map, _get_recent_form4_for_cik
 
     result: dict = {}
     db = SessionLocal()
@@ -196,21 +196,20 @@ def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
     except Exception as e:
         result["edgar_cik_map_error"] = str(e)
 
-    # Test EDGAR Form 4 RSS
-    try:
-        entries = _fetch_recent_form4_entries(count=40)
-        result["edgar_form4_entries"] = len(entries)
-        # Filtrar los que coinciden con nuestros tickers
-        cik_map_all = _fetch_ticker_cik_map(set(symbols))
-        cik_to_ticker = {cik: t for t, cik in cik_map_all.items()}
-        matches = [e for e in entries if cik_to_ticker.get(e.get("cik"))]
-        result["edgar_form4_universe_matches"] = len(matches)
-        result["edgar_form4_match_sample"] = [
-            {"ticker": cik_to_ticker.get(e["cik"]), "date": e["date"]}
-            for e in matches[:5]
-        ]
-    except Exception as e:
-        result["edgar_form4_error"] = str(e)
+    # Test EDGAR submissions por CIK para 5 tickers
+    from datetime import timedelta
+    cutoff_21 = date.today() - timedelta(days=21)
+    cik_map_test = _fetch_ticker_cik_map(set(symbols[:20]))
+    form4_found = []
+    for ticker, cik in list(cik_map_test.items())[:5]:
+        try:
+            filings = _get_recent_form4_for_cik(cik, cutoff_21)
+            if filings:
+                form4_found.append({"ticker": ticker, "filings": len(filings), "latest": filings[0]["date"]})
+        except Exception:
+            pass
+    result["edgar_submissions_tested"] = 5
+    result["edgar_form4_found_in_sample"] = form4_found
 
     # Test yfinance earnings (puede estar bloqueado en Railway)
     import yfinance as yf
