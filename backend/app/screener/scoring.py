@@ -19,8 +19,16 @@ from app.screener.weinstein import WeinsteinResult
 WEINSTEIN_WEIGHT = 50
 CANSLIM_WEIGHT = 50
 
-_WEINSTEIN_STAGE_POINTS = {1: 10, 2: 35, 3: 15, 4: 0}
-_TRANSITION_BONUS = 15  # stage 2 + transición 1->2 reciente = señal de compra clásica
+_WEINSTEIN_STAGE_POINTS = {1: 10, 2: 28, 3: 15, 4: 0}
+_TRANSITION_BONUS = 12  # stage 2 + transición 1->2 reciente = señal de compra clásica
+
+# Bonificaciones dentro de Stage 2 usando métricas de calidad de la tendencia
+# MA slope semanal (>= 0.1% = ~5% anualizado)
+_SLOPE_THRESHOLDS = [(1.0, 7), (0.5, 5), (0.2, 3), (0.1, 1)]
+# RSI: sweet spot 55-75; <50 o >85 penaliza implícitamente por no sumar
+_RSI_BONUS = [(55, 75, 5), (50, 55, 2), (75, 82, 2)]
+# Volumen relativo confirma momentum
+_RVOL_THRESHOLDS = [(1.5, 5), (1.0, 2)]
 
 RISK_LOW_WEEKLY_VOL = 0.03
 RISK_HIGH_WEEKLY_VOL = 0.06
@@ -38,9 +46,35 @@ class CombinedScore:
 
 def _weinstein_component(result: WeinsteinResult) -> int:
     base = _WEINSTEIN_STAGE_POINTS[result.stage]
-    if result.stage == 2 and result.is_transition_1_to_2:
-        base = min(base + _TRANSITION_BONUS, WEINSTEIN_WEIGHT)
-    return base
+    if result.stage != 2:
+        return base
+
+    bonus = 0
+    if result.is_transition_1_to_2:
+        bonus += _TRANSITION_BONUS
+
+    # MA slope: tendencia más fuerte = más puntos (max 7)
+    slope = result.ma_slope_pct or 0
+    for threshold, pts in _SLOPE_THRESHOLDS:
+        if slope >= threshold:
+            bonus += pts
+            break
+
+    # RSI: zona óptima 55-75 (max 5)
+    rsi = result.rsi or 50
+    for lo, hi, pts in _RSI_BONUS:
+        if lo <= rsi < hi:
+            bonus += pts
+            break
+
+    # Volumen relativo: confirmación de momentum (max 5)
+    rvol = result.relative_volume or 0
+    for threshold, pts in _RVOL_THRESHOLDS:
+        if rvol >= threshold:
+            bonus += pts
+            break
+
+    return min(base + bonus, WEINSTEIN_WEIGHT)
 
 
 def _canslim_component(criteria: dict[str, CriterionResult]) -> tuple[int, int, int]:
