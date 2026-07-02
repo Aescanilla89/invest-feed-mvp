@@ -161,29 +161,26 @@ def trigger_detect_catalysts(_: None = Depends(_verify_token)) -> dict:
 
 @router.get("/diagnose-catalysts")
 def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
-    """Diagnóstico síncrono de catalizadores: prueba yfinance earnings e insiders en 3 tickers."""
-    import traceback
+    """Diagnóstico síncrono de catalizadores: prueba EDGAR Form 4 + yfinance earnings."""
     from datetime import date, timedelta
     from app.core.db import SessionLocal
     from app.models.orm import Opportunity, Ticker
-    from sqlalchemy import func as sql_func
+    from app.screener.catalysts import _fetch_ticker_cik_map, _fetch_recent_form4_entries
 
     result: dict = {}
     db = SessionLocal()
     try:
-        # Cuántos tickers activos tenemos
         since = date.today() - timedelta(days=7)
         rows = (
             db.query(Ticker.symbol)
             .join(Opportunity, Opportunity.ticker_id == Ticker.id)
             .filter(Opportunity.run_date >= since)
             .distinct()
-            .limit(5)
             .all()
         )
         symbols = [r[0] for r in rows]
-        result["symbols_sample"] = symbols
         result["symbols_count"] = len(symbols)
+        result["symbols_sample"] = symbols[:5]
     finally:
         db.close()
 
@@ -191,7 +188,31 @@ def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
         result["error"] = "No hay tickers con oportunidades en los últimos 7 días"
         return result
 
-    # Prueba earnings en primeros 3 tickers
+    # Test EDGAR ticker→CIK map
+    try:
+        cik_map = _fetch_ticker_cik_map(set(symbols[:10]))
+        result["edgar_cik_map_ok"] = True
+        result["edgar_cik_sample"] = {k: v for k, v in list(cik_map.items())[:5]}
+    except Exception as e:
+        result["edgar_cik_map_error"] = str(e)
+
+    # Test EDGAR Form 4 RSS
+    try:
+        entries = _fetch_recent_form4_entries(count=40)
+        result["edgar_form4_entries"] = len(entries)
+        # Filtrar los que coinciden con nuestros tickers
+        cik_map_all = _fetch_ticker_cik_map(set(symbols))
+        cik_to_ticker = {cik: t for t, cik in cik_map_all.items()}
+        matches = [e for e in entries if cik_to_ticker.get(e.get("cik"))]
+        result["edgar_form4_universe_matches"] = len(matches)
+        result["edgar_form4_match_sample"] = [
+            {"ticker": cik_to_ticker.get(e["cik"]), "date": e["date"]}
+            for e in matches[:5]
+        ]
+    except Exception as e:
+        result["edgar_form4_error"] = str(e)
+
+    # Test yfinance earnings (puede estar bloqueado en Railway)
     import yfinance as yf
     for sym in symbols[:3]:
         try:
@@ -204,9 +225,10 @@ def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
         except Exception as e:
             result[f"earnings_{sym}_error"] = str(e)
 
-    # Prueba insiders en primeros 3 tickers
+    # Prueba insiders yfinance (puede estar bloqueado en Railway)
     for sym in symbols[:3]:
         try:
+            import yfinance as yf
             t = yf.Ticker(sym)
             tx = t.insider_transactions
             if tx is None or tx.empty:
