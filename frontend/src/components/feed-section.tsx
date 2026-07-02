@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Flame, TrendingUp, Search, Award, DollarSign } from "lucide-react";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
 import { EmptyState, ErrorState } from "@/components/empty-state";
+import { FilterBar, type FeedFilters } from "@/components/filter-bar";
 import { getOpportunities, type Opportunity, type StrategyName } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+const DEFAULT_FILTERS: FeedFilters = { minScore: 40, risk: "todos", sector: "todos", sort: "score" };
 
 const container = {
   hidden: { opacity: 0 },
@@ -60,8 +63,7 @@ const STRATEGY_SECTIONS: {
   },
 ];
 
-interface FeedData {
-  top: Opportunity[];
+interface StrategyData {
   byStrategy: Record<StrategyName, Opportunity[]>;
 }
 
@@ -141,27 +143,28 @@ function StrategyTabBar({
 }
 
 export function FeedSection() {
-  const [data, setData] = useState<FeedData | null>(null);
+  const [strategyData, setStrategyData] = useState<StrategyData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeStrategy, setActiveStrategy] = useState<StrategyName>("minervini");
 
+  const [filters, setFilters] = useState<FeedFilters>(DEFAULT_FILTERS);
+  const [top, setTop] = useState<Opportunity[] | null>(null);
+  const [topError, setTopError] = useState<string | null>(null);
+
+  // Estrategias: se cargan una única vez, no dependen de los filtros de Destacadas.
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       try {
-        const [top, minervini, lynch, berkshire, dividendos] = await Promise.all([
-          getOpportunities({ limit: 4, minScore: 40, sort: "score" }),
+        const [minervini, lynch, berkshire, dividendos] = await Promise.all([
           getOpportunities({ limit: 6, strategy: "minervini" }),
           getOpportunities({ limit: 6, strategy: "lynch" }),
           getOpportunities({ limit: 6, strategy: "berkshire" }),
           getOpportunities({ limit: 6, strategy: "dividendos" }),
         ]);
         if (!cancelled) {
-          setData({
-            top,
-            byStrategy: { minervini, lynch, berkshire, dividendos },
-          });
+          setStrategyData({ byStrategy: { minervini, lynch, berkshire, dividendos } });
         }
       } catch {
         if (!cancelled) setError("No se pudo conectar con el backend.");
@@ -172,18 +175,51 @@ export function FeedSection() {
     return () => { cancelled = true; };
   }, []);
 
-  if (error) {
-    return <ErrorState message={error} />;
+  // Destacadas: se refresca cada vez que cambian los filtros del FilterBar.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const result = await getOpportunities({
+          limit: 4,
+          minScore: filters.minScore,
+          risk: filters.risk === "todos" ? undefined : filters.risk,
+          sector: filters.sector === "todos" ? undefined : filters.sector,
+          sort: filters.sort,
+        });
+        if (!cancelled) setTop(result);
+      } catch {
+        if (!cancelled) setTopError("No se pudo conectar con el backend.");
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [filters]);
+
+  const sectors = useMemo(() => {
+    const all = [...(top ?? []), ...Object.values(strategyData?.byStrategy ?? {}).flat()];
+    return Array.from(new Set(all.map((o) => o.sector).filter((s): s is string => Boolean(s)))).sort();
+  }, [top, strategyData]);
+
+  if (error || topError) {
+    return <ErrorState message={error ?? topError!} />;
   }
 
-  if (!data) {
+  if (!strategyData || !top) {
     // Mirrors the real DOM shape below (FeaturedHeader + StrategyTabBar) at
     // matching heights so the section's total height doesn't jump once data
     // arrives -- avoids a CLS-driven mis-click on the tab bar.
     return (
       <div className="flex flex-col gap-10">
         <section>
-          <div className="flex items-center gap-3 border-l-2 border-transparent pl-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {[150, 150, 180, 170].map((w, i) => (
+              <div key={i} className="h-11 animate-pulse rounded-lg bg-muted" style={{ width: `${w}px` }} />
+            ))}
+          </div>
+          <div className="mt-4 flex items-center gap-3 border-l-2 border-transparent pl-4">
             <div className="size-9 animate-pulse rounded-full bg-muted" />
             <div className="space-y-1.5">
               <div className="h-[18px] w-24 animate-pulse rounded bg-muted" />
@@ -217,28 +253,31 @@ export function FeedSection() {
   }
 
   const activeConf = STRATEGY_SECTIONS.find((s) => s.key === activeStrategy)!;
-  const activeOpps = data.byStrategy[activeStrategy];
+  const activeOpps = strategyData.byStrategy[activeStrategy];
   const counts = {
-    minervini: data.byStrategy.minervini.length,
-    lynch: data.byStrategy.lynch.length,
-    berkshire: data.byStrategy.berkshire.length,
-    dividendos: data.byStrategy.dividendos.length,
+    minervini: strategyData.byStrategy.minervini.length,
+    lynch: strategyData.byStrategy.lynch.length,
+    berkshire: strategyData.byStrategy.berkshire.length,
+    dividendos: strategyData.byStrategy.dividendos.length,
   };
 
   return (
     <div className="flex flex-col gap-10">
       {/* Sección 1: Destacadas (Weinstein + CAN SLIM) */}
       <section>
-        <FeaturedHeader count={data.top.length} />
+        <FilterBar filters={filters} sectors={sectors} onChange={setFilters} />
         <div className="mt-4">
-          {data.top.length === 0 ? (
+          <FeaturedHeader count={top.length} />
+        </div>
+        <div className="mt-4">
+          {top.length === 0 ? (
             <EmptyState
               icon={Flame}
               message="Sin señales Weinstein/CAN SLIM activas hoy."
               detail="Vuelve tras el próximo cierre de sesión."
             />
           ) : (
-            <CardGrid opportunities={data.top} />
+            <CardGrid opportunities={top} />
           )}
         </div>
       </section>
