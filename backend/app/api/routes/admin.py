@@ -159,6 +159,66 @@ def trigger_detect_catalysts(_: None = Depends(_verify_token)) -> dict:
     return {"status": "started"}
 
 
+@router.get("/diagnose-catalysts")
+def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
+    """Diagnóstico síncrono de catalizadores: prueba yfinance earnings e insiders en 3 tickers."""
+    import traceback
+    from datetime import date, timedelta
+    from app.core.db import SessionLocal
+    from app.models.orm import Opportunity, Ticker
+    from sqlalchemy import func as sql_func
+
+    result: dict = {}
+    db = SessionLocal()
+    try:
+        # Cuántos tickers activos tenemos
+        since = date.today() - timedelta(days=7)
+        rows = (
+            db.query(Ticker.symbol)
+            .join(Opportunity, Opportunity.ticker_id == Ticker.id)
+            .filter(Opportunity.run_date >= since)
+            .distinct()
+            .limit(5)
+            .all()
+        )
+        symbols = [r[0] for r in rows]
+        result["symbols_sample"] = symbols
+        result["symbols_count"] = len(symbols)
+    finally:
+        db.close()
+
+    if not symbols:
+        result["error"] = "No hay tickers con oportunidades en los últimos 7 días"
+        return result
+
+    # Prueba earnings en primeros 3 tickers
+    import yfinance as yf
+    for sym in symbols[:3]:
+        try:
+            t = yf.Ticker(sym)
+            df = t.earnings_dates
+            if df is None or df.empty:
+                result[f"earnings_{sym}"] = "vacío"
+            else:
+                result[f"earnings_{sym}"] = f"ok — {len(df)} filas, cols={list(df.columns)}"
+        except Exception as e:
+            result[f"earnings_{sym}_error"] = str(e)
+
+    # Prueba insiders en primeros 3 tickers
+    for sym in symbols[:3]:
+        try:
+            t = yf.Ticker(sym)
+            tx = t.insider_transactions
+            if tx is None or tx.empty:
+                result[f"insiders_{sym}"] = "vacío"
+            else:
+                result[f"insiders_{sym}"] = f"ok — {len(tx)} filas, cols={list(tx.columns)}"
+        except Exception as e:
+            result[f"insiders_{sym}_error"] = str(e)
+
+    return result
+
+
 @router.get("/diagnose")
 def diagnose(_: None = Depends(_verify_token)) -> dict:
     """Diagnóstico síncrono: verifica config, data source y 2 tickers. Devuelve errores inline."""
