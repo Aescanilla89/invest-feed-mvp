@@ -34,6 +34,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     explanation:
       "Exxon Mobil lleva 35 semanas en Stage 2 de Weinstein, con la media de 30 semanas inclinada +3.5% y una transición 1→2 detectada en la ventana reciente, lo que sostiene la tendencia técnica a pesar de fundamentales débiles: el EPS trimestral cae -43.2% y el anual -14.5%, muy lejos del umbral CAN SLIM del 25%. La fuerza relativa frente al mercado (+7.3%) y la reducción de acciones en circulación (-3.8%, recompras) son lo que compensa esos fundamentales flojos en el score combinado.",
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: {},
   },
   {
     ticker: "NVDA",
@@ -57,6 +59,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     explanation:
       "NVIDIA presenta fundamentales sólidos con un crecimiento de EPS trimestral del 214,5%, pero la señal técnica es débil en este momento: el volumen relativo de solo 0,57x indica que la acción no está atrayendo demanda institucional suficiente para confirmar continuación del Stage 2 con convicción. Cotizando al 84,2% de su máximo de 52 semanas sin catalizador de volumen, el criterio N de CAN SLIM no se cumple, lo que sugiere que la fortaleza fundamental aún no se ha traducido en presión compradora técnica verificable.",
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: {},
   },
   {
     ticker: "GOOGL",
@@ -80,6 +84,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     explanation:
       "Alphabet combina fundamentales fuertes (EPS trimestral +81.9%, anual +34.5%, ambos muy por encima del umbral CAN SLIM del 25%) con una fuerza relativa extraordinaria: +74.3 puntos sobre el S&P 500 en 52 semanas. Lleva 44 semanas en Stage 2 con la media de 30 semanas todavía subiendo (+3.8%), aunque el volumen relativo de 0.92x no confirma una ruptura reciente sobre máximos de 52 semanas (criterio N), señal de que el mercado aún no ha acelerado la entrada de dinero sobre el precio.",
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: {},
   },
   {
     ticker: "AAPL",
@@ -103,6 +109,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     explanation:
       "AAPL lleva 39 semanas en Stage 2 de Weinstein con la media de 30 semanas inclinada +1.8%, lo que confirma tendencia alcista sostenida, pero el volumen relativo de 0.65x (muy por debajo del umbral 1.5x) indica falta de convicción institucional en el movimiento. Los criterios CAN SLIM son débiles: el crecimiento de EPS trimestral (21.8%) y anual (22.7%) quedan por debajo del umbral del 25%, y el precio está un 7.7% alejado de máximos de 52 semanas sin catalizador de volumen, por lo que los fundamentos de aceleración de beneficios que busca CAN SLIM no se verifican en este momento.",
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: { berkshire: { passed: true, score: 100, details: "Berkshire Quality: 5/5 verificables." } },
   },
   {
     ticker: "JPM",
@@ -126,6 +134,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     explanation:
       "JP Morgan lleva solo 2 semanas en Stage 2 de Weinstein, con la media de 30 semanas apenas inclinada (+0.7%) y cotizando al 98.6% de su máximo de 52 semanas, aunque sin el volumen (0.64x) que CAN SLIM exige para confirmar una ruptura real. Los fundamentales son mixtos: el crecimiento de EPS trimestral (17.2%) y anual (1.4%) quedan por debajo del umbral del 25%, y la fuerza relativa frente al mercado es negativa (-4.3%), por lo que la señal técnica todavía no está respaldada por aceleración de beneficios.",
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: { dividendos: { passed: true, score: 75, details: "Yield 2.8%; payout 35% (sostenible); EPS positivo" } },
   },
   {
     ticker: "KO",
@@ -149,6 +159,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     explanation:
       "Coca-Cola lleva 22 semanas en Stage 2 con la media de 30 semanas subiendo de forma moderada (+2.3%), pero ninguno de los criterios fundamentales de CAN SLIM se cumple con holgura: el crecimiento de EPS trimestral (18.2%) y anual (23.6%) se quedan justo por debajo del umbral del 25%, y la fuerza relativa frente al mercado es ligeramente negativa (-2.4%). Es una tendencia técnica estable pero sin el catalizador de aceleración de beneficios que el método busca confirmar.",
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: { dividendos: { passed: true, score: 80, details: "Yield 3.1%; payout 72% (sostenible); EPS positivo y creciente" } },
   },
   {
     ticker: "TSLA",
@@ -171,6 +183,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     },
     explanation: null,
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: {},
   },
   {
     ticker: "MSFT",
@@ -193,6 +207,8 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     },
     explanation: null,
     last_updated: "2026-06-25",
+    signal_type: null,
+    strategies: {},
   },
 ];
 
