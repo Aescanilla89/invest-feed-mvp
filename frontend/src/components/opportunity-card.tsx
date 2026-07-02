@@ -78,8 +78,21 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
         <SignalBadge signal_type={signal_type ?? null} />
       </div>
 
-      {/* Fila 2b: badges de estrategias adicionales (solo las que pasan) */}
-      {strategies && <StrategyBadges strategies={strategies} className="relative z-10 pointer-events-none" />}
+      {/* Fila 2b: badges de estrategias + snippet de por qué pasa */}
+      {strategies && (() => {
+        const passing = (Object.entries(strategies) as [import("@/lib/api").StrategyName, import("@/lib/api").StrategyResult][]).filter(([, r]) => r.passed === true);
+        if (passing.length === 0) return null;
+        // Primer detalle: extraer solo la primera cláusula (antes del primer ";")
+        const snippet = passing[0][1].details.split(";")[0].trim();
+        return (
+          <div className="relative z-10 pointer-events-none flex flex-col gap-2">
+            <StrategyBadges strategies={strategies} />
+            {snippet && (
+              <p className="text-[11px] leading-snug text-muted-foreground line-clamp-2">{snippet}</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Fila 3: stage + riesgo */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">

@@ -24,19 +24,23 @@ function getTVSymbol(symbol: string): string {
       return `${exchange}:${normalized.slice(0, -suffix.length)}`;
     }
   }
-  // Para acciones US: usar prefijo NASDAQ por defecto — TradingView redirige
-  // automáticamente al exchange correcto si el ticker existe en NYSE/AMEX
-  return `NASDAQ:${normalized}`;
+  // Para tickers US: sin prefijo de exchange — TradingView auto-detecta NYSE/NASDAQ/AMEX
+  // correctamente. Añadir NASDAQ: rompe tickers NYSE como GS, MS, JPM, etc.
+  return normalized;
 }
 
 export function TradingViewMiniChart({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const tvSymbol = getTVSymbol(symbol);
+  // ID único por símbolo — evita que TradingView reutilice el widget de otro ticker en la grid
+  const containerId = `tv-mini-${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
     el.innerHTML = "";
+    el.id = containerId;
 
     const inner = document.createElement("div");
     inner.className = "tradingview-widget-container__widget";
@@ -48,7 +52,7 @@ export function TradingViewMiniChart({ symbol }: { symbol: string }) {
       "https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js";
     script.async = true;
     script.innerHTML = JSON.stringify({
-      symbol: getTVSymbol(symbol),
+      symbol: tvSymbol,
       width: "100%",
       height: 180,
       locale: "es",
@@ -59,14 +63,14 @@ export function TradingViewMiniChart({ symbol }: { symbol: string }) {
       underLineBottomColor: "rgba(41, 98, 255, 0)",
       isTransparent: true,
       autosize: false,
-      largeChartUrl: "",
+      largeChartUrl: `https://www.tradingview.com/chart/?symbol=${tvSymbol}`,
     });
     el.appendChild(script);
 
     return () => {
       el.innerHTML = "";
     };
-  }, [symbol]);
+  }, [tvSymbol, containerId]);
 
   return <div ref={ref} className="tradingview-widget-container h-[180px] w-full" />;
 }
