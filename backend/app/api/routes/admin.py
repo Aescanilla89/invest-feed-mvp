@@ -42,8 +42,8 @@ def trigger_screener(
 
 @router.post("/generate-explanations")
 def generate_explanations(_: None = Depends(_verify_token)) -> dict:
-    """Genera explicaciones para el top 10 de la última corrida.
-    Se puede llamar en cualquier momento — no requiere que el screener haya terminado."""
+    """Genera explicaciones para el top N de la última corrida en background.
+    Devuelve inmediatamente — las explicaciones aparecen en el feed al terminar."""
     from sqlalchemy import func
 
     from app.ai.cache import get_or_create_explanation
@@ -53,54 +53,57 @@ def generate_explanations(_: None = Depends(_verify_token)) -> dict:
     from app.screener.canslim import CriterionResult
     from app.screener.weinstein import WeinsteinResult
 
-    db = SessionLocal()
-    try:
-        run_date = db.query(func.max(Opportunity.run_date)).scalar()
-        if not run_date:
-            return {"error": "No hay corridas en BD"}
-
-        candidates = (
-            db.query(Opportunity, Ticker)
-            .join(Ticker, Opportunity.ticker_id == Ticker.id)
-            .filter(Opportunity.run_date == run_date)
-            .order_by(Opportunity.combined_score.desc())
-            .all()
-        )
-
-        top10 = [(opp, t) for opp, t in candidates if opp.combined_score >= settings.explanation_min_score][:settings.explanation_max_per_run]
-
+    def _job():
+        import logging
+        log = logging.getLogger("admin")
+        db = SessionLocal()
         try:
-            explainer = ClaudeExplainer()
-        except ExplanationError as exc:
-            return {"error": str(exc)}
+            run_date = db.query(func.max(Opportunity.run_date)).scalar()
+            if not run_date:
+                log.warning("generate-explanations: no hay corridas en BD")
+                return
 
-        results = []
-        for opp, ticker in top10:
+            candidates = (
+                db.query(Opportunity, Ticker)
+                .join(Ticker, Opportunity.ticker_id == Ticker.id)
+                .filter(Opportunity.run_date == run_date)
+                .order_by(Opportunity.combined_score.desc())
+                .all()
+            )
+            top_n = [(opp, t) for opp, t in candidates if opp.combined_score >= settings.explanation_min_score][:settings.explanation_max_per_run]
+
             try:
-                weinstein = WeinsteinResult(
-                    stage=opp.weinstein_stage,
-                    weeks_in_stage=opp.weeks_in_stage,
-                    ma_slope_pct=opp.weinstein_ma_slope_pct,
-                    relative_volume=opp.weinstein_relative_volume,
-                    is_transition_1_to_2=opp.weinstein_transition,
-                    rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0,
-                )
-                criteria = {
-                    k: CriterionResult(value=v["value"], detail=v["detail"])
-                    for k, v in opp.canslim_criteria.items()
-                }
-                exp = get_or_create_explanation(db, ticker, run_date, opp.combined_score, weinstein, criteria, explainer)
-                db.commit()
-                results.append({"ticker": ticker.symbol, "ok": exp is not None})
-            except Exception:
-                db.rollback()
-                results.append({"ticker": ticker.symbol, "ok": False, "error": traceback.format_exc()})
+                explainer = ClaudeExplainer()
+            except ExplanationError as exc:
+                log.error("generate-explanations: no se pudo crear explainer: %s", exc)
+                return
 
-        return {"run_date": run_date.isoformat(), "results": results}
-    except Exception:
-        return {"error": traceback.format_exc()}
-    finally:
-        db.close()
+            for opp, ticker in top_n:
+                try:
+                    weinstein = WeinsteinResult(
+                        stage=opp.weinstein_stage,
+                        weeks_in_stage=opp.weeks_in_stage,
+                        ma_slope_pct=opp.weinstein_ma_slope_pct,
+                        relative_volume=opp.weinstein_relative_volume,
+                        is_transition_1_to_2=opp.weinstein_transition,
+                        rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0,
+                    )
+                    criteria = {
+                        k: CriterionResult(value=v["value"], detail=v["detail"])
+                        for k, v in opp.canslim_criteria.items()
+                    }
+                    exp = get_or_create_explanation(db, ticker, run_date, opp.combined_score, weinstein, criteria, explainer)
+                    db.commit()
+                    log.info("generate-explanations: %s → %s", ticker.symbol, "ok" if exp else "sin cambio")
+                except Exception:
+                    db.rollback()
+                    log.exception("generate-explanations: error en %s", ticker.symbol)
+        finally:
+            db.close()
+
+    thread = threading.Thread(target=_job, daemon=True)
+    thread.start()
+    return {"status": "started", "max_tickers": settings.explanation_max_per_run}
 
 
 @router.post("/update-institutional")
