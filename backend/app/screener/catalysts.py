@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -422,9 +423,14 @@ def _parse_ownership_xml(root: ET.Element) -> dict | None:
 _POLYMARKET_API_URL = "https://gamma-api.polymarket.com/markets"
 _POLYMARKET_USER_AGENT = "invest-feed-mvp research@invest-feed.com"
 
-# Mismas listas de keywords que el bot de Polymarket (inferir_categoria)
-_FED_KEYWORDS = ("rate", "fomc", "decision", "cut", "hike")
-_GEOPOLITICAL_KEYWORDS = ("war", "conflict", "attack", "ceasefire", "treaty", "sanctions", "invasion")
+# Mismas listas de keywords que el bot de Polymarket (inferir_categoria), pero
+# con límites de palabra (\b) para evitar falsos positivos por substring —
+# p.ej. "war" NO debe matchear dentro de "Warsaw", "Warriors" o "award".
+_FED_WORD_RE = re.compile(r"\bfed\b")
+_FED_KEYWORDS_RE = re.compile(r"\b(?:rate|fomc|decision|cut|hike)\b")
+_GEOPOLITICAL_KEYWORDS_RE = re.compile(
+    r"\b(?:war|conflict|attack|ceasefire|treaty|sanctions?|invasion)\b"
+)
 
 
 def detect_fed_meeting() -> list[CatalystData]:
@@ -441,9 +447,9 @@ def detect_fed_meeting() -> list[CatalystData]:
     candidates = []
     for m in markets:
         question = (m.get("question") or "").strip().lower()
-        if not question or "fed" not in question:
+        if not question or not _FED_WORD_RE.search(question):
             continue
-        if any(kw in question for kw in _FED_KEYWORDS):
+        if _FED_KEYWORDS_RE.search(question):
             candidates.append(m)
 
     if not candidates:
@@ -503,7 +509,7 @@ def detect_geopolitical_events(top_n: int = 5) -> list[CatalystData]:
     candidates = [
         m for m in markets
         if (m.get("question") or "").strip()
-        and any(kw in m["question"].lower() for kw in _GEOPOLITICAL_KEYWORDS)
+        and _GEOPOLITICAL_KEYWORDS_RE.search(m["question"].lower())
     ]
     candidates.sort(key=lambda m: _safe_float(m.get("volume")) or 0.0, reverse=True)
 
@@ -594,7 +600,7 @@ def _parse_polymarket_outcomes(market: dict) -> list[tuple[str, float]] | None:
 # Próximos datos macro EEUU — FRED releases/dates (macro, ticker_id=None)
 # ---------------------------------------------------------------------------
 
-_FRED_API_URL = "https://api.stlouisfed.org/fred/releases/dates"
+_FRED_API_URL = "https://api.stlouisfed.org/fred/release/dates"
 
 # release_id conocidos de FRED (St. Louis Fed). GDP verificado manualmente:
 # https://fred.stlouisfed.org/release?rid=53 → "Gross Domestic Product" (BEA).
@@ -605,7 +611,7 @@ _FRED_RELEASES = {
 }
 
 
-def detect_macro_data_releases(days_ahead: int = 30) -> list[CatalystData]:
+def detect_macro_data_releases(days_ahead: int = 45) -> list[CatalystData]:
     """Detecta próximas fechas de publicación de datos macro EEUU via FRED.
 
     Requiere la variable de entorno FRED_API_KEY (St. Louis Fed, gratuita).
@@ -650,26 +656,33 @@ def detect_macro_data_releases(days_ahead: int = 30) -> list[CatalystData]:
 def _fetch_next_fred_release_date(
     release_id: int, api_key: str, today: date, horizon: date
 ) -> date | None:
-    """Consulta FRED releases/dates y devuelve la próxima fecha dentro del horizonte."""
+    """Consulta fred/release/dates (endpoint singular, filtra por release_id) y
+    devuelve la próxima fecha dentro del horizonte.
+
+    El endpoint no admite filtrar por "fecha >= hoy" directamente y ordenar
+    ascendente empezaría en 1949 (cientos de páginas). Pedimos las últimas
+    `limit` fechas en orden descendente (las más futuras que FRED ya tiene
+    programadas) y nos quedamos con la menor que siga siendo >= hoy.
+    """
     params = {
         "release_id": str(release_id),
         "api_key": api_key,
         "file_type": "json",
         "include_release_dates_with_no_data": "true",
-        "sort_order": "asc",
+        "sort_order": "desc",
+        "limit": "30",
     }
     url = f"{_FRED_API_URL}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, headers={"User-Agent": _EDGAR_USER_AGENT})
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read())
 
+    candidates = []
     for entry in data.get("release_dates", []):
         d = _to_date(entry.get("date"))
-        if d is None:
-            continue
-        if today <= d <= horizon:
-            return d
-    return None
+        if d is not None and today <= d <= horizon:
+            candidates.append(d)
+    return min(candidates) if candidates else None
 
 
 # ---------------------------------------------------------------------------
