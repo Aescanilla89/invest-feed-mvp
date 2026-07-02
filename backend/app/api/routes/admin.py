@@ -227,6 +227,21 @@ def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
                 result["trace_primary_doc_is_xml"] = primary_doc.endswith(".xml")
                 purchase = _parse_form4_purchase(f["accession"], trace_cik, primary_doc)
                 result["trace_purchase"] = purchase
+                # Trazar qué códigos de transacción hay realmente en el XML
+                if primary_doc.endswith(".xml"):
+                    import urllib.request, xml.etree.ElementTree as ET
+                    acc_nd = f["accession"].replace("-", "")
+                    url = f"https://www.sec.gov/Archives/edgar/data/{int(trace_cik)}/{acc_nd}/{primary_doc}"
+                    try:
+                        req = urllib.request.Request(url, headers={"User-Agent": "invest-feed research@invest-feed.com"})
+                        with urllib.request.urlopen(req, timeout=15) as resp:
+                            content = resp.read()
+                        root = ET.fromstring(content)
+                        codes = [el.text for el in root.iter("transactionCode") if el.text]
+                        result["trace_tx_codes"] = codes
+                        result["trace_xml_ok"] = True
+                    except Exception as e:
+                        result["trace_xml_error"] = str(e)
 
     # Test yfinance earnings (puede estar bloqueado en Railway)
     import yfinance as yf
