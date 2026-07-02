@@ -213,23 +213,20 @@ def diagnose_catalysts(_: None = Depends(_verify_token)) -> dict:
 
     # Trace detallado de un Form 4 real (primer ticker con filings)
     if form4_found:
-        from app.screener.catalysts import _find_form4_xml_in_index, _parse_form4_purchase
+        from app.screener.catalysts import _parse_form4_purchase
         trace_ticker = form4_found[0]["ticker"]
         trace_cik = cik_map_test.get(trace_ticker, "")
         if trace_cik:
             filings_full = _get_recent_form4_for_cik(trace_cik, cutoff_21)
             if filings_full:
                 f = filings_full[0]
+                primary_doc = f.get("primary_doc", "")
                 result["trace_ticker"] = trace_ticker
                 result["trace_accession"] = f["accession"]
-                result["trace_primary_doc"] = f.get("primary_doc")
-                cik_int = int(trace_cik)
-                acc_nodash = f["accession"].replace("-", "")
-                xml_name = _find_form4_xml_in_index(cik_int, acc_nodash, f["accession"])
-                result["trace_xml_found"] = xml_name
-                if xml_name:
-                    purchase = _parse_form4_purchase(f["accession"], trace_cik, f.get("primary_doc", ""))
-                    result["trace_purchase"] = purchase
+                result["trace_primary_doc"] = primary_doc
+                result["trace_primary_doc_is_xml"] = primary_doc.endswith(".xml")
+                purchase = _parse_form4_purchase(f["accession"], trace_cik, primary_doc)
+                result["trace_purchase"] = purchase
 
     # Test yfinance earnings (puede estar bloqueado en Railway)
     import yfinance as yf
