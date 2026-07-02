@@ -267,10 +267,15 @@ def _parse_form4_purchase(accession: str, cik: str, primary_doc: str = "") -> di
     acc_nodash = accession.replace("-", "")
     cik_int = int(cik)
 
-    # Paso 1: Obtener el filing index para encontrar el XML real
-    xml_doc = _find_form4_xml_in_index(cik_int, acc_nodash, accession)
+    # Paso 1: Encontrar el XML — usar primaryDocument si ya es XML; si no, consultar índice
+    if primary_doc and primary_doc.endswith(".xml"):
+        xml_doc: str | None = primary_doc
+    else:
+        xml_doc = _find_form4_xml_in_index(cik_int, acc_nodash, accession)
+        time.sleep(_EDGAR_DELAY)
+
     if not xml_doc:
-        logger.debug("No se encontró XML en filing index de %s", accession)
+        logger.debug("No se encontró XML del Form 4 %s", accession)
         return None
 
     xml_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{xml_doc}"
