@@ -67,12 +67,7 @@ def generate_explanations(_: None = Depends(_verify_token)) -> dict:
             .all()
         )
 
-        def _is_actionable(opp: Opportunity) -> bool:
-            fresh_transition = opp.weinstein_transition and opp.weeks_in_stage <= 8
-            n_criterion = opp.canslim_criteria.get("N", {}).get("value") is True
-            return fresh_transition or n_criterion
-
-        top10 = [(opp, t) for opp, t in candidates if _is_actionable(opp)][:10]
+        top10 = [(opp, t) for opp, t in candidates if opp.combined_score >= settings.explanation_min_score][:settings.explanation_max_per_run]
 
         try:
             explainer = ClaudeExplainer()
