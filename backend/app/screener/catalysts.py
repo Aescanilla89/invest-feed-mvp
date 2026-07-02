@@ -237,6 +237,28 @@ def _get_recent_form4_for_cik(cik: str, cutoff: date) -> list[dict]:
         return []
 
 
+def _find_form4_xml_in_index(cik_int: int, acc_nodash: str, accession: str) -> str | None:
+    """Consulta el filing index JSON de EDGAR y devuelve el nombre del XML del Form 4."""
+    index_url = (
+        f"https://www.sec.gov/Archives/edgar/data/{cik_int}/"
+        f"{acc_nodash}/{accession}-index.json"
+    )
+    try:
+        req = urllib.request.Request(index_url, headers={"User-Agent": _EDGAR_USER_AGENT})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+        items = data.get("directory", {}).get("item", [])
+        for item in items:
+            name = item.get("name", "")
+            # Form 4 XML suele empezar con "wf-form4" o "doc" y terminar en ".xml"
+            if name.endswith(".xml"):
+                return name
+        return None
+    except Exception:
+        logger.debug("Error obteniendo filing index %s", accession, exc_info=True)
+        return None
+
+
 def _parse_form4_purchase(accession: str, cik: str, primary_doc: str = "") -> dict | None:
     """Descarga y parsea el XML de un Form 4. Devuelve info de la compra o None si es venta/none."""
     if not accession or not cik:
@@ -245,12 +267,14 @@ def _parse_form4_purchase(accession: str, cik: str, primary_doc: str = "") -> di
     acc_nodash = accession.replace("-", "")
     cik_int = int(cik)
 
-    # Usar el primaryDocument si está disponible; si no, intentar {accession}.xml
-    doc_name = primary_doc or f"{accession}.xml"
-    xml_url = (
-        f"https://www.sec.gov/Archives/edgar/data/{cik_int}/"
-        f"{acc_nodash}/{doc_name}"
-    )
+    # Paso 1: Obtener el filing index para encontrar el XML real
+    xml_doc = _find_form4_xml_in_index(cik_int, acc_nodash, accession)
+    if not xml_doc:
+        logger.debug("No se encontró XML en filing index de %s", accession)
+        return None
+
+    xml_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{xml_doc}"
+    time.sleep(_EDGAR_DELAY)
 
     try:
         req = urllib.request.Request(xml_url, headers={"User-Agent": _EDGAR_USER_AGENT})
