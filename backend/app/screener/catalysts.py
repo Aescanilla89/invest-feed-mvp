@@ -140,7 +140,7 @@ def detect_insider_buys(symbols: list[str], lookback_days: int = 21) -> list[Cat
 
             # Comprueba el más reciente
             filing = recent_form4s[0]
-            purchase = _parse_form4_purchase(filing["accession"], cik)
+            purchase = _parse_form4_purchase(filing["accession"], cik, filing.get("primary_doc", ""))
             if purchase is None:
                 continue
 
@@ -215,15 +215,20 @@ def _get_recent_form4_for_cik(cik: str, cutoff: date) -> list[dict]:
         forms = recent.get("form", [])
         dates = recent.get("filingDate", [])
         accessions = recent.get("accessionNumber", [])
+        primary_docs = recent.get("primaryDocument", [])
 
         results = []
-        for form, filing_date_str, accession in zip(forms, dates, accessions):
+        for form, filing_date_str, accession, primary_doc in zip(forms, dates, accessions, primary_docs):
             if form != "4":
                 continue
             d = _to_date(filing_date_str)
             if d is None or d < cutoff:
                 break  # filings están ordenados por fecha desc, stop early
-            results.append({"date": filing_date_str, "accession": accession})
+            results.append({
+                "date": filing_date_str,
+                "accession": accession,
+                "primary_doc": primary_doc,
+            })
 
         return results
 
@@ -232,16 +237,19 @@ def _get_recent_form4_for_cik(cik: str, cutoff: date) -> list[dict]:
         return []
 
 
-def _parse_form4_purchase(accession: str, cik: str) -> dict | None:
+def _parse_form4_purchase(accession: str, cik: str, primary_doc: str = "") -> dict | None:
     """Descarga y parsea el XML de un Form 4. Devuelve info de la compra o None si es venta/none."""
     if not accession or not cik:
         return None
 
     acc_nodash = accession.replace("-", "")
     cik_int = int(cik)
+
+    # Usar el primaryDocument si está disponible; si no, intentar {accession}.xml
+    doc_name = primary_doc or f"{accession}.xml"
     xml_url = (
         f"https://www.sec.gov/Archives/edgar/data/{cik_int}/"
-        f"{acc_nodash}/{accession}.xml"
+        f"{acc_nodash}/{doc_name}"
     )
 
     try:
