@@ -42,7 +42,7 @@ export interface Opportunity {
   explanation: string | null;
   last_updated: string;
   signal_type?: SignalType;
-  strategies: Record<StrategyName, StrategyResult>;
+  strategies: Partial<Record<StrategyName, StrategyResult>>;
 }
 
 export interface PriceBar {
