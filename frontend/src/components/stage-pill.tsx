@@ -31,8 +31,9 @@ export function StagePill({ weinstein }: { weinstein: Weinstein }) {
       </span>
       <span className="text-xs text-muted-foreground">{weeks_in_stage} sem</span>
       {is_transition && (
-        <span className="rounded-full bg-(--color-stage-advance)/20 px-2 py-0.5 text-[11px] font-semibold text-(--color-stage-advance)">
-          Transición 1→2
+        <span className="relative rounded-full bg-(--color-stage-advance)/20 px-2 py-0.5 text-[11px] font-semibold text-(--color-stage-advance)">
+          <span className="absolute inset-0 rounded-full bg-(--color-stage-advance)/25 motion-safe:animate-pulse" aria-hidden />
+          <span className="relative">Transición 1→2</span>
         </span>
       )}
     </div>

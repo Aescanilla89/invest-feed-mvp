@@ -24,13 +24,13 @@ const SIGNAL_META: Record<
     label: "Rotura CAN SLIM",
     sublabel: "ATH con volumen · todos los criterios",
     icon: BarChart2,
-    classes: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30",
+    classes: "bg-(--color-signal-canslim)/10 text-(--color-signal-canslim) border-(--color-signal-canslim)/30",
   },
   both: {
     label: "Señal Doble",
     sublabel: "Weinstein + CAN SLIM completo",
     icon: Zap,
-    classes: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    classes: "bg-(--color-signal-both)/10 text-(--color-signal-both) border-(--color-signal-both)/30",
   },
 };
 
@@ -54,7 +54,7 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
     opportunity;
 
   return (
-    <Card className="group relative flex flex-col gap-4 border-border/60 bg-card p-5 transition-colors hover:border-(--color-stage-advance)/40">
+    <Card className="group relative flex flex-col gap-4 border-border/60 bg-card p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-(--color-stage-advance)/40 hover:shadow-md">
       <Link
         href={`/opportunities/${ticker}`}
         className="absolute inset-0 z-0 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -115,7 +115,7 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
       {/* Fila 6: fecha + flecha */}
       <div className="relative z-10 flex items-center justify-between pointer-events-none">
         <p className="text-[11px] text-muted-foreground/70">Actualizado {last_updated}</p>
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-(--color-accent) opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-(--color-accent) opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:opacity-100">
           Ver análisis completo <ArrowRight className="size-3.5" aria-hidden />
         </span>
       </div>

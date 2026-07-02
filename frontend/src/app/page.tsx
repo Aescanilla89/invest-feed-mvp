@@ -1,4 +1,3 @@
-import { DataLimitationsFooter } from "@/components/data-limitations-footer";
 import { CatalystsSection } from "@/components/catalysts-section";
 import { FeedSection } from "@/components/feed-section";
 import { Header } from "@/components/header";
@@ -13,7 +12,6 @@ export default function Home() {
           <FeedSection />
         </div>
       </main>
-      <DataLimitationsFooter />
     </>
   );
 }

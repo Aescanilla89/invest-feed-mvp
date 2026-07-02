@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Zap, AlertTriangle } from "lucide-react";
+import { Radar, CalendarClock } from "lucide-react";
 import { CatalystCard } from "@/components/catalyst-card";
+import { EmptyState, ErrorState } from "@/components/empty-state";
 import { getCatalysts, type Catalyst } from "@/lib/api";
 
 const container = {
@@ -47,42 +48,37 @@ export function CatalystsSection() {
 
   return (
     <section className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-2 text-orange-600 dark:text-orange-400">
-          <Zap className="size-4" aria-hidden />
-        </div>
-        <div>
-          <h2 className="font-heading text-base font-semibold leading-none">
-            Catalizadores del Día
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Earnings · Insider Buys · cruzados con Weinstein + CAN SLIM
-          </p>
-        </div>
+      {/* Header -- deliberadamente distinto de SectionHeader: icono inline sin
+       * círculo tintado, con línea de radar bajo el título en vez de un badge,
+       * para diferenciar esta sección orientada a eventos del resto de grids. */}
+      <div className="flex items-center gap-2.5">
+        <Radar className="size-5 shrink-0 text-(--color-catalyst-earnings)" aria-hidden />
+        <h2 className="font-heading text-base font-semibold leading-none">
+          Catalizadores del Día
+        </h2>
         {catalysts !== null && (
-          <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
             {catalysts.length}
           </span>
         )}
       </div>
+      <p className="-mt-3 border-l-2 border-(--color-catalyst-earnings)/40 pl-4 text-xs text-muted-foreground">
+        Earnings · Insider Buys · cruzados con Weinstein + CAN SLIM
+      </p>
 
       {/* Contenido */}
       {error ? (
-        <div className="flex items-start gap-3 rounded-lg border border-(--color-risk-high)/30 bg-(--color-risk-high)/10 p-4 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-(--color-risk-high)" aria-hidden />
-          <p>{error}</p>
-        </div>
+        <ErrorState message={error} />
       ) : catalysts === null ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(3)].map((_, i) => <CatalystCardSkeleton key={i} />)}
         </div>
       ) : catalysts.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-muted/30 py-10 text-center text-sm text-muted-foreground">
-          Sin catalizadores detectados esta semana.
-          <br />
-          <span className="text-xs opacity-70">El job corre tras el screener diario.</span>
-        </div>
+        <EmptyState
+          icon={CalendarClock}
+          message="Sin catalizadores detectados esta semana."
+          detail="El job corre tras el screener diario."
+        />
       ) : (
         <motion.div
           className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"

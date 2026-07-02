@@ -11,7 +11,11 @@ export function Header() {
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight sm:text-3xl">
-            Stage<span className="text-(--color-accent)">Wise</span>
+            Stage
+            <span className="relative text-(--color-accent)">
+              Wise
+              <span className="absolute -right-2.5 top-1 size-1.5 rounded-full bg-(--color-stage-advance) motion-safe:animate-pulse" aria-hidden />
+            </span>
           </h1>
           <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
             Oportunidades rankeadas combinando Stage Analysis de Weinstein y CAN&nbsp;SLIM —
@@ -20,7 +24,7 @@ export function Header() {
         </div>
         <p className="max-w-xs text-xs leading-relaxed text-muted-foreground/80">
           Información educativa con retraso, no asesoramiento financiero ni ejecución de
-          órdenes. Ver limitaciones de datos abajo.
+          órdenes.
         </p>
       </div>
     </header>

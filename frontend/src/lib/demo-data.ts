@@ -9,7 +9,7 @@
  * producción real, este fichero no se usa -- lib/api.ts solo lo importa
  * si NEXT_PUBLIC_DEMO_MODE está activo.
  */
-import type { DataLimitations, Opportunity, OpportunityDetail } from "./api";
+import type { Opportunity, OpportunityDetail } from "./api";
 
 export const DEMO_OPPORTUNITIES: Opportunity[] = [
   {
@@ -211,25 +211,6 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
     strategies: {},
   },
 ];
-
-export const DEMO_LIMITATIONS: DataLimitations = {
-  source_notes: [
-    "yfinance no es una API oficial (scraping de Yahoo Finance): sin SLA, puede romperse sin aviso.",
-    "Rate limit de yfinance no documentado oficialmente; el job aplica pausas entre tickers.",
-    "Cobertura de datos fundamentales de yfinance es inconsistente fuera de empresas large-cap.",
-    "SEC EDGAR (data.sec.gov) es la fuente oficial usada para shares outstanding (criterio S); gratis y sin API key, pero los filings tienen delay de varias semanas tras cierre de trimestre.",
-    "Ningún dato de este feed tiene fines de ejecución de órdenes ni asesoramiento financiero: es información educativa, con retraso (no apto para intradía).",
-  ],
-  canslim_criteria: [
-    { criterion: "C", verifiable: true, reason: "Crecimiento EPS trimestral YoY vía yfinance" },
-    { criterion: "A", verifiable: true, reason: "Crecimiento EPS anual vía yfinance" },
-    { criterion: "N", verifiable: true, reason: "Solo la parte de máximo de 52 semanas con volumen. No evalúa 'nuevo producto/gestión'." },
-    { criterion: "S", verifiable: true, reason: "Tendencia de shares outstanding vía SEC EDGAR (companyfacts), no vía yfinance." },
-    { criterion: "L", verifiable: true, reason: "Fuerza relativa frente a SPY como benchmark" },
-    { criterion: "I", verifiable: false, reason: "Requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC). No disponible como endpoint por ticker en este MVP. Planificado para fase 2." },
-    { criterion: "M", verifiable: true, reason: "Stage de Weinstein calculado sobre SPY como proxy del mercado" },
-  ],
-};
 
 function toPriceBars(rows: { date: string; close: number; volume: number }[]): import("./api").PriceBar[] {
   return rows.map((r, i) => {

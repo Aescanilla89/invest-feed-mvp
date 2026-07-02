@@ -1,36 +1,36 @@
 "use client";
 
-import { TrendingUp, Users, Award, AlertCircle } from "lucide-react";
+import { TrendingUp, Users, AlertCircle } from "lucide-react";
 import type { Catalyst, CatalystClassification } from "@/lib/api";
 
 const TYPE_CONFIG = {
   earnings: {
     label: "Resultados",
     Icon: TrendingUp,
-    classes: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+    classes: "bg-(--color-catalyst-earnings)/10 text-(--color-catalyst-earnings) border-(--color-catalyst-earnings)/20",
   },
   insider_buy: {
     label: "Insider Buy",
     Icon: Users,
-    classes: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
+    classes: "bg-(--color-catalyst-insider)/10 text-(--color-catalyst-insider) border-(--color-catalyst-insider)/20",
   },
 } as const;
 
-const CLASSIFICATION_CONFIG: Record<CatalystClassification, { label: string; medal: string; classes: string }> = {
+const CLASSIFICATION_CONFIG: Record<CatalystClassification, { label: string; rank: string; classes: string }> = {
   oro: {
     label: "Oportunidad Oro",
-    medal: "🥇",
-    classes: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+    rank: "1º",
+    classes: "bg-(--color-medal-gold)/10 text-(--color-medal-gold) border-(--color-medal-gold)/30",
   },
   plata: {
     label: "Oportunidad Plata",
-    medal: "🥈",
-    classes: "bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/20",
+    rank: "2º",
+    classes: "bg-(--color-medal-silver)/10 text-(--color-medal-silver) border-(--color-medal-silver)/30",
   },
   bronce: {
     label: "Oportunidad Bronce",
-    medal: "🥉",
-    classes: "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20",
+    rank: "3º",
+    classes: "bg-(--color-medal-bronze)/10 text-(--color-medal-bronze) border-(--color-medal-bronze)/30",
   },
 };
 
@@ -87,7 +87,12 @@ export function CatalystCard({ catalyst }: { catalyst: Catalyst }) {
           <span
             className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold ${classConf.classes}`}
           >
-            <span aria-hidden>{classConf.medal}</span>
+            <span
+              className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-current/20 text-[10px] font-bold tabular-nums"
+              aria-hidden
+            >
+              {classConf.rank}
+            </span>
             {classConf.label}
           </span>
         ) : (

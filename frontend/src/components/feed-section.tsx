@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, TrendingUp, Search, Award, DollarSign, Zap } from "lucide-react";
+import { Flame, TrendingUp, Search, Award, DollarSign } from "lucide-react";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
-import { EmptyState } from "@/components/empty-state";
+import { EmptyState, ErrorState } from "@/components/empty-state";
 import { getOpportunities, type Opportunity, type StrategyName } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const container = {
   hidden: { opacity: 0 },
@@ -22,35 +23,40 @@ const STRATEGY_SECTIONS: {
   label: string;
   sublabel: string;
   icon: React.ElementType;
-  classes: string;
+  tabActive: string;
+  iconColor: string;
 }[] = [
   {
     key: "minervini",
     label: "Minervini SEPA",
     sublabel: "Trend Template · precio sobre MAs · fuerza relativa",
     icon: TrendingUp,
-    classes: "text-purple-600 dark:text-purple-400",
+    tabActive: "border-(--color-strategy-minervini)/50 bg-(--color-strategy-minervini)/10 text-(--color-strategy-minervini)",
+    iconColor: "text-(--color-strategy-minervini)",
   },
   {
     key: "lynch",
     label: "Lynch GARP",
     sublabel: "Growth at a Reasonable Price · PEG ratio",
     icon: Search,
-    classes: "text-emerald-600 dark:text-emerald-400",
+    tabActive: "border-(--color-strategy-lynch)/50 bg-(--color-strategy-lynch)/10 text-(--color-strategy-lynch)",
+    iconColor: "text-(--color-strategy-lynch)",
   },
   {
     key: "berkshire",
     label: "Berkshire Quality",
     sublabel: "Márgenes · OCF/NI · ROE · sin dilución",
     icon: Award,
-    classes: "text-amber-600 dark:text-amber-400",
+    tabActive: "border-(--color-strategy-berkshire)/50 bg-(--color-strategy-berkshire)/10 text-(--color-strategy-berkshire)",
+    iconColor: "text-(--color-strategy-berkshire)",
   },
   {
     key: "dividendos",
     label: "Dividendos",
     sublabel: "Yield ≥2.5% · payout sostenible · EPS creciente",
     icon: DollarSign,
-    classes: "text-sky-600 dark:text-sky-400",
+    tabActive: "border-(--color-strategy-dividendos)/50 bg-(--color-strategy-dividendos)/10 text-(--color-strategy-dividendos)",
+    iconColor: "text-(--color-strategy-dividendos)",
   },
 ];
 
@@ -77,27 +83,20 @@ function CardGrid({ opportunities }: { opportunities: Opportunity[] }) {
   );
 }
 
-function SectionHeader({
-  icon: Icon,
-  label,
-  sublabel,
-  iconClass,
-  count,
-}: {
-  icon: React.ElementType;
-  label: string;
-  sublabel: string;
-  iconClass: string;
-  count: number;
-}) {
+/** Header "hero" para Destacadas -- deliberadamente distinto del resto: barra
+ * de acento a la izquierda, icono en círculo relleno (no solo tintado), y
+ * jerarquía tipográfica mayor, para marcarla como la sección principal. */
+function FeaturedHeader({ count }: { count: number }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className={`rounded-lg border border-current/20 bg-current/10 p-2 ${iconClass}`}>
-        <Icon className="size-4" aria-hidden />
+    <div className="flex items-center gap-3 border-l-2 border-(--color-accent) pl-4">
+      <div className="rounded-full bg-(--color-accent) p-2.5 text-accent-foreground">
+        <Flame className="size-4" aria-hidden />
       </div>
       <div>
-        <h2 className="font-heading text-base font-semibold leading-none">{label}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">{sublabel}</p>
+        <h2 className="font-heading text-lg font-semibold leading-none">Destacadas</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Mejor combined score · Weinstein + CAN SLIM
+        </p>
       </div>
       <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
         {count}
@@ -106,9 +105,45 @@ function SectionHeader({
   );
 }
 
+/** Barra de pestañas para las 4 estrategias -- reemplaza los 4 bloques
+ * full-width apilados por una única sección filtrable. */
+function StrategyTabBar({
+  active,
+  counts,
+  onChange,
+}: {
+  active: StrategyName;
+  counts: Record<StrategyName, number>;
+  onChange: (key: StrategyName) => void;
+}) {
+  return (
+    <div role="tablist" aria-label="Filtrar por estrategia" className="flex flex-wrap gap-1.5 border-b border-border pb-3">
+      {STRATEGY_SECTIONS.map(({ key, label, icon: Icon, tabActive }) => (
+        <button
+          key={key}
+          role="tab"
+          aria-selected={active === key}
+          onClick={() => onChange(key)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+            active === key ? tabActive : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Icon className="size-3.5 shrink-0" aria-hidden />
+          {label}
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+            {counts[key]}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function FeedSection() {
   const [data, setData] = useState<FeedData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeStrategy, setActiveStrategy] = useState<StrategyName>("minervini");
 
   useEffect(() => {
     let cancelled = false;
@@ -138,18 +173,13 @@ export function FeedSection() {
   }, []);
 
   if (error) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-(--color-risk-high)/30 bg-(--color-risk-high)/10 p-4 text-sm">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-(--color-risk-high)" aria-hidden />
-        <p>{error}</p>
-      </div>
-    );
+    return <ErrorState message={error} />;
   }
 
   if (!data) {
     return (
       <div className="flex flex-col gap-10">
-        {[...Array(3)].map((_, s) => (
+        {[...Array(2)].map((_, s) => (
           <div key={s} className="flex flex-col gap-4">
             <div className="h-10 w-48 animate-pulse rounded-lg bg-muted" />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -161,48 +191,48 @@ export function FeedSection() {
     );
   }
 
+  const activeConf = STRATEGY_SECTIONS.find((s) => s.key === activeStrategy)!;
+  const activeOpps = data.byStrategy[activeStrategy];
+  const counts = {
+    minervini: data.byStrategy.minervini.length,
+    lynch: data.byStrategy.lynch.length,
+    berkshire: data.byStrategy.berkshire.length,
+    dividendos: data.byStrategy.dividendos.length,
+  };
+
   return (
     <div className="flex flex-col gap-10">
       {/* Sección 1: Destacadas (Weinstein + CAN SLIM) */}
       <section>
-        <SectionHeader
-          icon={Zap}
-          label="Destacadas"
-          sublabel="Mejor combined score · Weinstein + CAN SLIM"
-          iconClass="text-(--color-accent)"
-          count={data.top.length}
-        />
+        <FeaturedHeader count={data.top.length} />
         <div className="mt-4">
           {data.top.length === 0 ? (
-            <EmptyState message="Sin señales Weinstein/CAN SLIM activas hoy." />
+            <EmptyState
+              icon={Flame}
+              message="Sin señales Weinstein/CAN SLIM activas hoy."
+              detail="Vuelve tras el próximo cierre de sesión."
+            />
           ) : (
             <CardGrid opportunities={data.top} />
           )}
         </div>
       </section>
 
-      {/* Secciones por estrategia */}
-      {STRATEGY_SECTIONS.map(({ key, label, sublabel, icon, classes }) => {
-        const opps = data.byStrategy[key];
-        return (
-          <section key={key}>
-            <SectionHeader
-              icon={icon}
-              label={label}
-              sublabel={sublabel}
-              iconClass={classes}
-              count={opps.length}
+      {/* Sección 2: Estrategias -- vista filtrable en vez de 4 bloques apilados */}
+      <section>
+        <StrategyTabBar active={activeStrategy} counts={counts} onChange={setActiveStrategy} />
+        <div className="mt-4 flex flex-col gap-3">
+          <p className={cn("text-xs", activeConf.iconColor)}>{activeConf.sublabel}</p>
+          {activeOpps.length === 0 ? (
+            <EmptyState
+              icon={activeConf.icon}
+              message={`Sin oportunidades ${activeConf.label} detectadas hoy.`}
             />
-            <div className="mt-4">
-              {opps.length === 0 ? (
-                <EmptyState message={`Sin oportunidades ${label} detectadas hoy.`} />
-              ) : (
-                <CardGrid opportunities={opps} />
-              )}
-            </div>
-          </section>
-        );
-      })}
+          ) : (
+            <CardGrid opportunities={activeOpps} />
+          )}
+        </div>
+      </section>
     </div>
   );
 }

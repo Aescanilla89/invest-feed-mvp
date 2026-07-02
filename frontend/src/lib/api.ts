@@ -58,17 +58,6 @@ export interface OpportunityDetail extends Opportunity {
   price_history: PriceBar[];
 }
 
-export interface DataLimitation {
-  criterion: string;
-  verifiable: boolean;
-  reason: string;
-}
-
-export interface DataLimitations {
-  source_notes: string[];
-  canslim_criteria: DataLimitation[];
-}
-
 export interface OpportunityFilters {
   minScore?: number;
   risk?: RiskBucket;
@@ -116,14 +105,6 @@ export async function getOpportunityDetail(symbol: string): Promise<OpportunityD
     return detail;
   }
   return fetchJson<OpportunityDetail>(`/opportunities/${symbol}`);
-}
-
-export async function getDataLimitations(): Promise<DataLimitations> {
-  if (DEMO_MODE) {
-    const { DEMO_LIMITATIONS } = await import("./demo-data");
-    return DEMO_LIMITATIONS;
-  }
-  return fetchJson<DataLimitations>("/meta/data-limitations");
 }
 
 export type CatalystType = "earnings" | "insider_buy";

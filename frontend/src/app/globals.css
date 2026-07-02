@@ -45,6 +45,17 @@
   --color-stage-advance: var(--stage-advance);
   --color-stage-decline: var(--stage-decline);
   --color-stage-neutral: var(--stage-neutral);
+  --color-signal-canslim: var(--signal-canslim);
+  --color-signal-both: var(--signal-both);
+  --color-catalyst-earnings: var(--catalyst-earnings);
+  --color-catalyst-insider: var(--catalyst-insider);
+  --color-medal-gold: var(--medal-gold);
+  --color-medal-silver: var(--medal-silver);
+  --color-medal-bronze: var(--medal-bronze);
+  --color-strategy-minervini: var(--strategy-minervini);
+  --color-strategy-lynch: var(--strategy-lynch);
+  --color-strategy-berkshire: var(--strategy-berkshire);
+  --color-strategy-dividendos: var(--strategy-dividendos);
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: calc(var(--radius) * 0.75);
   --radius-lg: var(--radius);
@@ -95,6 +106,21 @@ negro/blanco puro. Dark mode es el modo por defecto del producto. */
   --stage-advance: oklch(45% 0.1 152);
   --stage-decline: oklch(52% 0.15 35);
   --stage-neutral: oklch(48% 0.02 200);
+
+  /* Acentos de señal/estrategia -- mismo hue-family que el resto (152 verde,
+  75 cobre/dorado, 200 slate, y dos hues nuevos pero contenidos: 110
+  musgo/oliva y 20 terracota) para diferenciar sin salir de la paleta. */
+  --signal-canslim: oklch(48% 0.11 110);
+  --signal-both: oklch(58% 0.14 50);
+  --catalyst-earnings: oklch(46% 0.05 200);
+  --catalyst-insider: oklch(50% 0.13 20);
+  --medal-gold: oklch(65% 0.14 75);
+  --medal-silver: oklch(65% 0.02 200);
+  --medal-bronze: oklch(55% 0.11 30);
+  --strategy-minervini: oklch(65% 0.14 75);
+  --strategy-lynch: oklch(45% 0.1 152);
+  --strategy-berkshire: oklch(48% 0.02 200);
+  --strategy-dividendos: oklch(48% 0.11 110);
 }
 
 .dark {
@@ -136,6 +162,18 @@ negro/blanco puro. Dark mode es el modo por defecto del producto. */
   --stage-advance: oklch(70% 0.13 152);
   --stage-decline: oklch(68% 0.16 35);
   --stage-neutral: oklch(68% 0.015 200);
+
+  --signal-canslim: oklch(72% 0.13 110);
+  --signal-both: oklch(78% 0.15 50);
+  --catalyst-earnings: oklch(66% 0.06 200);
+  --catalyst-insider: oklch(72% 0.14 20);
+  --medal-gold: oklch(74% 0.12 75);
+  --medal-silver: oklch(78% 0.02 200);
+  --medal-bronze: oklch(70% 0.12 30);
+  --strategy-minervini: oklch(74% 0.12 75);
+  --strategy-lynch: oklch(68% 0.13 152);
+  --strategy-berkshire: oklch(68% 0.015 200);
+  --strategy-dividendos: oklch(72% 0.13 110);
 }
 
 @layer base {
