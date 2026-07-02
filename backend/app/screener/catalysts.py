@@ -237,8 +237,48 @@ def _get_recent_form4_for_cik(cik: str, cutoff: date) -> list[dict]:
         return []
 
 
-def _find_form4_xml_in_index(cik_int: int, acc_nodash: str, accession: str) -> str | None:
-    """Consulta el filing index JSON de EDGAR y devuelve el nombre del XML del Form 4."""
+def _parse_form4_purchase(accession: str, cik: str, primary_doc: str = "") -> dict | None:
+    """Descarga y parsea un Form 4 de EDGAR. Devuelve info de la compra o None.
+
+    Estrategia:
+    1. Intenta descargar el archivo con el índice de la presentación
+    2. Busca el primaryDocument o un .htm en el índice
+    3. Parsea el contenido buscando transactionCode == 'P' (open-market purchase)
+    """
+    if not accession or not cik:
+        return None
+
+    acc_nodash = accession.replace("-", "")
+    cik_int = int(cik)
+
+    # Obtener el índice del filing para encontrar el documento principal
+    doc_name = _find_primary_htm_from_index(cik_int, acc_nodash, accession)
+    if not doc_name and primary_doc:
+        # Usar el primaryDocument registrado en submissions.json
+        # Si es xslF345X06/... usarlo directamente
+        doc_name = primary_doc
+
+    if not doc_name:
+        logger.debug("No se encontró documento del Form 4 %s", accession)
+        return None
+
+    time.sleep(_EDGAR_DELAY)
+    doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{doc_name}"
+
+    try:
+        req = urllib.request.Request(doc_url, headers={"User-Agent": _EDGAR_USER_AGENT})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content = resp.read().decode("utf-8", errors="replace")
+
+        return _extract_purchase_from_form4_content(content, accession)
+
+    except Exception:
+        logger.debug("Error descargando Form 4 %s", accession, exc_info=True)
+        return None
+
+
+def _find_primary_htm_from_index(cik_int: int, acc_nodash: str, accession: str) -> str | None:
+    """Consulta el filing index y devuelve el .htm principal del Form 4."""
     index_url = (
         f"https://www.sec.gov/Archives/edgar/data/{cik_int}/"
         f"{acc_nodash}/{accession}-index.json"
@@ -247,89 +287,124 @@ def _find_form4_xml_in_index(cik_int: int, acc_nodash: str, accession: str) -> s
         req = urllib.request.Request(index_url, headers={"User-Agent": _EDGAR_USER_AGENT})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
+        time.sleep(_EDGAR_DELAY)
         items = data.get("directory", {}).get("item", [])
+        # Preferir .htm sobre .xml (iXBRL moderno)
         for item in items:
             name = item.get("name", "")
-            # Form 4 XML suele empezar con "wf-form4" o "doc" y terminar en ".xml"
-            if name.endswith(".xml"):
+            if name.endswith(".htm") and not name.startswith("R"):
                 return name
+        for item in items:
+            if item.get("name", "").endswith(".xml"):
+                return item["name"]
         return None
     except Exception:
         logger.debug("Error obteniendo filing index %s", accession, exc_info=True)
         return None
 
 
-def _parse_form4_purchase(accession: str, cik: str, primary_doc: str = "") -> dict | None:
-    """Descarga y parsea el XML de un Form 4. Devuelve info de la compra o None si es venta/none."""
-    if not accession or not cik:
-        return None
+def _extract_purchase_from_form4_content(content: str, accession: str) -> dict | None:
+    """Extrae datos de compra de un Form 4 (HTML o XML).
 
-    acc_nodash = accession.replace("-", "")
-    cik_int = int(cik)
+    - Intenta parsear como XML estricto (filings pre-2020)
+    - Si falla, busca patrones en el texto (iXBRL moderno)
+    """
+    import re
 
-    # Paso 1: Encontrar el XML — usar primaryDocument si ya es XML; si no, consultar índice
-    if primary_doc and primary_doc.endswith(".xml"):
-        xml_doc: str | None = primary_doc
-    else:
-        xml_doc = _find_form4_xml_in_index(cik_int, acc_nodash, accession)
-        time.sleep(_EDGAR_DELAY)
-
-    if not xml_doc:
-        logger.debug("No se encontró XML del Form 4 %s", accession)
-        return None
-
-    xml_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{xml_doc}"
-    time.sleep(_EDGAR_DELAY)
-
+    # Intento 1: XML estricto (formato clásico EDGAR Form 4)
     try:
-        req = urllib.request.Request(xml_url, headers={"User-Agent": _EDGAR_USER_AGENT})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            content = resp.read()
+        root = ET.fromstring(content.encode("utf-8"))
+        return _parse_ownership_xml(root)
+    except ET.ParseError:
+        pass
 
-        root = ET.fromstring(content)
+    # Intento 2: Buscar en HTML/iXBRL con regex
+    # transactionCode aparece cerca de la tabla de transacciones
+    # Patrones comunes: <td>P</td>, >P<, value="P", etc.
+    codes_found = re.findall(
+        r"(?:transactionCode|TransactionCode)[^>]*>([A-Z])<",
+        content,
+    )
+    if not codes_found:
+        # iXBRL: <ix:nonFraction ...>P</ix:nonFraction>
+        codes_found = re.findall(r"TransactionCode[^>]*>\s*([A-Z])\s*<", content)
 
-        # Buscar transacciones no-derivadas tipo P (Purchase)
-        shares = None
-        price = None
-        has_purchase = False
+    if "P" not in codes_found:
+        return None  # no hay open-market purchase
 
-        for tx in root.iter("nonDerivativeTransaction"):
-            code_el = tx.find(".//transactionCode")
-            if code_el is None or code_el.text != "P":
-                continue
-            has_purchase = True
-            shares_el = tx.find(".//transactionShares/value")
-            price_el = tx.find(".//transactionPricePerShare/value")
-            if shares_el is not None and shares_el.text:
-                shares = _safe_int(shares_el.text)
-            if price_el is not None and price_el.text:
-                price = _safe_float(price_el.text)
-            break
+    # Extraer shares y precio (best-effort)
+    shares = None
+    price = None
 
-        if not has_purchase:
-            return None
+    shares_match = re.search(
+        r"transactionShares[^>]*>\s*<value>\s*([\d,.]+)",
+        content,
+    )
+    if shares_match:
+        shares = _safe_int(shares_match.group(1).replace(",", ""))
 
-        insider_name = ""
-        position = ""
-        name_el = root.find(".//reportingOwner/reportingOwnerId/rptOwnerName")
-        if name_el is not None:
-            insider_name = (name_el.text or "").strip()
-        pos_el = root.find(".//reportingOwner/reportingOwnerRelationship/officerTitle")
-        if pos_el is not None:
-            position = (pos_el.text or "").strip()
+    price_match = re.search(
+        r"transactionPricePerShare[^>]*>\s*<value>\s*([\d,.]+)",
+        content,
+    )
+    if price_match:
+        price = _safe_float(price_match.group(1).replace(",", ""))
 
-        value_usd = int(shares * price) if shares and price else None
+    # Extraer nombre del insider
+    name_match = re.search(r"rptOwnerName[^>]*>\s*([^<]{3,80})\s*<", content)
+    insider_name = name_match.group(1).strip() if name_match else "Directivo"
 
-        return {
-            "insider_name": insider_name or "Directivo",
-            "position": position,
-            "shares": shares,
-            "value_usd": value_usd,
-        }
+    pos_match = re.search(r"officerTitle[^>]*>\s*([^<]{2,60})\s*<", content)
+    position = pos_match.group(1).strip() if pos_match else ""
 
-    except Exception:
-        logger.debug("Error parseando Form 4 %s", accession, exc_info=True)
+    value_usd = int(shares * price) if shares and price else None
+
+    return {
+        "insider_name": insider_name,
+        "position": position,
+        "shares": shares,
+        "value_usd": value_usd,
+    }
+
+
+def _parse_ownership_xml(root: ET.Element) -> dict | None:
+    """Parsea un ownershipDocument XML clásico de EDGAR Form 4."""
+    has_purchase = False
+    shares = None
+    price = None
+
+    for tx in root.iter("nonDerivativeTransaction"):
+        code_el = tx.find(".//transactionCode")
+        if code_el is None or code_el.text != "P":
+            continue
+        has_purchase = True
+        shares_el = tx.find(".//transactionShares/value")
+        price_el = tx.find(".//transactionPricePerShare/value")
+        if shares_el is not None and shares_el.text:
+            shares = _safe_int(shares_el.text)
+        if price_el is not None and price_el.text:
+            price = _safe_float(price_el.text)
+        break
+
+    if not has_purchase:
         return None
+
+    insider_name = ""
+    position = ""
+    name_el = root.find(".//reportingOwner/reportingOwnerId/rptOwnerName")
+    if name_el is not None:
+        insider_name = (name_el.text or "").strip()
+    pos_el = root.find(".//reportingOwner/reportingOwnerRelationship/officerTitle")
+    if pos_el is not None:
+        position = (pos_el.text or "").strip()
+
+    value_usd = int(shares * price) if shares and price else None
+    return {
+        "insider_name": insider_name or "Directivo",
+        "position": position,
+        "shares": shares,
+        "value_usd": value_usd,
+    }
 
 
 # ---------------------------------------------------------------------------
