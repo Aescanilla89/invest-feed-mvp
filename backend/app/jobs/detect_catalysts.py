@@ -47,39 +47,48 @@ def run(lookback_days_opps: int = 7) -> dict:
         )
         symbols = [r[0] for r in rows]
 
-        all_catalysts: list[CatalystData] = []
+        def _persist(items: list[CatalystData]) -> tuple[int, int]:
+            saved, skipped = 0, 0
+            for cd in items:
+                if db.query(Catalyst).filter_by(source_id=cd.source_id).one_or_none():
+                    skipped += 1
+                    continue
+                ticker = db.query(Ticker).filter_by(symbol=cd.symbol).one_or_none() if cd.symbol else None
+                db.add(Catalyst(
+                    ticker_id=ticker.id if ticker else None,
+                    detected_date=today,
+                    catalyst_type=cd.catalyst_type,
+                    title=cd.title,
+                    description=cd.description,
+                    source_id=cd.source_id,
+                    extra=cd.extra,
+                ))
+                saved += 1
+            db.commit()
+            return saved, skipped
+
+        # Catalizadores macro/market-wide (ticker_id=None) primero — Polymarket/FRED
+        # son unas pocas peticiones HTTP rápidas, independientes del universo.
+        # Se guardan con su propio commit para que estén disponibles ya mismo aunque
+        # el bucle de earnings/insider (potencialmente lento, cientos de tickers) se
+        # quede atascado o el proceso se reinicie a mitad de camino.
+        macro_catalysts: list[CatalystData] = []
+        macro_catalysts.extend(detect_fed_meeting())
+        macro_catalysts.extend(detect_geopolitical_events())
+        macro_catalysts.extend(detect_macro_data_releases())
+        saved, skipped = _persist(macro_catalysts)
 
         if symbols:
             logger.info("Detectando catalizadores para %d tickers activos", len(symbols))
-            all_catalysts.extend(detect_earnings(symbols, lookback_days=3))
-            all_catalysts.extend(detect_insider_buys(symbols, lookback_days=14))
+            per_ticker: list[CatalystData] = []
+            per_ticker.extend(detect_earnings(symbols, lookback_days=3))
+            per_ticker.extend(detect_insider_buys(symbols, lookback_days=14))
+            more_saved, more_skipped = _persist(per_ticker)
+            saved += more_saved
+            skipped += more_skipped
         else:
             logger.warning("No hay tickers con oportunidades recientes — solo catalizadores macro")
 
-        # Catalizadores macro/market-wide (ticker_id=None) — independientes del universo
-        all_catalysts.extend(detect_fed_meeting())
-        all_catalysts.extend(detect_geopolitical_events())
-        all_catalysts.extend(detect_macro_data_releases())
-
-        saved, skipped = 0, 0
-        for cd in all_catalysts:
-            if db.query(Catalyst).filter_by(source_id=cd.source_id).one_or_none():
-                skipped += 1
-                continue
-
-            ticker = db.query(Ticker).filter_by(symbol=cd.symbol).one_or_none() if cd.symbol else None
-            db.add(Catalyst(
-                ticker_id=ticker.id if ticker else None,
-                detected_date=today,
-                catalyst_type=cd.catalyst_type,
-                title=cd.title,
-                description=cd.description,
-                source_id=cd.source_id,
-                extra=cd.extra,
-            ))
-            saved += 1
-
-        db.commit()
         logger.info("Catalizadores: %d guardados, %d ya existían", saved, skipped)
         return {
             "status": "ok",
