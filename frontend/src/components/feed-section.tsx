@@ -177,16 +177,41 @@ export function FeedSection() {
   }
 
   if (!data) {
+    // Mirrors the real DOM shape below (FeaturedHeader + StrategyTabBar) at
+    // matching heights so the section's total height doesn't jump once data
+    // arrives -- avoids a CLS-driven mis-click on the tab bar.
     return (
       <div className="flex flex-col gap-10">
-        {[...Array(2)].map((_, s) => (
-          <div key={s} className="flex flex-col gap-4">
-            <div className="h-10 w-48 animate-pulse rounded-lg bg-muted" />
+        <section>
+          <div className="flex items-center gap-3 border-l-2 border-transparent pl-4">
+            <div className="size-9 animate-pulse rounded-full bg-muted" />
+            <div className="space-y-1.5">
+              <div className="h-[18px] w-24 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-56 animate-pulse rounded bg-muted" />
+            </div>
+            <div className="ml-auto h-5 w-6 animate-pulse rounded-full bg-muted" />
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[...Array(4)].map((_, i) => <OpportunityCardSkeleton key={i} />)}
+          </div>
+        </section>
+        <section>
+          <div className="flex flex-wrap gap-1.5 border-b border-border pb-3">
+            {STRATEGY_SECTIONS.map(({ key, label }) => (
+              <div
+                key={key}
+                className="h-[30px] animate-pulse rounded-lg bg-muted"
+                style={{ width: `${label.length * 7 + 56}px` }}
+              />
+            ))}
+          </div>
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="h-3.5 w-64 animate-pulse rounded bg-muted" />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {[...Array(s === 0 ? 4 : 6)].map((_, i) => <OpportunityCardSkeleton key={i} />)}
+              {[...Array(6)].map((_, i) => <OpportunityCardSkeleton key={i} />)}
             </div>
           </div>
-        ))}
+        </section>
       </div>
     );
   }

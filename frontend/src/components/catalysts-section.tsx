@@ -71,7 +71,9 @@ export function CatalystsSection() {
         <ErrorState message={error} />
       ) : catalysts === null ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[...Array(3)].map((_, i) => <CatalystCardSkeleton key={i} />)}
+          {/* getCatalysts(7) can return up to 7 items -- size the skeleton
+           * closer to that so the grid doesn't gain/lose rows on load. */}
+          {[...Array(6)].map((_, i) => <CatalystCardSkeleton key={i} />)}
         </div>
       ) : catalysts.length === 0 ? (
         <EmptyState
