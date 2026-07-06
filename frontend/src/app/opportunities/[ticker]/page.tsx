@@ -5,7 +5,6 @@ import { CanslimPatternDiagram } from "@/components/canslim-pattern-diagram";
 import { CriteriaChips } from "@/components/criteria-chips";
 import { WeinsteinChart } from "@/components/weinstein-chart";
 import { RiskBadge } from "@/components/risk-badge";
-import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
 import { WeinsteinCycleDiagram } from "@/components/weinstein-cycle-diagram";
 import { ExplanationBullets } from "@/components/explanation-bullets";
@@ -22,7 +21,7 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
     notFound();
   }
 
-  const { name, sector, combined_score, risk_bucket, weinstein, canslim, explanation, last_updated, price_history, strategies } =
+  const { name, sector, risk_bucket, weinstein, canslim, explanation, last_updated, price_history, strategies } =
     detail;
 
   return (
@@ -44,7 +43,6 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
           </div>
           {strategies && <StrategyBadges strategies={strategies} className="mt-2" />}
         </div>
-        <ScoreBadge score={combined_score} />
       </div>
 
       {/* Explicación IA -- la sección con más peso de la página: regla de
@@ -123,12 +121,9 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
        * (borde tenue, sin bg-card) y encabezado más pequeño que las
        * secciones de arriba para reforzar la jerarquía. */}
       <section className="mt-8 rounded-lg border border-border/40 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <ListChecks className="size-4 shrink-0" aria-hidden />
-            <h2 className="text-sm font-semibold text-foreground">Criterios CAN&nbsp;SLIM</h2>
-          </div>
-          <span className="text-sm text-muted-foreground">{canslim.score}</span>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <ListChecks className="size-4 shrink-0" aria-hidden />
+          <h2 className="text-sm font-semibold text-foreground">Criterios CAN&nbsp;SLIM</h2>
         </div>
         <div className="mt-4">
           <CriteriaChips criteria={canslim.criteria} />

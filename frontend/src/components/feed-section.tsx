@@ -10,7 +10,7 @@ import { FilterBar, type FeedFilters } from "@/components/filter-bar";
 import { getOpportunities, type Opportunity, type StrategyName } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_FILTERS: FeedFilters = { minScore: 40, risk: "todos", sector: "todos", sort: "score" };
+const DEFAULT_FILTERS: FeedFilters = { risk: "todos", sector: "todos" };
 
 const container = {
   hidden: { opacity: 0 },
@@ -110,7 +110,7 @@ function FeaturedHeader({ count }: { count: number }) {
       <div>
         <h2 className="font-heading text-lg font-semibold leading-none">Destacadas</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Mejor combined score · Weinstein + CAN SLIM
+          Señales activas · Weinstein + CAN SLIM
         </p>
       </div>
       <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -197,10 +197,8 @@ export function FeedSection() {
       try {
         const result = await getOpportunities({
           limit: 4,
-          minScore: filters.minScore,
           risk: filters.risk === "todos" ? undefined : filters.risk,
           sector: filters.sector === "todos" ? undefined : filters.sector,
-          sort: filters.sort,
         });
         if (!cancelled) setTop(result);
       } catch {

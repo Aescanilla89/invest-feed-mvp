@@ -3,7 +3,6 @@ import { ArrowRight, TrendingUp, BarChart2, Zap } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { CriteriaChips } from "@/components/criteria-chips";
 import { RiskBadge } from "@/components/risk-badge";
-import { ScoreBadge } from "@/components/score-badge";
 import { StagePill } from "@/components/stage-pill";
 import { StrategyBadges } from "@/components/strategy-badges";
 import { TradingViewMiniChart } from "@/components/tradingview-mini-chart";
@@ -50,7 +49,7 @@ function SignalBadge({ signal_type }: { signal_type: SignalType }) {
 }
 
 export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
-  const { ticker, name, sector, combined_score, risk_bucket, weinstein, canslim, last_updated, signal_type, strategies } =
+  const { ticker, name, sector, risk_bucket, weinstein, canslim, last_updated, signal_type, strategies } =
     opportunity;
 
   return (
@@ -61,7 +60,7 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
         aria-label={`Ver análisis completo de ${ticker}${name ? `, ${name}` : ""}`}
       />
 
-      {/* Fila 1: ticker + score */}
+      {/* Fila 1: ticker */}
       <div className="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
@@ -70,7 +69,6 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
           </div>
           <p className="truncate text-sm text-muted-foreground">{name ?? "Nombre no disponible"}</p>
         </div>
-        <ScoreBadge score={combined_score} />
       </div>
 
       {/* Fila 2: badge de señal (el POR QUÉ está aquí) */}
@@ -101,9 +99,8 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
       </div>
 
       {/* Fila 4: chips CAN SLIM */}
-      <div className="relative z-10 flex items-center justify-between gap-3 pointer-events-none">
+      <div className="relative z-10 flex items-center gap-3 pointer-events-none">
         <CriteriaChips criteria={canslim.criteria} />
-        <span className="shrink-0 text-xs text-muted-foreground">{canslim.score}</span>
       </div>
 
       {/* Fila 5: gráfica TradingView — overlay transparente encima para que el Link capture los clicks */}

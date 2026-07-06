@@ -59,10 +59,8 @@ export interface OpportunityDetail extends Opportunity {
 }
 
 export interface OpportunityFilters {
-  minScore?: number;
   risk?: RiskBucket;
   sector?: string;
-  sort?: "score" | "stage";
   strategy?: StrategyName | "weinstein" | "canslim" | "early_stage2";
   limit?: number;
 }
@@ -80,21 +78,19 @@ async function fetchJson<T>(path: string): Promise<T> {
 export async function getOpportunities(filters: OpportunityFilters = {}): Promise<Opportunity[]> {
   if (DEMO_MODE) {
     const { DEMO_OPPORTUNITIES } = await import("./demo-data");
-    let result = DEMO_OPPORTUNITIES.filter((o) => o.combined_score >= (filters.minScore ?? 0));
+    let result = [...DEMO_OPPORTUNITIES];
     if (filters.risk) result = result.filter((o) => o.risk_bucket === filters.risk);
     if (filters.sector) result = result.filter((o) => o.sector === filters.sector);
     if (filters.strategy === "early_stage2") {
       const early = result.filter((o) => o.weinstein.stage === 2 && o.weinstein.weeks_in_stage <= 6);
       return early.sort((a, b) => a.weinstein.weeks_in_stage - b.weinstein.weeks_in_stage);
     }
-    return [...result].sort((a, b) => b.combined_score - a.combined_score);
+    return result.sort((a, b) => b.combined_score - a.combined_score);
   }
 
   const params = new URLSearchParams();
-  if (filters.minScore) params.set("min_score", String(filters.minScore));
   if (filters.risk) params.set("risk", filters.risk);
   if (filters.sector) params.set("sector", filters.sector);
-  if (filters.sort) params.set("sort", filters.sort);
   if (filters.strategy) params.set("strategy", filters.strategy);
   if (filters.limit) params.set("limit", String(filters.limit));
   const query = params.toString();
