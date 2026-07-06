@@ -159,13 +159,21 @@ def run(
         # Usar el report_date del filing como quarter si coincide con el esperado
         quarter_to_use = report_date if report_date else target_quarter
 
-        # 4. Hacer match con nuestra BD y guardar
-        matched = 0
+        # 4. Hacer match con nuestra BD y guardar. Un mismo ticker puede tener
+        # varias líneas en el 13F (distintas clases de acción, p.ej. GOOGL/GOOG) —
+        # se agregan por ticker_id antes de upsert para no violar la unique
+        # constraint (ticker_id, quarter, institution_cik) dentro del mismo commit.
+        aggregated: dict[int, tuple[int, int]] = {}
         for h in holdings:
             ticker_id = _match_ticker(h.name_issuer, name_map)
             if ticker_id is None:
                 continue
-            _upsert_holdings(db, ticker_id, quarter_to_use, cik, inst_name, h.shares, h.value_usd_k)
+            prev_shares, prev_value = aggregated.get(ticker_id, (0, 0))
+            aggregated[ticker_id] = (prev_shares + h.shares, prev_value + h.value_usd_k)
+
+        matched = 0
+        for ticker_id, (shares, value_usd_k) in aggregated.items():
+            _upsert_holdings(db, ticker_id, quarter_to_use, cik, inst_name, shares, value_usd_k)
             matched += 1
 
         db.commit()
