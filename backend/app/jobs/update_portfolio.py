@@ -62,7 +62,20 @@ def _compute_signal_type(opp: Opportunity) -> str | None:
 
 
 def _strategy_result(opp: Opportunity, method: str) -> dict | None:
-    raw = opp.strategies or {}
+    """Réplica de _parse_strategies en api/routes/opportunities.py: la columna
+    JSON puede llegar como dict ya deserializado o como string crudo según el
+    driver/dialecto, nunca asumir un tipo."""
+    raw = opp.strategies
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        import json as _json
+        try:
+            raw = _json.loads(raw)
+        except Exception:
+            return None
+    if not isinstance(raw, dict):
+        return None
     data = raw.get(method)
     return data if isinstance(data, dict) else None
 
