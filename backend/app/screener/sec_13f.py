@@ -97,34 +97,51 @@ _CIK_LOOKUP_LINE_RE = re.compile(r"^(.*):(\d{10}):$")
 _cik_lookup_cache: dict[str, list[str]] | None = None
 
 
+def _is_relevant_key(key: str, target_keys: list[str]) -> bool:
+    """True si `key` (nombre normalizado de una entidad EDGAR cualquiera) puede
+    corresponder a alguno de los nombres normalizados de TOP_INSTITUTION_NAMES,
+    ya sea exacto o como prefijo en cualquier dirección (nombres renombrados)."""
+    for target in target_keys:
+        if key == target or key.startswith(target + " "):
+            return True
+        if len(target) > len(key) >= 4 and target.startswith(key + " "):
+            return True
+    return False
+
+
 def _load_cik_lookup() -> dict[str, list[str]]:
-    """Descarga y parsea el listado completo de entidades EDGAR (nombre -> CIKs).
+    """Descarga y filtra el listado completo de entidades EDGAR (nombre -> CIKs),
+    quedándose solo con las relevantes para TOP_INSTITUTION_NAMES.
 
     Es la fuente autoritativa de SEC para resolver nombre de institución -> CIK;
     a diferencia de la full text search (efts.sec.gov), que indexa el CONTENIDO
     de los filings (no el nombre del filer) y devuelve coincidencias falsas.
-    Se cachea en memoria de proceso — el archivo pesa ~40MB, se descarga una
-    sola vez por corrida del job trimestral.
+    El archivo pesa ~40MB y tiene >1M entidades — se descarga en streaming y se
+    descarta todo lo irrelevante al vuelo para no materializar el listado
+    completo en memoria (evita un pico de RAM que puede tumbar el proceso).
     """
     global _cik_lookup_cache
     if _cik_lookup_cache is not None:
         return _cik_lookup_cache
 
+    target_keys = [normalize_company_name(n) for n in TOP_INSTITUTION_NAMES]
     lookup: dict[str, list[str]] = {}
-    r = requests.get(_CIK_LOOKUP_URL, headers=_HEADERS, timeout=60)
-    r.raise_for_status()
-    for line in r.text.splitlines():
-        m = _CIK_LOOKUP_LINE_RE.match(line)
-        if not m:
-            continue
-        raw_name, cik = m.group(1), m.group(2)
-        key = normalize_company_name(raw_name)
-        if not key:
-            continue
-        lookup.setdefault(key, []).append(cik)
+    with requests.get(_CIK_LOOKUP_URL, headers=_HEADERS, timeout=60, stream=True) as r:
+        r.raise_for_status()
+        for raw_line in r.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+            m = _CIK_LOOKUP_LINE_RE.match(raw_line)
+            if not m:
+                continue
+            raw_name, cik = m.group(1), m.group(2)
+            key = normalize_company_name(raw_name)
+            if not key or not _is_relevant_key(key, target_keys):
+                continue
+            lookup.setdefault(key, []).append(cik)
 
     _cik_lookup_cache = lookup
-    logger.info("Cargado cik-lookup-data.txt: %d nombres normalizados", len(lookup))
+    logger.info("Cargado cik-lookup-data.txt: %d nombres relevantes retenidos", len(lookup))
     return lookup
 
 
