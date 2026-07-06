@@ -237,12 +237,15 @@ def _get_xml_url_from_index(cik: str, accession: str) -> str | None:
         r.raise_for_status()
         html = r.text
 
-        # Buscar todos los hrefs que apunten a XML dentro de este filing
-        xml_hrefs = re.findall(
-            r'href="(/Archives/edgar/data/[^"]+\.xml)"',
-            html,
-            re.IGNORECASE,
-        )
+        # Buscar todos los hrefs que apunten a XML dentro de este filing.
+        # EDGAR duplica cada XML bajo una carpeta xslFormXXX/ que es en realidad
+        # una vista renderizada en HTML (mismo nombre .xml, contenido HTML) —
+        # se excluye para no parsear HTML como si fuera el XML crudo.
+        xml_hrefs = [
+            href
+            for href in re.findall(r'href="(/Archives/edgar/data/[^"]+\.xml)"', html, re.IGNORECASE)
+            if "/xslForm" not in href
+        ]
         if not xml_hrefs:
             return None
 
