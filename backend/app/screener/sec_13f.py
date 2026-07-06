@@ -306,8 +306,16 @@ def _parse_holdings_xml(xml_bytes: bytes) -> list[Holding]:
         cusip = (info.findtext("{*}cusip") or info.findtext("cusip") or "").strip()
         value_text = (info.findtext("{*}value") or info.findtext("value") or "0").replace(",", "").strip()
 
-        shr_amt = info.find(".//{*}sshPrnamt") or info.find(".//sshPrnamt")
-        shr_type = info.find(".//{*}sshPrnamtType") or info.find(".//sshPrnamtType")
+        # ElementTree Elements son "falsy" si no tienen hijos (aunque no sean None) —
+        # un `or` entre dos find() con un <sshPrnamt>1000</sshPrnamt> sin hijos
+        # descartaría el match real y seguiría al segundo find() (sin namespace,
+        # que no encuentra nada), dejando shares en 0 siempre.
+        shr_amt = info.find(".//{*}sshPrnamt")
+        if shr_amt is None:
+            shr_amt = info.find(".//sshPrnamt")
+        shr_type = info.find(".//{*}sshPrnamtType")
+        if shr_type is None:
+            shr_type = info.find(".//sshPrnamtType")
 
         shares = 0
         if shr_amt is not None and (shr_type is None or (shr_type.text or "").strip().upper() == "SH"):
