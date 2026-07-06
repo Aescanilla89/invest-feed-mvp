@@ -63,7 +63,7 @@ export interface OpportunityFilters {
   risk?: RiskBucket;
   sector?: string;
   sort?: "score" | "stage";
-  strategy?: StrategyName | "weinstein" | "canslim";
+  strategy?: StrategyName | "weinstein" | "canslim" | "early_stage2";
   limit?: number;
 }
 
@@ -83,6 +83,10 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
     let result = DEMO_OPPORTUNITIES.filter((o) => o.combined_score >= (filters.minScore ?? 0));
     if (filters.risk) result = result.filter((o) => o.risk_bucket === filters.risk);
     if (filters.sector) result = result.filter((o) => o.sector === filters.sector);
+    if (filters.strategy === "early_stage2") {
+      const early = result.filter((o) => o.weinstein.stage === 2 && o.weinstein.weeks_in_stage <= 6);
+      return early.sort((a, b) => a.weinstein.weeks_in_stage - b.weinstein.weeks_in_stage);
+    }
     return [...result].sort((a, b) => b.combined_score - a.combined_score);
   }
 

@@ -53,6 +53,7 @@
   --color-medal-gold: var(--medal-gold);
   --color-medal-silver: var(--medal-silver);
   --color-medal-bronze: var(--medal-bronze);
+  --color-strategy-early: var(--strategy-early);
   --color-strategy-minervini: var(--strategy-minervini);
   --color-strategy-lynch: var(--strategy-lynch);
   --color-strategy-berkshire: var(--strategy-berkshire);
@@ -119,6 +120,7 @@ negro/blanco puro. Dark mode es el modo por defecto del producto. */
   --medal-gold: oklch(65% 0.14 75);
   --medal-silver: oklch(65% 0.02 200);
   --medal-bronze: oklch(55% 0.11 30);
+  --strategy-early: oklch(55% 0.16 30);
   --strategy-minervini: oklch(65% 0.14 75);
   --strategy-lynch: oklch(45% 0.1 152);
   --strategy-berkshire: oklch(48% 0.02 200);
@@ -173,6 +175,7 @@ negro/blanco puro. Dark mode es el modo por defecto del producto. */
   --medal-gold: oklch(74% 0.12 75);
   --medal-silver: oklch(78% 0.02 200);
   --medal-bronze: oklch(70% 0.12 30);
+  --strategy-early: oklch(72% 0.14 30);
   --strategy-minervini: oklch(74% 0.12 75);
   --strategy-lynch: oklch(68% 0.13 152);
   --strategy-berkshire: oklch(68% 0.015 200);

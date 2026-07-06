@@ -11,6 +11,8 @@ from app.models.orm import Explanation, Opportunity, PriceSnapshot, Ticker
 from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunitySchema, StrategyResultSchema, WeinsteinSchema
 
 _STRATEGY_NAMES = {"minervini", "lynch", "berkshire", "dividendos"}
+_EARLY_STAGE2 = "early_stage2"
+_EARLY_STAGE2_MAX_WEEKS = 6  # ventana de "entrada temprana": recién confirmado Stage 2
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -124,7 +126,7 @@ def list_opportunities(
 
     # Cuando se filtra por estrategia específica, no aplicar min_score
     # (las estrategias tienen su propio score, independiente del combined_score Weinstein+CAN SLIM)
-    apply_score_filter = not (strategy and strategy in _STRATEGY_NAMES)
+    apply_score_filter = not (strategy and (strategy in _STRATEGY_NAMES or strategy == _EARLY_STAGE2))
 
     query = (
         db.query(Opportunity, Ticker)
@@ -146,7 +148,16 @@ def list_opportunities(
     rows = query.all()
 
     # Filtro por señal activa según la estrategia seleccionada
-    if strategy and strategy in _STRATEGY_NAMES:
+    if strategy == _EARLY_STAGE2:
+        # No exige el bonus de transición (volumen 2x + RSI>50): el objetivo es
+        # detectar actividad temprana de Stage 2 aunque no cumpla ese umbral
+        # estricto, sin descartar la señal ya existente en "Destacadas".
+        rows = [
+            (opp, ticker) for opp, ticker in rows
+            if opp.weinstein_stage == 2 and opp.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS
+        ]
+        rows.sort(key=lambda pair: (pair[0].weeks_in_stage, -pair[0].combined_score))
+    elif strategy and strategy in _STRATEGY_NAMES:
         rows = [(opp, ticker) for opp, ticker in rows if _has_strategy_signal(opp, strategy)]
     else:
         # Vista por defecto: señales Weinstein + CAN SLIM, más cualquiera que pase al menos una estrategia

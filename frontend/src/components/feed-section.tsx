@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Flame, TrendingUp, Search, Award, DollarSign } from "lucide-react";
+import { Flame, TrendingUp, Search, Award, DollarSign, Rocket } from "lucide-react";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
 import { EmptyState, ErrorState } from "@/components/empty-state";
@@ -21,14 +21,27 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.25, 1, 0.5, 1] as const } },
 };
 
+// "early_stage2" es un filtro propio (Weinstein stage+semanas), no una de las
+// 4 estrategias evaluadas en el JSON `strategies` del backend -- de ahí el tipo
+// separado para las pestañas de esta sección.
+type FeedTabKey = StrategyName | "early_stage2";
+
 const STRATEGY_SECTIONS: {
-  key: StrategyName;
+  key: FeedTabKey;
   label: string;
   sublabel: string;
   icon: React.ElementType;
   tabActive: string;
   iconColor: string;
 }[] = [
+  {
+    key: "early_stage2",
+    label: "Entrada Temprana",
+    sublabel: "Stage 2 recién confirmado · máx. 6 semanas",
+    icon: Rocket,
+    tabActive: "border-(--color-strategy-early)/50 bg-(--color-strategy-early)/10 text-(--color-strategy-early)",
+    iconColor: "text-(--color-strategy-early)",
+  },
   {
     key: "minervini",
     label: "Minervini SEPA",
@@ -64,7 +77,7 @@ const STRATEGY_SECTIONS: {
 ];
 
 interface StrategyData {
-  byStrategy: Record<StrategyName, Opportunity[]>;
+  byStrategy: Record<FeedTabKey, Opportunity[]>;
 }
 
 function CardGrid({ opportunities }: { opportunities: Opportunity[] }) {
@@ -114,9 +127,9 @@ function StrategyTabBar({
   counts,
   onChange,
 }: {
-  active: StrategyName;
-  counts: Record<StrategyName, number>;
-  onChange: (key: StrategyName) => void;
+  active: FeedTabKey;
+  counts: Record<FeedTabKey, number>;
+  onChange: (key: FeedTabKey) => void;
 }) {
   return (
     <div role="tablist" aria-label="Filtrar por estrategia" className="flex flex-wrap gap-1.5 border-b border-border pb-3">
@@ -145,7 +158,7 @@ function StrategyTabBar({
 export function FeedSection() {
   const [strategyData, setStrategyData] = useState<StrategyData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeStrategy, setActiveStrategy] = useState<StrategyName>("minervini");
+  const [activeStrategy, setActiveStrategy] = useState<FeedTabKey>("early_stage2");
 
   const [filters, setFilters] = useState<FeedFilters>(DEFAULT_FILTERS);
   const [top, setTop] = useState<Opportunity[] | null>(null);
@@ -157,14 +170,15 @@ export function FeedSection() {
 
     async function load() {
       try {
-        const [minervini, lynch, berkshire, dividendos] = await Promise.all([
+        const [earlyStage2, minervini, lynch, berkshire, dividendos] = await Promise.all([
+          getOpportunities({ limit: 6, strategy: "early_stage2" }),
           getOpportunities({ limit: 6, strategy: "minervini" }),
           getOpportunities({ limit: 6, strategy: "lynch" }),
           getOpportunities({ limit: 6, strategy: "berkshire" }),
           getOpportunities({ limit: 6, strategy: "dividendos" }),
         ]);
         if (!cancelled) {
-          setStrategyData({ byStrategy: { minervini, lynch, berkshire, dividendos } });
+          setStrategyData({ byStrategy: { early_stage2: earlyStage2, minervini, lynch, berkshire, dividendos } });
         }
       } catch {
         if (!cancelled) setError("No se pudo conectar con el backend.");
@@ -255,6 +269,7 @@ export function FeedSection() {
   const activeConf = STRATEGY_SECTIONS.find((s) => s.key === activeStrategy)!;
   const activeOpps = strategyData.byStrategy[activeStrategy];
   const counts = {
+    early_stage2: strategyData.byStrategy.early_stage2.length,
     minervini: strategyData.byStrategy.minervini.length,
     lynch: strategyData.byStrategy.lynch.length,
     berkshire: strategyData.byStrategy.berkshire.length,
