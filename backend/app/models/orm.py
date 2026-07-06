@@ -145,3 +145,29 @@ class Catalyst(Base):
     extra: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     ticker: Mapped["Ticker | None"] = relationship(foreign_keys=[ticker_id])
+
+
+class PortfolioPosition(Base):
+    """Pick de la cartera pública (social proof): entra automáticamente cuando el
+    top-1 diario de un método (early_stage2/minervini/lynch/berkshire/dividendos)
+    cumple el umbral "excepcional" de ese método (ver app/jobs/update_portfolio.py).
+    Se cierra automáticamente en cuanto el ticker deja de estar en Weinstein Stage 2."""
+    __tablename__ = "portfolio_positions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticker_id: Mapped[int] = mapped_column(ForeignKey("tickers.id"), nullable=False, index=True)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)
+
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_spy_price: Mapped[float] = mapped_column(Float, nullable=False)
+
+    exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_spy_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    ticker: Mapped["Ticker"] = relationship(foreign_keys=[ticker_id])

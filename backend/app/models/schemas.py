@@ -63,6 +63,39 @@ class DataLimitationsSchema(BaseModel):
     canslim_criteria: list[DataLimitation]
 
 
+class PortfolioPositionSchema(BaseModel):
+    ticker: str
+    name: str | None
+    sector: str | None
+    method: str
+    status: str  # "open" | "closed"
+    entry_date: date
+    entry_price: float
+    current_price: float  # precio actual si abierta, precio de salida si cerrada
+    return_pct: float
+    spy_return_pct: float  # retorno del S&P 500 en el mismo periodo exacto
+    exit_date: date | None = None
+    exit_reason: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class PortfolioStatsSchema(BaseModel):
+    total_positions: int
+    open_positions: int
+    closed_positions: int
+    win_rate: float | None  # % de posiciones con retorno positivo
+    avg_return_pct: float | None
+    avg_spy_return_pct: float | None
+    best: PortfolioPositionSchema | None
+    worst: PortfolioPositionSchema | None
+
+
+class PortfolioSchema(BaseModel):
+    stats: PortfolioStatsSchema
+    positions: list[PortfolioPositionSchema]
+
+
 class CatalystSchema(BaseModel):
     id: int
     ticker: str | None

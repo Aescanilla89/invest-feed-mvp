@@ -132,3 +132,45 @@ export async function getCatalysts(days = 7): Promise<Catalyst[]> {
   }
   return fetchJson<Catalyst[]>(`/catalysts?days=${days}`);
 }
+
+export type PortfolioMethod = StrategyName | "early_stage2";
+export type PortfolioStatus = "open" | "closed";
+
+export interface PortfolioPosition {
+  ticker: string;
+  name: string | null;
+  sector: string | null;
+  method: PortfolioMethod;
+  status: PortfolioStatus;
+  entry_date: string;
+  entry_price: number;
+  current_price: number;
+  return_pct: number;
+  spy_return_pct: number;
+  exit_date: string | null;
+  exit_reason: string | null;
+}
+
+export interface PortfolioStats {
+  total_positions: number;
+  open_positions: number;
+  closed_positions: number;
+  win_rate: number | null;
+  avg_return_pct: number | null;
+  avg_spy_return_pct: number | null;
+  best: PortfolioPosition | null;
+  worst: PortfolioPosition | null;
+}
+
+export interface Portfolio {
+  stats: PortfolioStats;
+  positions: PortfolioPosition[];
+}
+
+export async function getPortfolio(): Promise<Portfolio> {
+  if (DEMO_MODE) {
+    const { DEMO_PORTFOLIO } = await import("./demo-data");
+    return DEMO_PORTFOLIO;
+  }
+  return fetchJson<Portfolio>("/portfolio");
+}

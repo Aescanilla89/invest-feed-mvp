@@ -230,6 +230,17 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
         db.close()
         return
 
+    # Se persiste el histórico del benchmark igual que el de cualquier ticker del
+    # universo (mismo PriceSnapshot) para poder comparar la cartera pública
+    # (app/jobs/update_portfolio.py) contra el S&P 500 en el mismo periodo exacto.
+    benchmark_ticker = db.query(Ticker).filter_by(symbol=BENCHMARK_SYMBOL).one_or_none()
+    if benchmark_ticker is None:
+        benchmark_ticker = Ticker(symbol=BENCHMARK_SYMBOL, name="SPDR S&P 500 ETF", universe="benchmark")
+        db.add(benchmark_ticker)
+        db.flush()
+    _upsert_price_snapshots(db, benchmark_ticker, benchmark_weekly)
+    db.commit()
+
     logger.info("Pre-cargando ATH histórico, retornos de universo y datos institucionales...")
     universe_ath = _get_universe_ath(db)
     universe_returns = _get_universe_returns(db)

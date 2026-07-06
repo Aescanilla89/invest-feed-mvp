@@ -144,6 +144,16 @@ def trigger_institutional_update(
     return result_container if result_container else {"status": "running (timeout 10min excedido)"}
 
 
+@router.post("/update-portfolio")
+def trigger_update_portfolio(_: None = Depends(_verify_token)) -> dict:
+    """Abre/cierra posiciones de la cartera pública para la última corrida del
+    screener. Normalmente se lanza sola cada día tras run-screener; este
+    endpoint es para forzarla manualmente (ej. tras corregir datos)."""
+    from app.jobs import update_portfolio
+
+    return update_portfolio.run()
+
+
 @router.post("/detect-catalysts")
 def trigger_detect_catalysts(_: None = Depends(_verify_token)) -> dict:
     """Lanza la detección de catalizadores en background. Devuelve inmediatamente."""

@@ -5,10 +5,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, catalysts, health, meta, opportunities
+from app.api.routes import admin, catalysts, health, meta, opportunities, portfolio
 from app.core.config import settings
 from app.core.db import init_db
-from app.jobs import detect_catalysts, run_screener
+from app.jobs import detect_catalysts, run_screener, update_portfolio
 from app.screener import universe
 
 logger = logging.getLogger("invest_feed")
@@ -21,6 +21,11 @@ def _run_daily_screener() -> None:
         run_screener.run(symbols_by_universe)
     except Exception:
         logger.exception("Scheduler: error durante la corrida diaria")
+        return
+    try:
+        update_portfolio.run()
+    except Exception:
+        logger.exception("Scheduler: error actualizando la cartera pública")
 
 
 def _run_daily_catalysts() -> None:
@@ -89,3 +94,4 @@ app.include_router(opportunities.router, prefix="/api")
 app.include_router(catalysts.router, prefix="/api")
 app.include_router(meta.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(portfolio.router, prefix="/api")
