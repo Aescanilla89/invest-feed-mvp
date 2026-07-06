@@ -253,15 +253,19 @@ def _get_xml_url_from_index(cik: str, accession: str) -> str | None:
         if len(xml_hrefs) == 1:
             return f"https://www.sec.gov{xml_hrefs[0]}"
 
-        # Si hay varios, elegir el más cercano a "INFORMATION TABLE"
+        # Si hay varios, elegir el más cercano a "INFORMATION TABLE" (solo entre
+        # los ya filtrados, para no reintroducir la copia xslForm/HTML)
         pos_info = html.lower().find("information table")
         if pos_info >= 0:
             best, best_dist = xml_hrefs[0], float("inf")
             for m in re.finditer(r'href="(/Archives/edgar/data/[^"]+\.xml)"', html, re.IGNORECASE):
+                href = m.group(1)
+                if href not in xml_hrefs:
+                    continue
                 d = abs(m.start() - pos_info)
                 if d < best_dist:
                     best_dist = d
-                    best = m.group(1)
+                    best = href
             return f"https://www.sec.gov{best}"
 
         return f"https://www.sec.gov{xml_hrefs[0]}"
