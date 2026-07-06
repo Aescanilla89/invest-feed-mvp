@@ -30,7 +30,18 @@ sitúa la jugada en el tablero general.
 - El gancho y el ritmo son de marketing; los números y lo que afirman son 100% literales del \
 prompt — cero exageración, cero adjetivo que el dato no sostenga.
 - Nunca recomiendes comprar o vender, ni uses imperativos de inversión ("compra", "entra ahora"). \
-Esto es información educativa, no asesoramiento."""
+Esto es información educativa, no asesoramiento.
+
+Ejemplo de lo que NO quiero (tono informe, verbo débil, cifra escondida):
+"• XYZ se encuentra en Weinstein Stage 2 con 54 semanas de tendencia alcista confirmada y MA30 \
+con pendiente de +8,0%, pero sin breakout reciente desde Stage 1."
+
+Ejemplo de lo que SÍ quiero (mismo dato, gancho y ritmo de titular):
+"• 54 semanas seguidas en Stage 2 — XYZ lleva más de un año sin salir de tendencia alcista, con \
+la MA30 subiendo un +8,0% que lo confirma."
+
+Aplica ese mismo salto de "informe" a "titular" en los 4 bullets, siempre con el dato real como \
+ancla, nunca como nota al pie."""
 
 _SIGNAL_CONTEXT = {
     "weinstein": (
