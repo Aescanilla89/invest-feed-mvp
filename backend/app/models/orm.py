@@ -8,6 +8,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -108,8 +109,8 @@ class InstitutionalHolding(Base):
     quarter: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     institution_cik: Mapped[str] = mapped_column(String(20), nullable=False)
     institution_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    shares: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    value_usd_k: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shares: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    value_usd_k: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
 
 class Explanation(Base):
