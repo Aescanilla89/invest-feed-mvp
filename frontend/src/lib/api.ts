@@ -107,7 +107,7 @@ export async function getOpportunityDetail(symbol: string): Promise<OpportunityD
   return fetchJson<OpportunityDetail>(`/opportunities/${symbol}`);
 }
 
-export type CatalystType = "earnings" | "insider_buy" | "fed_meeting" | "geopolitical" | "macro_data";
+export type CatalystType = "earnings" | "insider_buy" | "macro_data";
 export type CatalystClassification = "oro" | "plata" | "bronce";
 
 export interface Catalyst {

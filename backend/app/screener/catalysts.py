@@ -3,8 +3,6 @@
 Fuentes:
 - Earnings: yfinance ticker.earnings_dates (Q2 season ~11 julio)
 - Insider buying: SEC EDGAR Form 4 por ticker (Railway-compatible; Yahoo Finance no)
-- FED rate decisions: Polymarket gamma API (mercado de predicción, macro/market-wide)
-- Geopolítica: Polymarket gamma API (feed de mercados activos, macro/market-wide)
 - Datos macro EEUU: FRED releases/dates (CPI, NFP, PIB) — requiere FRED_API_KEY
 
 Estrategia insider:
@@ -12,16 +10,15 @@ Estrategia insider:
 2. Para cada CIK, consulta submissions.json → busca Form 4 recientes
 3. Descarga XML del Form 4 → verifica transacción tipo P (Purchase)
 
-Los detectores macro (FED, geopolítica, datos macro) no dependen de nuestro
-universo de tickers: producen catalizadores con ticker_id=None (soportado
-nativamente por el modelo ORM `Catalyst`).
+El detector macro (datos macro EEUU) no depende de nuestro universo de
+tickers: produce catalizadores con ticker_id=None (soportado nativamente
+por el modelo ORM `Catalyst`).
 """
 from __future__ import annotations
 
 import json
 import logging
 import math
-import re
 import time
 import urllib.parse
 import urllib.request
@@ -414,215 +411,6 @@ def _parse_ownership_xml(root: ET.Element) -> dict | None:
         "shares": shares,
         "value_usd": value_usd,
     }
-
-
-# ---------------------------------------------------------------------------
-# FED rate decisions — Polymarket gamma API (macro, ticker_id=None)
-# ---------------------------------------------------------------------------
-
-_POLYMARKET_API_URL = "https://gamma-api.polymarket.com/markets"
-_POLYMARKET_USER_AGENT = "invest-feed-mvp research@invest-feed.com"
-
-# Mismas listas de keywords que el bot de Polymarket (inferir_categoria), pero
-# con límites de palabra (\b) para evitar falsos positivos por substring —
-# p.ej. "war" NO debe matchear dentro de "Warsaw", "Warriors" o "award".
-_FED_WORD_RE = re.compile(r"\bfed\b")
-_FED_KEYWORDS_RE = re.compile(r"\b(?:rate|fomc|decision|cut|hike)\b")
-_GEOPOLITICAL_KEYWORDS_RE = re.compile(
-    r"\b(?:"
-    # Términos temáticos de conflicto/geopolítica
-    r"war|conflict|attack|ceasefire|treaty|sanctions?|invasion|"
-    r"tariffs?|coup|nuclear|military|troops|missile|strike|blockade|"
-    r"annexation|occupation|nato|un security council|"
-    # Países/regiones con tensión geopolítica activa (riesgo asumido de algún
-    # falso positivo puntual, p.ej. un mercado deportivo que mencione el país;
-    # aceptable dado el objetivo de cobertura amplia de este feed)
-    r"ukraine|russia|taiwan|gaza|israel|palestine|iran|north korea|"
-    r"venezuela|syria|houthi|hezbollah"
-    r")\b"
-)
-
-
-def detect_fed_meeting() -> list[CatalystData]:
-    """Detecta el mercado de Polymarket sobre la próxima decisión de tipos de la FED.
-
-    Filtra mercados cuya pregunta contiene "fed" + (rate/fomc/decision/cut/hike)
-    y escoge el de mayor volumen (la reunión FOMC más relevante/próxima).
-    """
-    markets = _fetch_polymarket_markets()
-    if not markets:
-        logger.warning("No se pudo obtener mercados de Polymarket para FED")
-        return []
-
-    candidates = []
-    for m in markets:
-        question = (m.get("question") or "").strip().lower()
-        if not question or not _FED_WORD_RE.search(question):
-            continue
-        if _FED_KEYWORDS_RE.search(question):
-            candidates.append(m)
-
-    if not candidates:
-        logger.info("Sin mercados FED relevantes en Polymarket")
-        return []
-
-    best = max(candidates, key=lambda m: _safe_float(m.get("volume")) or 0.0)
-
-    try:
-        outcomes = _parse_polymarket_outcomes(best)
-        if not outcomes:
-            return []
-
-        outcomes.sort(key=lambda pair: pair[1], reverse=True)
-        description = " · ".join(f"{name}: {price * 100:.0f}%" for name, price in outcomes)
-
-        question = (best.get("question") or "").strip()
-        end_date = best.get("endDate", "") or ""
-        market_key = best.get("id") or best.get("slug") or question[:40]
-        slug = best.get("slug", "")
-
-        return [CatalystData(
-            catalyst_type="fed_meeting",
-            title=f"Reunión FED: {question}"[:255],
-            source_id=f"fed_meeting_{market_key}_{end_date[:10]}",
-            description=description[:1000] if description else None,
-            extra={
-                "question": question,
-                "end_date": end_date,
-                "outcomes": [name for name, _ in outcomes],
-                "prices": [price for _, price in outcomes],
-                "volume": _safe_float(best.get("volume")),
-                "url": f"https://polymarket.com/event/{slug}" if slug else None,
-            },
-        )]
-
-    except Exception:
-        logger.debug("Error procesando mercado FED de Polymarket", exc_info=True)
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Riesgo geopolítico — Polymarket gamma API (feed, macro, ticker_id=None)
-# ---------------------------------------------------------------------------
-
-def detect_geopolitical_events(top_n: int = 5) -> list[CatalystData]:
-    """Detecta los mercados geopolíticos más relevantes de Polymarket (feed continuo).
-
-    A diferencia de `detect_fed_meeting`, no busca un único evento sino los
-    `top_n` mercados por volumen relacionados con guerra/conflicto/sanciones.
-    """
-    markets = _fetch_polymarket_markets()
-    if not markets:
-        logger.warning("No se pudo obtener mercados de Polymarket para geopolítica")
-        return []
-
-    candidates = [
-        m for m in markets
-        if (m.get("question") or "").strip()
-        and _GEOPOLITICAL_KEYWORDS_RE.search(m["question"].lower())
-    ]
-    candidates.sort(key=lambda m: _safe_float(m.get("volume")) or 0.0, reverse=True)
-
-    results: list[CatalystData] = []
-    for m in candidates[:top_n]:
-        try:
-            outcomes = _parse_polymarket_outcomes(m)
-            if not outcomes:
-                continue
-            outcomes.sort(key=lambda pair: pair[1], reverse=True)
-            leader_name, leader_price = outcomes[0]
-
-            question = m["question"].strip()
-            end_date = m.get("endDate", "") or ""
-            market_key = m.get("id") or m.get("slug") or question[:40]
-            slug = m.get("slug", "")
-
-            results.append(CatalystData(
-                catalyst_type="geopolitical",
-                title=question[:255],
-                source_id=f"geopolitical_{market_key}",
-                description=f"{leader_name}: {leader_price * 100:.0f}%",
-                extra={
-                    "question": question,
-                    "end_date": end_date,
-                    "outcomes": [name for name, _ in outcomes],
-                    "prices": [price for _, price in outcomes],
-                    "volume": _safe_float(m.get("volume")),
-                    "url": f"https://polymarket.com/event/{slug}" if slug else None,
-                },
-            ))
-        except Exception:
-            logger.debug("Error procesando mercado geopolítico de Polymarket", exc_info=True)
-
-    logger.info("Mercados geopolíticos detectados: %d", len(results))
-    return results
-
-
-_POLYMARKET_PAGE_SIZE = 100  # límite real por página que respeta la gamma API
-
-
-def _fetch_polymarket_markets(limit: int = 500) -> list[dict]:
-    """Descarga los `limit` mercados activos de mayor volumen de Polymarket
-    (API pública gamma, sin auth). La API cap a 100 resultados por página,
-    así que pagina via `offset` hasta reunir `limit` o agotar resultados."""
-    markets: list[dict] = []
-    offset = 0
-
-    while len(markets) < limit:
-        page_size = min(_POLYMARKET_PAGE_SIZE, limit - len(markets))
-        params = {
-            "active": "true",
-            "closed": "false",
-            "limit": str(page_size),
-            "offset": str(offset),
-            "order": "volume",
-            "ascending": "false",
-        }
-        url = f"{_POLYMARKET_API_URL}?{urllib.parse.urlencode(params)}"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": _POLYMARKET_USER_AGENT})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                page = json.loads(resp.read())
-        except Exception:
-            logger.debug("Error descargando mercados de Polymarket (offset=%d)", offset, exc_info=True)
-            break
-
-        if not isinstance(page, list) or not page:
-            break
-
-        markets.extend(page)
-        offset += len(page)
-        if len(page) < page_size:
-            break  # última página, no hay más mercados
-
-    return markets
-
-
-def _parse_polymarket_outcomes(market: dict) -> list[tuple[str, float]] | None:
-    """Extrae pares (nombre, precio 0-1 ~ probabilidad) de un mercado Polymarket.
-
-    `outcomes` y `outcomePrices` vienen codificados como JSON-string. Devuelve
-    None si el mercado no tiene datos de outcomes válidos.
-    """
-    try:
-        outcomes_raw = market.get("outcomes", "[]")
-        prices_raw = market.get("outcomePrices", "[]")
-        outcomes = json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else outcomes_raw
-        prices = json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
-
-        if not outcomes or not prices or len(outcomes) != len(prices):
-            return None
-
-        pairs = []
-        for name, price_raw in zip(outcomes, prices):
-            price = _safe_float(price_raw)
-            if price is None:
-                continue
-            pairs.append((str(name), price))
-
-        return pairs or None
-    except Exception:
-        return None
 
 
 # ---------------------------------------------------------------------------

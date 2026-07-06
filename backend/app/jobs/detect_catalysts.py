@@ -3,8 +3,8 @@ catalizadores macro) y los guarda en la tabla `catalysts`.
 
 Ejecutar DESPUÉS del screener diario. Earnings/insider buys solo analizan los
 tickers que ya tienen oportunidades en BD (no el universo completo) para
-mantener el tiempo acotado. Los catalizadores macro (FED, geopolítica, datos
-macro EEUU) no dependen de ningún ticker — se ejecutan siempre.
+mantener el tiempo acotado. Los catalizadores macro (datos macro EEUU vía
+FRED) no dependen de ningún ticker — se ejecutan siempre.
 
 Uso:
     python -m app.jobs.detect_catalysts
@@ -19,8 +19,6 @@ from app.models.orm import Catalyst, Opportunity, Ticker
 from app.screener.catalysts import (
     CatalystData,
     detect_earnings,
-    detect_fed_meeting,
-    detect_geopolitical_events,
     detect_insider_buys,
     detect_macro_data_releases,
 )
@@ -67,14 +65,12 @@ def run(lookback_days_opps: int = 7) -> dict:
             db.commit()
             return saved, skipped
 
-        # Catalizadores macro/market-wide (ticker_id=None) primero — Polymarket/FRED
-        # son unas pocas peticiones HTTP rápidas, independientes del universo.
-        # Se guardan con su propio commit para que estén disponibles ya mismo aunque
-        # el bucle de earnings/insider (potencialmente lento, cientos de tickers) se
-        # quede atascado o el proceso se reinicie a mitad de camino.
+        # Catalizadores macro/market-wide (ticker_id=None) primero — FRED es una
+        # petición HTTP rápida, independiente del universo. Se guarda con su
+        # propio commit para que esté disponible ya mismo aunque el bucle de
+        # earnings/insider (potencialmente lento, cientos de tickers) se quede
+        # atascado o el proceso se reinicie a mitad de camino.
         macro_catalysts: list[CatalystData] = []
-        macro_catalysts.extend(detect_fed_meeting())
-        macro_catalysts.extend(detect_geopolitical_events())
         macro_catalysts.extend(detect_macro_data_releases())
         saved, skipped = _persist(macro_catalysts)
 

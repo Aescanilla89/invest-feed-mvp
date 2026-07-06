@@ -1,6 +1,6 @@
 "use client";
 
-import { TrendingUp, Users, Landmark, Globe, BarChart3 } from "lucide-react";
+import { TrendingUp, Users, BarChart3 } from "lucide-react";
 import type { Catalyst, CatalystClassification } from "@/lib/api";
 
 const TYPE_CONFIG = {
@@ -13,16 +13,6 @@ const TYPE_CONFIG = {
     label: "Insider Buy",
     Icon: Users,
     classes: "bg-(--color-catalyst-insider)/10 text-(--color-catalyst-insider) border-(--color-catalyst-insider)/20",
-  },
-  fed_meeting: {
-    label: "Reunión FED",
-    Icon: Landmark,
-    classes: "bg-(--color-catalyst-fed)/10 text-(--color-catalyst-fed) border-(--color-catalyst-fed)/20",
-  },
-  geopolitical: {
-    label: "Geopolítica",
-    Icon: Globe,
-    classes: "bg-(--color-catalyst-geopolitical)/10 text-(--color-catalyst-geopolitical) border-(--color-catalyst-geopolitical)/20",
   },
   macro_data: {
     label: "Dato Macro",
@@ -49,24 +39,12 @@ const CLASSIFICATION_CONFIG: Record<CatalystClassification, { label: string; ran
   },
 };
 
-// Los 3 tipos macro (fed_meeting, geopolitical, macro_data) no están ligados a
-// un ticker y no llevan score/clasificación -- llevan su propia fuente de
-// datos en vez de un badge de medalla.
-const MACRO_TYPES = new Set(["fed_meeting", "geopolitical", "macro_data"]);
+// macro_data no está ligado a un ticker y no lleva score/clasificación --
+// lleva su propia fuente de datos en vez de un badge de medalla.
+const MACRO_TYPES = new Set(["macro_data"]);
 const SOURCE_LABEL: Record<string, string> = {
-  fed_meeting: "Fuente: Polymarket",
-  geopolitical: "Fuente: Polymarket",
   macro_data: "Fuente: FRED (St. Louis Fed)",
 };
-
-interface MarketExtra {
-  question?: string;
-  end_date?: string;
-  outcomes?: string[];
-  prices?: number[];
-  volume?: number;
-  url?: string;
-}
 
 interface MacroDataExtra {
   release_id?: string;
@@ -79,38 +57,6 @@ function formatDate(iso: string | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function ProbabilityBars({ extra }: { extra: MarketExtra }) {
-  const outcomes = extra.outcomes ?? [];
-  const prices = extra.prices ?? [];
-  if (outcomes.length === 0) return null;
-
-  // Mostrar como máximo 3 resultados, ordenados por probabilidad descendente,
-  // para que la tarjeta siga siendo compacta dentro de la grid.
-  const rows = outcomes
-    .map((label, i) => ({ label, prob: prices[i] ?? 0 }))
-    .sort((a, b) => b.prob - a.prob)
-    .slice(0, 3);
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {rows.map((row) => (
-        <div key={row.label} className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="truncate text-muted-foreground">{row.label}</span>
-            <span className="shrink-0 font-semibold tabular-nums">{Math.round(row.prob * 100)}%</span>
-          </div>
-          <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-(--color-catalyst-fed)"
-              style={{ width: `${Math.round(row.prob * 100)}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 export function CatalystCard({ catalyst }: { catalyst: Catalyst }) {
@@ -161,9 +107,7 @@ export function CatalystCard({ catalyst }: { catalyst: Catalyst }) {
       <p className="text-sm font-medium leading-snug">{catalyst.title}</p>
 
       {/* Contenido específico por tipo */}
-      {catalyst.catalyst_type === "fed_meeting" || catalyst.catalyst_type === "geopolitical" ? (
-        <ProbabilityBars extra={catalyst.extra as MarketExtra} />
-      ) : catalyst.catalyst_type === "macro_data" ? (
+      {catalyst.catalyst_type === "macro_data" ? (
         <p className="text-xs text-muted-foreground leading-relaxed">
           Publicación programada: {formatDate((catalyst.extra as MacroDataExtra).date)}
         </p>
