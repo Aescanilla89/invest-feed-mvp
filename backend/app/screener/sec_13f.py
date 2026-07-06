@@ -91,26 +91,95 @@ def normalize_company_name(name: str) -> str:
 # Búsqueda de CIK en EDGAR
 # ---------------------------------------------------------------------------
 
+_CIK_LOOKUP_URL = "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt"
+_CIK_LOOKUP_LINE_RE = re.compile(r"^(.*):(\d{10}):$")
+
+_cik_lookup_cache: dict[str, list[str]] | None = None
+
+
+def _load_cik_lookup() -> dict[str, list[str]]:
+    """Descarga y parsea el listado completo de entidades EDGAR (nombre -> CIKs).
+
+    Es la fuente autoritativa de SEC para resolver nombre de institución -> CIK;
+    a diferencia de la full text search (efts.sec.gov), que indexa el CONTENIDO
+    de los filings (no el nombre del filer) y devuelve coincidencias falsas.
+    Se cachea en memoria de proceso — el archivo pesa ~40MB, se descarga una
+    sola vez por corrida del job trimestral.
+    """
+    global _cik_lookup_cache
+    if _cik_lookup_cache is not None:
+        return _cik_lookup_cache
+
+    lookup: dict[str, list[str]] = {}
+    r = requests.get(_CIK_LOOKUP_URL, headers=_HEADERS, timeout=60)
+    r.raise_for_status()
+    for line in r.text.splitlines():
+        m = _CIK_LOOKUP_LINE_RE.match(line)
+        if not m:
+            continue
+        raw_name, cik = m.group(1), m.group(2)
+        key = normalize_company_name(raw_name)
+        if not key:
+            continue
+        lookup.setdefault(key, []).append(cik)
+
+    _cik_lookup_cache = lookup
+    logger.info("Cargado cik-lookup-data.txt: %d nombres normalizados", len(lookup))
+    return lookup
+
+
+_MAX_CIK_CANDIDATES = 15  # límite de verificaciones HTTP por institución
+_MAX_STALE_DAYS = 550  # ~2 trimestres de margen; más antiguo = filer inactivo
+
+
 def search_institution_cik(institution_name: str) -> str | None:
-    """Busca el CIK de una institución en EDGAR EFTS por nombre.
-    Devuelve el primer resultado que tenga filings 13F-HR."""
-    query = institution_name.replace(" ", "+")
-    url = f"{_EFTS_BASE}?q=%22{query}%22&forms=13F-HR&dateRange=custom&startdt=2024-01-01"
-    try:
-        time.sleep(_REQUEST_DELAY)
-        r = requests.get(url, headers=_HEADERS, timeout=20)
-        r.raise_for_status()
-        data = r.json()
-        hits = data.get("hits", {}).get("hits", [])
-        if hits:
-            entity_id = hits[0].get("_source", {}).get("entity_id", "")
-            if entity_id:
-                return entity_id.lstrip("0") or entity_id
-        logger.warning("No se encontró CIK para '%s' en EDGAR", institution_name)
+    """Busca el CIK de una institución vía el listado bulk de entidades EDGAR
+    (cik-lookup-data.txt), desambiguando por nombres duplicados/renombrados y
+    verificando cuál de los CIKs candidatos tiene 13F-HR reciente (no un filer
+    inactivo que dejó de operar bajo ese CIK hace años)."""
+    lookup = _load_cik_lookup()
+    key = normalize_company_name(institution_name)
+
+    candidates: list[str] = list(lookup.get(key, []))
+    if not candidates and key:
+        # Fallback: el nombre normalizado es prefijo (o viceversa) de otra entidad
+        # registrada con más/menos palabras, p.ej. "T ROWE PRICE" vs "T ROWE PRICE
+        # INVESTMENT MANAGEMENT" (renombrada) — evita usar un solo token genérico
+        # como "T", que haría matchear con miles de entidades no relacionadas.
+        for cand_key, ciks in lookup.items():
+            if cand_key.startswith(key + " ") or (
+                len(key) > len(cand_key) >= 4 and key.startswith(cand_key + " ")
+            ):
+                candidates.extend(ciks)
+
+    if not candidates:
+        logger.warning("No se encontró CIK para '%s' en cik-lookup-data.txt", institution_name)
         return None
-    except Exception as exc:
-        logger.warning("Error buscando CIK para '%s': %s", institution_name, exc)
+
+    best_cik: str | None = None
+    best_date: date | None = None
+    for cik in candidates[:_MAX_CIK_CANDIDATES]:
+        result = get_latest_13f_accession(cik)
+        if result is None:
+            continue
+        _, report_date = result
+        if best_date is None or report_date > best_date:
+            best_cik, best_date = cik, report_date
+
+    if best_cik is None or best_date is None:
+        logger.warning(
+            "'%s': %d CIK candidatos en EDGAR pero ninguno con 13F-HR", institution_name, len(candidates)
+        )
         return None
+
+    if (date.today() - best_date).days > _MAX_STALE_DAYS:
+        logger.warning(
+            "'%s': mejor candidato CIK %s tiene el último 13F-HR de %s (>%d días, filer inactivo)",
+            institution_name, best_cik, best_date, _MAX_STALE_DAYS,
+        )
+        return None
+
+    return best_cik.lstrip("0") or best_cik
 
 
 # ---------------------------------------------------------------------------

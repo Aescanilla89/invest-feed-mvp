@@ -7,7 +7,7 @@ Cobertura real (ver README para la tabla completa):
   N - New highs con volumen          -> ATH desde price_snapshots acumulado
   S - Supply/demand (buybacks)       -> calculable (SEC EDGAR shares outstanding)
   L - Leader (fuerza relativa)       -> RS Rating percentil vs universo
-  I - Institutional sponsorship      -> NO calculable (Form 13F, fase 2 pendiente)
+  I - Institutional sponsorship      -> calculable (top-30 instituciones vía 13F-HR de SEC EDGAR)
   M - Market direction               -> calculable (Weinstein sobre el benchmark)
 
 Cada función devuelve un CriterionResult con value=True/False/None.

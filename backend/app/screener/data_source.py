@@ -150,7 +150,8 @@ class AlpacaDataSource:
     EPS (C y A)  : SEC EDGAR XBRL companyfacts — misma infra que el criterio S.
     Perfil       : Alpaca /v2/assets/{symbol} para el nombre; sector=None
                    (los tickers existentes en BD conservan el sector previo).
-    Institutional: None — no disponible en free tier (criterio I queda no verificable).
+    Institutional: None — el % de tenencia por perfil no está en el free tier de Alpaca;
+                   el criterio I se calcula aparte vía institutional_holdings (13F-HR, ver sec_13f.py).
     """
 
     def __init__(self, api_key: str, secret_key: str, request_delay_seconds: float = 0.0):

@@ -20,9 +20,9 @@ _CRITERIA_LIMITATIONS = [
     DataLimitation(criterion="L", verifiable=True, reason="Fuerza relativa frente a SPY como benchmark"),
     DataLimitation(
         criterion="I",
-        verifiable=False,
-        reason="Requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC). "
-        "No disponible como endpoint por ticker en este MVP. Planificado para fase 2.",
+        verifiable=True,
+        reason="Tenencia de las top-30 instituciones vía Form 13F-HR de SEC EDGAR, actualizado "
+        "trimestralmente (~45 días tras cierre de cada trimestre, cuando SEC publica los 13F).",
     ),
     DataLimitation(criterion="M", verifiable=True, reason="Stage de Weinstein calculado sobre SPY como proxy del mercado"),
 ]

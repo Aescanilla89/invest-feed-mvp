@@ -3,7 +3,7 @@ primaria oficial. Se usa para los criterios CAN SLIM S, C y A.
 
 - Criterio S (supply/demand): histórico de shares outstanding via companyfacts.
 - Criterios C y A (EPS growth): EPS diluido de 10-Q/10-K via companyfacts XBRL.
-- Criterio I (institutional sponsorship): NO implementado (Form 13F bulk, fase 2).
+- Criterio I (institutional sponsorship): ver sec_13f.py (Form 13F-HR, top-30 instituciones).
 
 IMPORTANTE: usar get_edgar_data() en lugar de get_supply_signal() + get_eps_series()
 por separado — hace una sola petición HTTP a companyfacts por ticker en vez de dos.
@@ -249,7 +249,3 @@ def get_supply_signal(symbol: str, quarters_to_compare: int = 4) -> SupplySignal
 def get_eps_series(symbol: str) -> EpsSeriesData:
     _, eps, _ = get_edgar_data(symbol)
     return eps
-
-
-def get_institutional_sponsorship(symbol: str) -> None:
-    return None
