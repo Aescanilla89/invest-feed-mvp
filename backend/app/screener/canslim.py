@@ -126,7 +126,8 @@ def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) 
         f"Cierre {current_close:.2f} vs máx 52w {high_52w:.2f} "
         f"({current_close / high_52w:.1%} del máximo){ath_str}; "
         f"volumen relativo 4w {rel_volume:.2f}x (umbral {NEW_HIGH_VOLUME_RATIO}x). "
-        "No evalúa 'nuevo producto/gestión' (no verificable con datos)."
+        "Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil "
+        "('nuevo producto/gestión') no se verifica aquí."
     )
     return CriterionResult(passed, detail)
 
