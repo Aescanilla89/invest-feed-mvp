@@ -110,7 +110,7 @@ def test_evaluate_a_fails_with_only_2_of_5_positive_years():
 
 def test_evaluate_n_new_high_with_volume_passes():
     closes = steady_uptrend(n=52, start_price=100, end_price=150)
-    volumes = [1_000_000.0] * 51 + [2_500_000.0]
+    volumes = [1_000_000.0] * 48 + [2_500_000.0] * 4
     df = make_weekly_df(closes, volumes)
     result = evaluate_n(df)
     assert result.value is True
@@ -124,21 +124,24 @@ def test_evaluate_n_far_from_high_fails():
     assert result.value is False
 
 
-def test_evaluate_n_uses_all_time_high_when_provided():
-    # El cierre está cerca del máximo de las 52 semanas del DF,
-    # pero lejos del ATH histórico real (200) → debe fallar
+def test_evaluate_n_ignores_distant_all_time_high():
+    # El criterio N usa el máximo de 52 semanas (no el ATH histórico) como
+    # referencia de breakout -- ver docstring de evaluate_n: muchos stocks
+    # válidos nunca recuperan su ATH de años anteriores. Un ATH lejano (200)
+    # no debe impedir el pass si el cierre está cerca del máximo 52w con
+    # volumen confirmatorio; el ATH solo aparece como nota informativa.
     closes = steady_uptrend(n=52, start_price=100, end_price=150)
-    volumes = [1_000_000.0] * 51 + [2_500_000.0]
+    volumes = [1_000_000.0] * 48 + [2_500_000.0] * 4
     df = make_weekly_df(closes, volumes)
     result = evaluate_n(df, all_time_high=200.0)
-    # 150 / 200 = 75% < 98% → False (lejos del ATH histórico)
-    assert result.value is False
+    assert result.value is True
+    assert "ATH histórico" in result.detail
 
 
 def test_evaluate_n_passes_with_explicit_ath_match():
     # ATH = 151 (prácticamente igual al cierre actual de 150)
     closes = steady_uptrend(n=52, start_price=100, end_price=150)
-    volumes = [1_000_000.0] * 51 + [2_500_000.0]
+    volumes = [1_000_000.0] * 48 + [2_500_000.0] * 4
     df = make_weekly_df(closes, volumes)
     result = evaluate_n(df, all_time_high=151.0)
     # 150 / 151 = 99.3% > 98% Y volumen > 1.5x → True
