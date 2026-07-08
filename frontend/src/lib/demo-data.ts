@@ -24,7 +24,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: false, detail: "Crecimiento EPS trimestral YoY: -43.2% (umbral 25%)" },
         A: { value: false, detail: "Crecimiento EPS anual: -14.5% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 136.90 vs máx 52sem 175.22 (78.1% del máximo); volumen relativo 0.57x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 136.90 vs máx 52sem 175.22 (78.1% del máximo); volumen relativo 0.57x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: true, detail: "Shares outstanding variación 4 trimestres: -3.8%" },
         L: { value: true, detail: "Retorno 52sem: ticker 25.9% vs benchmark 18.6% (diff +7.3%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
@@ -49,7 +49,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: true, detail: "Crecimiento EPS trimestral YoY: 214.5% (umbral 25%)" },
         A: { value: true, detail: "Crecimiento EPS anual: 66.7% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 199.00 vs máx 52sem 236.26 (84.2% del máximo); volumen relativo 0.57x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 199.00 vs máx 52sem 236.26 (84.2% del máximo); volumen relativo 0.57x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: false, detail: "Shares outstanding variación 4 trimestres: -0.8%" },
         L: { value: true, detail: "Retorno 52sem: ticker 25.1% vs benchmark 18.6% (diff +6.5%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
@@ -74,7 +74,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: true, detail: "Crecimiento EPS trimestral YoY: 81.9% (umbral 25%)" },
         A: { value: true, detail: "Crecimiento EPS anual: 34.5% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 345.29 vs máx 52sem 408.37 (84.6% del máximo); volumen relativo 0.92x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 345.29 vs máx 52sem 408.37 (84.6% del máximo); volumen relativo 0.92x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: false, detail: "Shares outstanding variación 4 trimestres: +0.1%" },
         L: { value: true, detail: "Retorno 52sem: ticker 92.9% vs benchmark 18.6% (diff +74.3%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
@@ -99,7 +99,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: false, detail: "Crecimiento EPS trimestral YoY: 21.8% (umbral 25%)" },
         A: { value: false, detail: "Crecimiento EPS anual: 22.7% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 293.08 vs máx 52sem 317.40 (92.3% del máximo); volumen relativo 0.65x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 293.08 vs máx 52sem 317.40 (92.3% del máximo); volumen relativo 0.65x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: true, detail: "Shares outstanding variación 4 trimestres: -1.7%" },
         L: { value: true, detail: "Retorno 52sem: ticker 37.8% vs benchmark 18.6% (diff +19.2%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
@@ -124,7 +124,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: false, detail: "Crecimiento EPS trimestral YoY: 17.2% (umbral 25%)" },
         A: { value: false, detail: "Crecimiento EPS anual: 1.4% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 333.45 vs máx 52sem 338.09 (98.6% del máximo); volumen relativo 0.64x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 333.45 vs máx 52sem 338.09 (98.6% del máximo); volumen relativo 0.64x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: true, detail: "Shares outstanding variación 4 trimestres: -3.6%" },
         L: { value: false, detail: "Retorno 52sem: ticker 14.3% vs benchmark 18.6% (diff -4.3%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
@@ -149,7 +149,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: false, detail: "Crecimiento EPS trimestral YoY: 18.2% (umbral 25%)" },
         A: { value: false, detail: "Crecimiento EPS anual: 23.6% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 80.60 vs máx 52sem 83.50 (96.5% del máximo); volumen relativo 0.78x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 80.60 vs máx 52sem 83.50 (96.5% del máximo); volumen relativo 0.78x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: false, detail: "Shares outstanding variación 4 trimestres: -0.0%" },
         L: { value: false, detail: "Retorno 52sem: ticker 16.2% vs benchmark 18.6% (diff -2.4%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
@@ -174,7 +174,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: false, detail: "Crecimiento EPS trimestral YoY: 8.3% (umbral 25%)" },
         A: { value: false, detail: "Crecimiento EPS anual: -47.1% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 375.53 vs máx 52sem 498.83 (75.3% del máximo); volumen relativo 0.56x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 375.53 vs máx 52sem 498.83 (75.3% del máximo); volumen relativo 0.56x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: false, detail: "Shares outstanding variación 4 trimestres: +16.4%" },
         L: { value: true, detail: "Retorno 52sem: ticker 19.1% vs benchmark 18.6% (diff +0.5%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
@@ -198,7 +198,7 @@ export const DEMO_OPPORTUNITIES: Opportunity[] = [
       criteria: {
         C: { value: false, detail: "Crecimiento EPS trimestral YoY: 23.4% (umbral 25%)" },
         A: { value: false, detail: "Crecimiento EPS anual: 15.6% (umbral 25%)" },
-        N: { value: false, detail: "Cierre 365.46 vs máx 52sem 551.05 (66.3% del máximo); volumen relativo 0.77x (umbral 1.5x). No evalúa 'nuevo producto/gestión' (no verificable con datos)." },
+        N: { value: false, detail: "Cierre 365.46 vs máx 52sem 551.05 (66.3% del máximo); volumen relativo 0.77x (umbral 1.5x). Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil ('nuevo producto/gestión') no se verifica aquí." },
         S: { value: false, detail: "Shares outstanding variación 4 trimestres: -0.1%" },
         L: { value: false, detail: "Retorno 52sem: ticker -26.2% vs benchmark 18.6% (diff -44.7%)" },
         I: { value: null, detail: "No verificable en este MVP: requiere agregar Form 13F de todos los filers (dataset bulk trimestral de SEC), no disponible como endpoint por ticker. Planificado para fase 2." },
