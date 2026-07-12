@@ -155,7 +155,10 @@ class PortfolioPosition(Base):
     compra se ejecuta al precio de apertura del día hábil siguiente
     (`entry_date`), que es el primer momento realmente operable tras conocer
     la señal (confirmada con el cierre de `signal_date`).
-    Se cierra automáticamente en cuanto el ticker deja de estar en Weinstein Stage 2."""
+    Se cierra automáticamente en cuanto el ticker deja de estar en Weinstein
+    Stage 2 (rotura detectada con el cierre de `exit_signal_date`), ejecutando
+    la venta a la apertura del día hábil siguiente (`exit_date`), por el mismo
+    motivo anti-look-ahead."""
     __tablename__ = "portfolio_positions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -168,6 +171,7 @@ class PortfolioPosition(Base):
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     entry_spy_price: Mapped[float] = mapped_column(Float, nullable=False)
 
+    exit_signal_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     exit_spy_price: Mapped[float | None] = mapped_column(Float, nullable=True)

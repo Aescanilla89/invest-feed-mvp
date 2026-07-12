@@ -75,6 +75,7 @@ class PortfolioPositionSchema(BaseModel):
     current_price: float  # precio actual si abierta, precio de salida si cerrada
     return_pct: float
     spy_return_pct: float  # retorno del S&P 500 en el mismo periodo exacto
+    exit_signal_date: date | None = None  # día en que se detectó la ruptura de Stage 2; exit_date es el día siguiente
     exit_date: date | None = None
     exit_reason: str | None = None
 

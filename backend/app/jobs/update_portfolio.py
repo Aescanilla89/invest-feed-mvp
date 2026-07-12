@@ -25,9 +25,11 @@ Un ticker con una posición abierta (de cualquier método) no genera una
 segunda entrada aunque vuelva a salir en el top-1 de otro método el
 mismo día o un día distinto.
 
-Salida: la posición se cierra automáticamente el día que el ticker deja
-de estar en Weinstein Stage 2 (rompe a Stage 3 o Stage 4), fijando el
-retorno final tanto del ticker como del S&P 500 en el mismo periodo.
+Salida: se detecta la ruptura de Weinstein Stage 2 (a Stage 3 o Stage 4)
+con el cierre de `exit_signal_date`, y la venta se ejecuta a la apertura
+del día hábil siguiente (`exit_date`) -- mismo criterio anti-look-ahead
+que la entrada. El retorno final del ticker y del S&P 500 se fijan en
+ese mismo `exit_date`.
 
 Uso manual:
     python -m app.jobs.update_portfolio
@@ -120,27 +122,28 @@ def _pick_top_for_method(opportunities: list[Opportunity], method: str) -> Oppor
     return scored[0][0]
 
 
-def _latest_price(db: Session, ticker_id: int, on_or_before: date) -> float | None:
-    row = (
-        db.query(PriceSnapshot.close)
-        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date <= on_or_before)
-        .order_by(PriceSnapshot.date.desc())
-        .first()
-    )
-    return float(row[0]) if row else None
-
-
 def _open_price_on(db: Session, ticker_id: int, exact_date: date) -> float | None:
-    """Apertura de `exact_date` exacto -- a diferencia de `_latest_price`, NO cae
-    hacia atrás a una fecha anterior: si no hay snapshot para ese día concreto
-    (aún no ha llegado el precio), devuelve None y la entrada se pospone al
-    siguiente run en vez de usar un precio de otro día por error."""
+    """Apertura de `exact_date` exacto -- si no hay snapshot para ese día concreto
+    (aún no ha llegado el precio), devuelve None y la entrada/salida se pospone
+    al siguiente run en vez de usar un precio de otro día por error."""
     row = (
         db.query(PriceSnapshot.open)
         .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date == exact_date)
         .one_or_none()
     )
     return float(row[0]) if row else None
+
+
+def _open_price_after(db: Session, ticker_id: int, after: date) -> tuple[date, float] | None:
+    """Primera apertura disponible estrictamente después de `after`. Se usa para
+    ejecutar salidas al día hábil siguiente a la detección, igual que las entradas."""
+    row = (
+        db.query(PriceSnapshot.date, PriceSnapshot.open)
+        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date > after)
+        .order_by(PriceSnapshot.date.asc())
+        .first()
+    )
+    return (row[0], float(row[1])) if row else None
 
 
 def _prior_run_date(db: Session, before: date) -> date | None:
@@ -169,28 +172,41 @@ def run(run_date: date | None = None) -> dict:
 
         stats = {"opened": 0, "closed": 0}
 
-        # 1. Cerrar posiciones que ya no están en Weinstein Stage 2
+        # 1. Cerrar posiciones que ya no están en Weinstein Stage 2. Misma lógica
+        #    anti-look-ahead que la entrada, en dos fases: se detecta la ruptura
+        #    de Stage 2 el día de `exit_signal_date` (con su cierre), y se
+        #    ejecuta la venta a la primera apertura disponible después de esa
+        #    fecha -- nunca al mismo cierre que confirmó la ruptura. Si esa
+        #    apertura aún no existe, la posición queda pendiente y se reintenta
+        #    en el próximo run (sin volver a re-detectar).
         for pos in db.query(PortfolioPosition).filter_by(status="open").all():
-            latest_opp = (
-                db.query(Opportunity)
-                .filter(Opportunity.ticker_id == pos.ticker_id, Opportunity.run_date <= target_date)
-                .order_by(Opportunity.run_date.desc())
-                .first()
-            )
-            if latest_opp is None or latest_opp.weinstein_stage == 2:
+            if pos.exit_signal_date is None:
+                latest_opp = (
+                    db.query(Opportunity)
+                    .filter(Opportunity.ticker_id == pos.ticker_id, Opportunity.run_date <= target_date)
+                    .order_by(Opportunity.run_date.desc())
+                    .first()
+                )
+                if latest_opp is None or latest_opp.weinstein_stage == 2:
+                    continue
+                pos.exit_signal_date = latest_opp.run_date
+                pos.exit_reason = f"weinstein_stage_{latest_opp.weinstein_stage}"
+                logger.info("Posición %s (ticker_id=%s) rompió Stage 2 el %s, pendiente de ejecutar salida", pos.method, pos.ticker_id, latest_opp.run_date)
+
+            exit_row = _open_price_after(db, pos.ticker_id, pos.exit_signal_date)
+            if exit_row is None:
                 continue
-            exit_price = _latest_price(db, pos.ticker_id, latest_opp.run_date)
-            exit_spy_price = _latest_price(db, spy_ticker.id, latest_opp.run_date)
-            if exit_price is None or exit_spy_price is None:
-                logger.warning("Ticker_id %s salió de Stage 2 pero sin precio para cerrar, se omite", pos.ticker_id)
+            exit_date, exit_price = exit_row
+            exit_spy_price = _open_price_on(db, spy_ticker.id, exit_date)
+            if exit_spy_price is None:
+                logger.warning("Ticker_id %s: sin apertura de SPY en %s para cerrar, se pospone", pos.ticker_id, exit_date)
                 continue
             pos.status = "closed"
-            pos.exit_date = latest_opp.run_date
+            pos.exit_date = exit_date
             pos.exit_price = exit_price
             pos.exit_spy_price = exit_spy_price
-            pos.exit_reason = f"weinstein_stage_{latest_opp.weinstein_stage}"
             stats["closed"] += 1
-            logger.info("Cerrada posición %s (ticker_id=%s): Stage -> %s", pos.method, pos.ticker_id, latest_opp.weinstein_stage)
+            logger.info("Cerrada posición %s (ticker_id=%s): señal %s, salida %.2f (apertura %s)", pos.method, pos.ticker_id, pos.exit_signal_date, exit_price, exit_date)
 
         # 2. Abrir nuevas posiciones para el top-1 "excepcional" detectado en la
         #    corrida ANTERIOR (signal_date) -- la señal solo se confirma con el

@@ -148,6 +148,7 @@ export interface PortfolioPosition {
   current_price: number;
   return_pct: number;
   spy_return_pct: number;
+  exit_signal_date: string | null;
   exit_date: string | null;
   exit_reason: string | null;
 }

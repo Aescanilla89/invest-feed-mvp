@@ -59,6 +59,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             current_price=current_price,
             return_pct=round(return_pct, 2),
             spy_return_pct=round(spy_return_pct, 2),
+            exit_signal_date=pos.exit_signal_date,
             exit_date=pos.exit_date,
             exit_reason=pos.exit_reason,
         ))
