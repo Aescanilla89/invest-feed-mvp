@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Award, DollarSign, Rocket, Search, TrendingDown, TrendingUp, Trophy } from "lucide-react";
+import { ArrowLeft, Award, DollarSign, Rocket, Search, TrendingDown, TrendingUp, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState } from "@/components/empty-state";
 import { getPortfolio } from "@/lib/api";
@@ -97,7 +97,12 @@ export default async function PortfolioPage() {
   } catch {
     return (
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
-        <ErrorState message="No se pudo conectar con el backend." />
+        <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="size-4" aria-hidden /> Volver al feed
+        </Link>
+        <div className="mt-6">
+          <ErrorState message="No se pudo conectar con el backend." />
+        </div>
       </main>
     );
   }
@@ -108,7 +113,11 @@ export default async function PortfolioPage() {
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
-      <div className="flex items-center gap-3 border-l-2 border-(--color-accent) pl-4">
+      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="size-4" aria-hidden /> Volver al feed
+      </Link>
+
+      <div className="mt-6 flex items-center gap-3 border-l-2 border-(--color-accent) pl-4">
         <div className="rounded-full bg-(--color-accent) p-2.5 text-accent-foreground">
           <Trophy className="size-4" aria-hidden />
         </div>
