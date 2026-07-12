@@ -3,7 +3,7 @@ PortfolioPosition en app/models/orm.py. Se ejecuta después de run_screener
 en cada corrida (mismo run_date, misma foto de Opportunity/PriceSnapshot).
 
 Entrada (una vez al día, por método, solo si el top-1 de ese método
-cumple su umbral "excepcional"):
+cumple su umbral "excepcional" en la corrida ANTERIOR, `signal_date`):
   - early_stage2: Weinstein Stage 2 recién confirmado (<=6 semanas) Y
     signal_type == "both" (CAN SLIM completo también en verde) -- la
     configuración más sólida del método.
@@ -13,6 +13,13 @@ cumple su umbral "excepcional"):
   - lynch / dividendos: el top-1 por score de ese método tiene
     passed == True (son pasa/no-pasa único; no hay umbral más estricto
     posible que ese).
+
+La señal solo se confirma con el cierre de `signal_date`, así que la
+compra se ejecuta a la apertura del día hábil siguiente (`entry_date`,
+normalmente el `target_date` de esta corrida) -- nunca al mismo cierre
+que disparó la señal. Esto evita look-ahead bias: el precio de entrada
+es siempre uno que un trader real podría haber ejecutado después de
+conocer la señal.
 
 Un ticker con una posición abierta (de cualquier método) no genera una
 segunda entrada aunque vuelva a salir en el top-1 de otro método el
@@ -123,6 +130,29 @@ def _latest_price(db: Session, ticker_id: int, on_or_before: date) -> float | No
     return float(row[0]) if row else None
 
 
+def _open_price_on(db: Session, ticker_id: int, exact_date: date) -> float | None:
+    """Apertura de `exact_date` exacto -- a diferencia de `_latest_price`, NO cae
+    hacia atrás a una fecha anterior: si no hay snapshot para ese día concreto
+    (aún no ha llegado el precio), devuelve None y la entrada se pospone al
+    siguiente run en vez de usar un precio de otro día por error."""
+    row = (
+        db.query(PriceSnapshot.open)
+        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date == exact_date)
+        .one_or_none()
+    )
+    return float(row[0]) if row else None
+
+
+def _prior_run_date(db: Session, before: date) -> date | None:
+    return (
+        db.query(Opportunity.run_date)
+        .filter(Opportunity.run_date < before)
+        .order_by(Opportunity.run_date.desc())
+        .limit(1)
+        .scalar()
+    )
+
+
 def run(run_date: date | None = None) -> dict:
     init_db()
     db = SessionLocal()
@@ -162,34 +192,49 @@ def run(run_date: date | None = None) -> dict:
             stats["closed"] += 1
             logger.info("Cerrada posición %s (ticker_id=%s): Stage -> %s", pos.method, pos.ticker_id, latest_opp.weinstein_stage)
 
-        # 2. Abrir nuevas posiciones para el top-1 "excepcional" de cada método
-        todays_opps = db.query(Opportunity).filter_by(run_date=target_date).all()
-        tickers_with_open = {
-            row[0] for row in db.query(PortfolioPosition.ticker_id).filter_by(status="open").all()
-        }
-        spy_entry_price = _latest_price(db, spy_ticker.id, target_date)
+        # 2. Abrir nuevas posiciones para el top-1 "excepcional" detectado en la
+        #    corrida ANTERIOR (signal_date) -- la señal solo se confirma con el
+        #    cierre de ese día, así que la compra se ejecuta a la apertura de
+        #    HOY (target_date), el primer precio realmente operable. Evita
+        #    look-ahead bias: nunca se "compra" al mismo cierre que generó la señal.
+        signal_date = _prior_run_date(db, target_date)
+        if signal_date is None:
+            logger.info("Sin corrida previa a %s todavía, no hay señales que promocionar", target_date)
+        else:
+            signal_opps = db.query(Opportunity).filter_by(run_date=signal_date).all()
+            tickers_with_open = {
+                row[0] for row in db.query(PortfolioPosition.ticker_id).filter_by(status="open").all()
+            }
+            spy_entry_price = _open_price_on(db, spy_ticker.id, target_date)
 
-        for method in (_EARLY_STAGE2, *_STRATEGY_METHODS):
-            top = _pick_top_for_method(todays_opps, method)
-            if top is None or not _is_exceptional(top, method):
-                continue
-            if top.ticker_id in tickers_with_open:
-                continue
-            entry_price = _latest_price(db, top.ticker_id, target_date)
-            if entry_price is None or spy_entry_price is None:
-                logger.warning("%s: sin precio de entrada para ticker_id=%s, se omite", method, top.ticker_id)
-                continue
-            db.add(PortfolioPosition(
-                ticker_id=top.ticker_id,
-                method=method,
-                status="open",
-                entry_date=target_date,
-                entry_price=entry_price,
-                entry_spy_price=spy_entry_price,
-            ))
-            tickers_with_open.add(top.ticker_id)
-            stats["opened"] += 1
-            logger.info("Nueva posición %s: ticker_id=%s a %.2f", method, top.ticker_id, entry_price)
+            for method in (_EARLY_STAGE2, *_STRATEGY_METHODS):
+                top = _pick_top_for_method(signal_opps, method)
+                if top is None or not _is_exceptional(top, method):
+                    continue
+                if top.ticker_id in tickers_with_open:
+                    continue
+                entry_price = _open_price_on(db, top.ticker_id, target_date)
+                if entry_price is None or spy_entry_price is None:
+                    logger.warning(
+                        "%s: sin apertura del %s (día siguiente a la señal del %s) para ticker_id=%s, se pospone",
+                        method, target_date, signal_date, top.ticker_id,
+                    )
+                    continue
+                db.add(PortfolioPosition(
+                    ticker_id=top.ticker_id,
+                    method=method,
+                    status="open",
+                    signal_date=signal_date,
+                    entry_date=target_date,
+                    entry_price=entry_price,
+                    entry_spy_price=spy_entry_price,
+                ))
+                tickers_with_open.add(top.ticker_id)
+                stats["opened"] += 1
+                logger.info(
+                    "Nueva posición %s: ticker_id=%s señal %s, entrada %.2f (apertura %s)",
+                    method, top.ticker_id, signal_date, entry_price, target_date,
+                )
 
         db.commit()
         logger.info("update_portfolio completado: %s", stats)

@@ -369,27 +369,27 @@ export function getDemoDetail(ticker: string): OpportunityDetail | null {
 const DEMO_PORTFOLIO_POSITIONS: PortfolioPosition[] = [
   {
     ticker: "NVDA", name: "NVIDIA Corp", sector: "Technology", method: "early_stage2", status: "open",
-    entry_date: "2026-05-12", entry_price: 118.4, current_price: 142.1,
+    signal_date: null, entry_date: "2026-05-12", entry_price: 118.4, current_price: 142.1,
     return_pct: 20.0, spy_return_pct: 4.2, exit_date: null, exit_reason: null,
   },
   {
     ticker: "AAPL", name: "Apple Inc", sector: "Technology", method: "minervini", status: "open",
-    entry_date: "2026-04-28", entry_price: 189.2, current_price: 204.5,
+    signal_date: null, entry_date: "2026-04-28", entry_price: 189.2, current_price: 204.5,
     return_pct: 8.1, spy_return_pct: 5.6, exit_date: null, exit_reason: null,
   },
   {
     ticker: "COST", name: "Costco Wholesale", sector: "Consumer Defensive", method: "berkshire", status: "open",
-    entry_date: "2026-03-15", entry_price: 720.0, current_price: 799.3,
+    signal_date: null, entry_date: "2026-03-15", entry_price: 720.0, current_price: 799.3,
     return_pct: 11.0, spy_return_pct: 7.9, exit_date: null, exit_reason: null,
   },
   {
     ticker: "JPM", name: "JPMorgan Chase", sector: "Financial Services", method: "dividendos", status: "closed",
-    entry_date: "2026-01-10", entry_price: 198.5, current_price: 187.2,
+    signal_date: null, entry_date: "2026-01-10", entry_price: 198.5, current_price: 187.2,
     return_pct: -5.7, spy_return_pct: 2.1, exit_date: "2026-06-02", exit_reason: "weinstein_stage_3",
   },
   {
     ticker: "AMD", name: "Advanced Micro Devices", sector: "Technology", method: "lynch", status: "closed",
-    entry_date: "2025-11-20", entry_price: 142.0, current_price: 168.9,
+    signal_date: null, entry_date: "2025-11-20", entry_price: 142.0, current_price: 168.9,
     return_pct: 18.9, spy_return_pct: 6.3, exit_date: "2026-02-08", exit_reason: "weinstein_stage_3",
   },
 ];

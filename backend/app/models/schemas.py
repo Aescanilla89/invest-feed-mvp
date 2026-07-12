@@ -69,6 +69,7 @@ class PortfolioPositionSchema(BaseModel):
     sector: str | None
     method: str
     status: str  # "open" | "closed"
+    signal_date: date | None = None  # día en que se detectó la señal (cierre); entry_date es el día siguiente
     entry_date: date
     entry_price: float
     current_price: float  # precio actual si abierta, precio de salida si cerrada

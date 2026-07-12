@@ -16,6 +16,7 @@ _ADD_COLUMN_MIGRATIONS = [
     "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS weinstein_ma_slope_pct FLOAT NOT NULL DEFAULT 0.0",
     "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS weinstein_relative_volume FLOAT NOT NULL DEFAULT 0.0",
     "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS strategies JSONB DEFAULT '{}'",
+    "ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS signal_date DATE",
 ]
 
 

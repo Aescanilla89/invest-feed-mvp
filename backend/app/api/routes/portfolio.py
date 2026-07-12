@@ -53,6 +53,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             sector=ticker.sector,
             method=pos.method,
             status=pos.status,
+            signal_date=pos.signal_date,
             entry_date=pos.entry_date,
             entry_price=pos.entry_price,
             current_price=current_price,

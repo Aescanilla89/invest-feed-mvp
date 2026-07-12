@@ -150,7 +150,11 @@ class Catalyst(Base):
 class PortfolioPosition(Base):
     """Pick de la cartera pública (social proof): entra automáticamente cuando el
     top-1 diario de un método (early_stage2/minervini/lynch/berkshire/dividendos)
-    cumple el umbral "excepcional" de ese método (ver app/jobs/update_portfolio.py).
+    cumple el umbral "excepcional" de ese método en `signal_date` (ver
+    app/jobs/update_portfolio.py). Para no incurrir en look-ahead bias, la
+    compra se ejecuta al precio de apertura del día hábil siguiente
+    (`entry_date`), que es el primer momento realmente operable tras conocer
+    la señal (confirmada con el cierre de `signal_date`).
     Se cierra automáticamente en cuanto el ticker deja de estar en Weinstein Stage 2."""
     __tablename__ = "portfolio_positions"
 
@@ -159,6 +163,7 @@ class PortfolioPosition(Base):
     method: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)
 
+    signal_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     entry_spy_price: Mapped[float] = mapped_column(Float, nullable=False)
