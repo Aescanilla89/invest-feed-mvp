@@ -14,13 +14,16 @@ export function Header() {
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight sm:text-3xl">
             <Link href="/">
-              Stage
+              Trade
               <span className="relative text-(--color-accent)">
-                Wise
+                Finder
                 <span className="absolute -right-2.5 top-1 size-1.5 rounded-full bg-(--color-stage-advance) motion-safe:animate-pulse" aria-hidden />
               </span>
             </Link>
           </h1>
+          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-(--color-accent)">
+            From Market Noise to Clear Decisions
+          </p>
           <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
             Oportunidades rankeadas combinando Stage Analysis de Weinstein y CAN&nbsp;SLIM —
             con el porqué explicado, no solo el qué.

@@ -369,26 +369,31 @@ export function getDemoDetail(ticker: string): OpportunityDetail | null {
 const DEMO_PORTFOLIO_POSITIONS: PortfolioPosition[] = [
   {
     ticker: "NVDA", name: "NVIDIA Corp", sector: "Technology", method: "early_stage2", status: "open",
+    explanation: "NVDA acaba de confirmar transición a Stage 2 con volumen 2x la media y RSI por encima de 50, mientras CAN SLIM está en verde en todos los criterios verificables: ventas y beneficio trimestral acelerando, ROE por encima del 17%, y liderazgo claro en su industria (semiconductores de IA). Es la configuración más sólida del método: tendencia técnica y fundamentales confirmando al mismo tiempo.",
     signal_date: null, entry_date: "2026-05-12", entry_price: 118.4, current_price: 142.1,
     return_pct: 20.0, spy_return_pct: 4.2, exit_signal_date: null, exit_date: null, exit_reason: null,
   },
   {
     ticker: "AAPL", name: "Apple Inc", sector: "Technology", method: "minervini", status: "open",
+    explanation: "AAPL cumple el SEPA de Minervini con score 100/100: cotiza por encima de las medias de 50, 150 y 200 sesiones (todas alineadas al alza), a menos de un 25% de su máximo de 52 semanas y con un mínimo de 52 semanas al menos un 30% por debajo del precio actual. Estructura técnica de manual para una tendencia establecida.",
     signal_date: null, entry_date: "2026-04-28", entry_price: 189.2, current_price: 204.5,
     return_pct: 8.1, spy_return_pct: 5.6, exit_signal_date: null, exit_date: null, exit_reason: null,
   },
   {
     ticker: "COST", name: "Costco Wholesale", sector: "Consumer Defensive", method: "berkshire", status: "open",
+    explanation: "COST puntúa 100/100 en Berkshire Quality: ROE consistentemente alto, deuda/patrimonio bajo, márgenes estables durante años y un modelo de negocio simple y predecible (membresías + volumen). Es justo el perfil de 'calidad a precio razonable' que busca este método, sin exigir que esté barata, solo que sea un negocio excelente.",
     signal_date: null, entry_date: "2026-03-15", entry_price: 720.0, current_price: 799.3,
     return_pct: 11.0, spy_return_pct: 7.9, exit_signal_date: null, exit_date: null, exit_reason: null,
   },
   {
     ticker: "JPM", name: "JPMorgan Chase", sector: "Financial Services", method: "dividendos", status: "closed",
+    explanation: "JPM pasó el filtro de Dividendos: racha de al menos 5 años consecutivos de dividendo creciente, payout ratio sostenible por debajo del 60% y rentabilidad por dividendo competitiva frente al sector financiero. Ese día cumplía todos los requisitos del método sin excepción.",
     signal_date: null, entry_date: "2026-01-10", entry_price: 198.5, current_price: 187.2,
     return_pct: -5.7, spy_return_pct: 2.1, exit_signal_date: "2026-06-01", exit_date: "2026-06-02", exit_reason: "weinstein_stage_3",
   },
   {
     ticker: "AMD", name: "Advanced Micro Devices", sector: "Technology", method: "lynch", status: "closed",
+    explanation: "AMD cumplía el GARP de Lynch: PEG ratio por debajo de 1 (crecimiento de beneficios superior al múltiplo pagado), crecimiento de beneficios de doble dígito y deuda controlada. Un caso clásico de 'crecimiento razonablemente barato' antes de que el mercado lo reconociera del todo.",
     signal_date: null, entry_date: "2025-11-20", entry_price: 142.0, current_price: 168.9,
     return_pct: 18.9, spy_return_pct: 6.3, exit_signal_date: "2026-02-07", exit_date: "2026-02-08", exit_reason: "weinstein_stage_3",
   },

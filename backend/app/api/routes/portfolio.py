@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.jobs.run_screener import BENCHMARK_SYMBOL
-from app.models.orm import PortfolioPosition, PriceSnapshot, Ticker
+from app.models.orm import Explanation, PortfolioPosition, PriceSnapshot, Ticker
 from app.models.schemas import PortfolioPositionSchema, PortfolioSchema, PortfolioStatsSchema
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -35,6 +35,16 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         .all()
     )
 
+    # El "porqué se eligió" reutiliza la explicación AI ya generada para ese
+    # ticker el día de la señal (mismo texto que ve el usuario en el feed).
+    # signal_date es None en posiciones creadas antes del fix anti-look-ahead;
+    # para esas, la señal y la entrada antigua ocurrieron el mismo día.
+    ticker_ids = {pos.ticker_id for pos, _ in rows}
+    explanations = {
+        (e.ticker_id, e.run_date): e.text
+        for e in db.query(Explanation).filter(Explanation.ticker_id.in_(ticker_ids)).all()
+    } if ticker_ids else {}
+
     positions: list[PortfolioPositionSchema] = []
     for pos, ticker in rows:
         if pos.status == "closed":
@@ -46,6 +56,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
 
         return_pct = (current_price / pos.entry_price - 1) * 100
         spy_return_pct = (spy_price_now / pos.entry_spy_price - 1) * 100
+        explanation = explanations.get((pos.ticker_id, pos.signal_date or pos.entry_date))
 
         positions.append(PortfolioPositionSchema(
             ticker=ticker.symbol,
@@ -53,6 +64,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             sector=ticker.sector,
             method=pos.method,
             status=pos.status,
+            explanation=explanation,
             signal_date=pos.signal_date,
             entry_date=pos.entry_date,
             entry_price=pos.entry_price,

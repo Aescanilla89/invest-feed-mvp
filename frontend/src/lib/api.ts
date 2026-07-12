@@ -142,6 +142,7 @@ export interface PortfolioPosition {
   sector: string | null;
   method: PortfolioMethod;
   status: PortfolioStatus;
+  explanation: string | null;
   signal_date: string | null;
   entry_date: string;
   entry_price: number;

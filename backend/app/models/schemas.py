@@ -69,6 +69,7 @@ class PortfolioPositionSchema(BaseModel):
     sector: str | None
     method: str
     status: str  # "open" | "closed"
+    explanation: str | None = None  # por qué se eligió, misma explicación AI del feed para ese ticker/día
     signal_date: date | None = None  # día en que se detectó la señal (cierre); entry_date es el día siguiente
     entry_date: date
     entry_price: float

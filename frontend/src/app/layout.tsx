@@ -22,7 +22,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StageWise — Feed de oportunidades de inversión",
+  title: "TradeFinder — From Market Noise to Clear Decisions",
   description:
     "Oportunidades de inversión rankeadas combinando Stage Analysis de Weinstein y CAN SLIM, con el porqué explicado en lenguaje claro. Información educativa, no asesoramiento financiero.",
 };

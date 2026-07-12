@@ -86,6 +86,12 @@ function PositionRow({ position }: { position: PortfolioPosition }) {
       >
         {position.status === "open" ? "Abierta" : "Cerrada"}
       </span>
+
+      {position.explanation && (
+        <p className="col-span-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground/90 sm:col-span-5">
+          {position.explanation}
+        </p>
+      )}
     </Link>
   );
 }
