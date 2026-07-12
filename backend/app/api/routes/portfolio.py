@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.jobs.run_screener import BENCHMARK_SYMBOL
-from app.models.orm import Explanation, PortfolioPosition, PriceSnapshot, Ticker
+from app.models.orm import Explanation, Opportunity, PortfolioPosition, PriceSnapshot, Ticker
 from app.models.schemas import PortfolioPositionSchema, PortfolioSchema, PortfolioStatsSchema
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+
+_EARLY_STAGE2 = "early_stage2"
 
 
 def _latest_price(db: Session, ticker_id: int) -> float | None:
@@ -21,6 +23,26 @@ def _latest_price(db: Session, ticker_id: int) -> float | None:
         .first()
     )
     return float(row[0]) if row else None
+
+
+def _strategy_details(opp: Opportunity, method: str) -> str | None:
+    """Réplica de _strategy_result en app/jobs/update_portfolio.py (misma razón:
+    no acoplar la capa HTTP-API a los jobs). Devuelve el `details` factual que
+    ya calculó la estrategia -- el "porqué" correcto para minervini/lynch/
+    berkshire/dividendos, en vez del narrador AI de Weinstein+CAN SLIM."""
+    raw = opp.strategies
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        import json as _json
+        try:
+            raw = _json.loads(raw)
+        except Exception:
+            return None
+    if not isinstance(raw, dict):
+        return None
+    data = raw.get(method)
+    return data.get("details") if isinstance(data, dict) else None
 
 
 @router.get("", response_model=PortfolioSchema)
@@ -35,14 +57,21 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         .all()
     )
 
-    # El "porqué se eligió" reutiliza la explicación AI ya generada para ese
-    # ticker el día de la señal (mismo texto que ve el usuario en el feed).
+    # El "porqué se eligió": para early_stage2 (literalmente Weinstein+CAN SLIM)
+    # se reutiliza la explicación AI del feed; para los otros 4 métodos se usa
+    # el `details` factual que ya calculó su propia estrategia -- describir ahí
+    # el momentum Weinstein en vez de las métricas de calidad/GARP/dividendo
+    # reales sería una explicación cierta pero equivocada para el pick.
     # signal_date es None en posiciones creadas antes del fix anti-look-ahead;
     # para esas, la señal y la entrada antigua ocurrieron el mismo día.
     ticker_ids = {pos.ticker_id for pos, _ in rows}
     explanations = {
         (e.ticker_id, e.run_date): e.text
         for e in db.query(Explanation).filter(Explanation.ticker_id.in_(ticker_ids)).all()
+    } if ticker_ids else {}
+    opportunities = {
+        (o.ticker_id, o.run_date): o
+        for o in db.query(Opportunity).filter(Opportunity.ticker_id.in_(ticker_ids)).all()
     } if ticker_ids else {}
 
     positions: list[PortfolioPositionSchema] = []
@@ -56,7 +85,12 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
 
         return_pct = (current_price / pos.entry_price - 1) * 100
         spy_return_pct = (spy_price_now / pos.entry_spy_price - 1) * 100
-        explanation = explanations.get((pos.ticker_id, pos.signal_date or pos.entry_date))
+        signal_key = (pos.ticker_id, pos.signal_date or pos.entry_date)
+        if pos.method == _EARLY_STAGE2:
+            explanation = explanations.get(signal_key)
+        else:
+            opp = opportunities.get(signal_key)
+            explanation = _strategy_details(opp, pos.method) if opp else None
 
         positions.append(PortfolioPositionSchema(
             ticker=ticker.symbol,

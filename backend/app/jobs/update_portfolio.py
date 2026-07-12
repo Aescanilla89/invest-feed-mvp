@@ -25,12 +25,14 @@ Un ticker con una posición abierta (de cualquier método) no genera una
 segunda entrada aunque vuelva a salir en el top-1 de otro método el
 mismo día o un día distinto.
 
-Cada posición nueva genera (o reutiliza, vía ai/cache.py) su propia
-explicación AI en `signal_date`, sin depender de si ese ticker entró en
-el top-N por combined_score que run_screener explica para el feed --
-los umbrales "excepcional" de la cartera son por estrategia, no por
-combined_score, así que la mayoría de picks no coincidirían con ese
-top-N y se quedarían sin explicación si no se generase aquí.
+Cada posición de early_stage2 genera (o reutiliza, vía ai/cache.py) su
+propia explicación AI en `signal_date`, sin depender de si ese ticker
+entró en el top-N por combined_score que run_screener explica para el
+feed. Las posiciones de los otros 4 métodos NO usan el narrador AI: su
+"porqué" es el `details` factual que ya calcula cada estrategia
+(app/screener/strategies.py) -- describir ahí el momentum Weinstein en
+vez de las métricas de calidad/GARP/dividendo reales sería una
+explicación técnicamente cierta pero equivocada para el pick.
 
 Salida: se detecta la ruptura de Weinstein Stage 2 (a Stage 3 o Stage 4)
 con el cierre de `exit_signal_date`, y la venta se ejecuta a la apertura
@@ -289,7 +291,13 @@ def run(run_date: date | None = None) -> dict:
                     "Nueva posición %s: ticker_id=%s señal %s, entrada %.2f (apertura %s)",
                     method, top.ticker_id, signal_date, entry_price, target_date,
                 )
-                _ensure_explanation(db, explainer, top, top.ticker)
+                # Solo early_stage2 se explica con el narrador AI de Weinstein+CAN
+                # SLIM -- es literalmente su criterio. Los otros 4 métodos ya
+                # tienen su propio "details" factual (ROE, PEG, payout...) en
+                # Opportunity.strategies[method], que es el "porqué" correcto
+                # y no requiere ninguna llamada a la API de Claude.
+                if method == _EARLY_STAGE2:
+                    _ensure_explanation(db, explainer, top, top.ticker)
 
         db.commit()
         logger.info("update_portfolio completado: %s", stats)
