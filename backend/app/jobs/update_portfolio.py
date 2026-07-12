@@ -25,6 +25,13 @@ Un ticker con una posición abierta (de cualquier método) no genera una
 segunda entrada aunque vuelva a salir en el top-1 de otro método el
 mismo día o un día distinto.
 
+Cada posición nueva genera (o reutiliza, vía ai/cache.py) su propia
+explicación AI en `signal_date`, sin depender de si ese ticker entró en
+el top-N por combined_score que run_screener explica para el feed --
+los umbrales "excepcional" de la cartera son por estrategia, no por
+combined_score, así que la mayoría de picks no coincidirían con ese
+top-N y se quedarían sin explicación si no se generase aquí.
+
 Salida: se detecta la ruptura de Weinstein Stage 2 (a Stage 3 o Stage 4)
 con el cierre de `exit_signal_date`, y la venta se ejecuta a la apertura
 del día hábil siguiente (`exit_date`) -- mismo criterio anti-look-ahead
@@ -41,9 +48,13 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.ai import cache as ai_cache
+from app.ai.explainer import ClaudeExplainer, ExplanationError
 from app.core.db import SessionLocal, init_db
 from app.jobs.run_screener import BENCHMARK_SYMBOL
 from app.models.orm import Opportunity, PortfolioPosition, PriceSnapshot, Ticker
+from app.screener.canslim import CriterionResult
+from app.screener.weinstein import WeinsteinResult
 
 logger = logging.getLogger("update_portfolio")
 
@@ -146,6 +157,28 @@ def _open_price_after(db: Session, ticker_id: int, after: date) -> tuple[date, f
     return (row[0], float(row[1])) if row else None
 
 
+def _ensure_explanation(db: Session, explainer: ClaudeExplainer | None, opp: Opportunity, ticker: Ticker) -> None:
+    """Genera (o reutiliza) la explicación AI de `opp` para que la cartera pública
+    siempre tenga un "por qué" -- independiente de si este ticker entró en el
+    top-N por combined_score que run_screener explica para el feed general."""
+    if explainer is None:
+        return
+    weinstein = WeinsteinResult(
+        stage=opp.weinstein_stage,
+        weeks_in_stage=opp.weeks_in_stage,
+        ma_slope_pct=opp.weinstein_ma_slope_pct,
+        relative_volume=opp.weinstein_relative_volume,
+        is_transition_1_to_2=opp.weinstein_transition,
+        rsi=opp.weinstein_rsi,
+    )
+    criteria = {k: CriterionResult(v["value"], v["detail"]) for k, v in (opp.canslim_criteria or {}).items()}
+    ai_cache.get_or_create_explanation(
+        db, ticker, opp.run_date, opp.combined_score, weinstein, criteria, explainer,
+        signal_type=_compute_signal_type(opp),
+    )
+    db.commit()
+
+
 def _prior_run_date(db: Session, before: date) -> date | None:
     return (
         db.query(Opportunity.run_date)
@@ -222,6 +255,11 @@ def run(run_date: date | None = None) -> dict:
                 row[0] for row in db.query(PortfolioPosition.ticker_id).filter_by(status="open").all()
             }
             spy_entry_price = _open_price_on(db, spy_ticker.id, target_date)
+            try:
+                explainer = ClaudeExplainer()
+            except ExplanationError as exc:
+                logger.warning("Generación de explicaciones desactivada: %s", exc)
+                explainer = None
 
             for method in (_EARLY_STAGE2, *_STRATEGY_METHODS):
                 top = _pick_top_for_method(signal_opps, method)
@@ -251,6 +289,7 @@ def run(run_date: date | None = None) -> dict:
                     "Nueva posición %s: ticker_id=%s señal %s, entrada %.2f (apertura %s)",
                     method, top.ticker_id, signal_date, entry_price, target_date,
                 )
+                _ensure_explanation(db, explainer, top, top.ticker)
 
         db.commit()
         logger.info("update_portfolio completado: %s", stats)
