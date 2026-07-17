@@ -62,6 +62,26 @@ TOP_INSTITUTION_NAMES: list[str] = [
     "Calvert Research",
 ]
 
+# Overrides directos de CIK para instituciones cuyo nombre de marca no hace fuzzy-match
+# con el filer real en EDGAR -- muchas ya no presentan 13F-HR propio (solo 13F-NT,
+# un "aviso" que delega en el filer combinado de la matriz tras una fusión/adquisición)
+# y sus holdings quedan consolidados bajo otra entidad. Verificado manualmente contra
+# submissions/CIK*.json (name + 13F-HR con reportDate reciente) en 2026-07.
+KNOWN_CIK_OVERRIDES: dict[str, str] = {
+    "T Rowe Price": "0000080255",
+    "JPMorgan Investment Management": "0000019617",  # combinado bajo JPMorgan Chase & Co
+    "Capital Research": "0001422849",  # Capital World Investors (una de varias divisiones de Capital Group)
+    "Schwab Asset Management": "0000884546",
+    "MFS Investment Management": "0000912938",
+    "Franklin Templeton": "0000038777",
+    "Alliance Bernstein": "0001109448",
+    "Columbia Threadneedle": "0000820027",  # combinado bajo Ameriprise Financial, Inc
+    "Principal Asset Management": "0001126328",  # combinado bajo Principal Financial Group Inc
+    "Putnam Investment": "0000038777",  # combinado bajo Franklin Resources Inc (adquisición 2024) -- mismo CIK que Franklin Templeton
+    "Baird Advisors": "0001648711",  # Baird Financial Group, Inc.
+    "Calvert Research": "0000895421",  # combinado bajo Morgan Stanley (adquisición 2021)
+}
+
 # Sufijos comunes a eliminar para normalización de nombre de empresa
 _SUFFIX_RE = re.compile(
     r"\b(INCORPORATED|CORPORATION|COMPANY|LIMITED|LTD|INC|CORP|CO|PLC|LLC|LP|"
@@ -154,6 +174,9 @@ def search_institution_cik(institution_name: str) -> str | None:
     (cik-lookup-data.txt), desambiguando por nombres duplicados/renombrados y
     verificando cuál de los CIKs candidatos tiene 13F-HR reciente (no un filer
     inactivo que dejó de operar bajo ese CIK hace años)."""
+    if institution_name in KNOWN_CIK_OVERRIDES:
+        return KNOWN_CIK_OVERRIDES[institution_name].lstrip("0") or KNOWN_CIK_OVERRIDES[institution_name]
+
     lookup = _load_cik_lookup()
     key = normalize_company_name(institution_name)
 
