@@ -9,11 +9,17 @@ Europa (sin microcaps) : FTSE 100, DAX 40, CAC 40, IBEX 35, FTSE MIB, AEX via Wi
                          por lo que en Railway estos tickers se saltan silenciosamente.
 
 Política de errores:
-  - S&P 500 / Nasdaq 100 / Russell 2000 → fallo levanta UniverseScrapeError (abortan el job).
+  - S&P 500 / Russell 2000 → fallo levanta UniverseScrapeError (abortan el job).
+  - Nasdaq 100 → fallo (p.ej. bloqueo anti-bot de slickcharts a IPs de datacenter
+    de Railway, ya visto con Yahoo/iShares) cae a `_NASDAQ100_FALLBACK`, una lista
+    estática congelada en el último scraping exitoso. El índice rebalancea ~1 vez
+    al año, así que quedarse unas semanas desactualizado es preferible a que todo
+    el job (y por tanto update_portfolio) se quede sin correr días seguidos.
   - Índices europeos → fallo loguea warning y continúa con el resto de índices.
 
 Si este scraping rompe, el job debe loguearlo claramente y NO fallar en
-silencio con una lista vacía — mejor abortar que procesar con datos incompletos.
+silencio con una lista vacía — mejor abortar (o caer a fallback, para Nasdaq100)
+que procesar con datos incompletos.
 """
 from __future__ import annotations
 
@@ -29,6 +35,22 @@ SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 # Wikipedia quitó la tabla de componentes de la página de Nasdaq-100 (ahora solo
 # enlaza externamente a nasdaq.com) -- slickcharts sí mantiene la tabla completa.
 NASDAQ100_URL = "https://www.slickcharts.com/nasdaq100"
+
+# Congelado desde el último scraping exitoso de slickcharts (2026-07-17).
+# Usado solo cuando el scraping en vivo falla -- ver política de errores arriba.
+_NASDAQ100_FALLBACK: list[str] = [
+    "AAPL", "ABNB", "ADBE", "ADI", "ADP", "ADSK", "AEP", "ALAB", "ALNY", "AMAT",
+    "AMD", "AMGN", "AMZN", "APP", "ARM", "ASML", "AVGO", "AXON", "BKNG", "BKR",
+    "CCEP", "CDNS", "CEG", "CMCSA", "COST", "CPRT", "CRWD", "CRWV", "CSCO", "CSX",
+    "CTAS", "DASH", "DDOG", "DXCM", "EA", "EXC", "FANG", "FAST", "FER", "FTNT",
+    "GEHC", "GILD", "GOOG", "GOOGL", "HON", "HONA", "IDXX", "INTC", "INTU", "ISRG",
+    "KDP", "KHC", "KLAC", "LIN", "LITE", "LRCX", "MAR", "MCHP", "MDLZ", "MELI",
+    "META", "MNST", "MPWR", "MRVL", "MSFT", "MSTR", "MU", "NBIS", "NFLX", "NVDA",
+    "NXPI", "ODFL", "ORLY", "PANW", "PAYX", "PCAR", "PDD", "PEP", "PLTR", "PYPL",
+    "QCOM", "REGN", "RKLB", "ROP", "ROST", "SBUX", "SHOP", "SNDK", "SNPS", "SPCX",
+    "STX", "TER", "TMUS", "TRI", "TSLA", "TTWO", "TXN", "VRTX", "WBD", "WDAY",
+    "WDC", "WMT", "XEL",
+]
 RUSSELL2000_ISHARES_URL = (
     "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
     "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund"
@@ -221,8 +243,15 @@ def get_universe() -> dict[str, list[str]]:
     """
     universes: dict[str, list[str]] = {
         "sp500": get_sp500_tickers(),
-        "nasdaq100": get_nasdaq100_tickers(),
     }
+    try:
+        universes["nasdaq100"] = get_nasdaq100_tickers()
+    except Exception as exc:
+        logger.warning(
+            "Nasdaq100 scraping falló (%s), usando lista estática congelada de %d tickers",
+            exc, len(_NASDAQ100_FALLBACK),
+        )
+        universes["nasdaq100"] = list(_NASDAQ100_FALLBACK)
     try:
         universes["russell2000"] = get_russell2000_tickers()
         logger.info("Russell 2000: %d tickers cargados", len(universes["russell2000"]))
