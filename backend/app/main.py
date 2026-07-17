@@ -8,10 +8,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import admin, catalysts, health, meta, opportunities, portfolio
 from app.core.config import settings
 from app.core.db import init_db
-from app.jobs import detect_catalysts, run_screener, update_portfolio
+from app.jobs import detect_catalysts, run_screener, update_institutional, update_portfolio
 from app.screener import universe
 
 logger = logging.getLogger("invest_feed")
+
+
+def _run_weekly_institutional_update() -> None:
+    """13F-HR solo se publica ~1 vez por trimestre (deadline: 45 días tras cierre),
+    así que revisar semanalmente es más que suficiente para no perderse el día en
+    que el trimestre nuevo esté disponible. Sin efecto si el trimestre ya está
+    cargado -- update_institutional.run() lo comprueba por institución y se salta
+    el trabajo (ver _quarter_already_loaded en app/jobs/update_institutional.py)."""
+    logger.info("Scheduler: comprobando actualización trimestral de institutional_holdings")
+    try:
+        update_institutional.run()
+    except Exception:
+        logger.exception("Scheduler: error actualizando institutional_holdings")
 
 
 def _run_daily_screener() -> None:
@@ -62,6 +75,20 @@ async def lifespan(app: FastAPI):
             hour=catalysts_hour,
             minute=catalysts_minute,
             id="daily_catalysts",
+            replace_existing=True,
+        )
+        # Corre 45 min después del screener, mismo día que catalysts pero solo lunes
+        institutional_hour = settings.screener_schedule_hour
+        institutional_minute = (settings.screener_schedule_minute + 45) % 60
+        if settings.screener_schedule_minute + 45 >= 60:
+            institutional_hour = (institutional_hour + 1) % 24
+        scheduler.add_job(
+            _run_weekly_institutional_update,
+            "cron",
+            day_of_week="mon",
+            hour=institutional_hour,
+            minute=institutional_minute,
+            id="weekly_institutional_update",
             replace_existing=True,
         )
         scheduler.start()
