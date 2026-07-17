@@ -26,7 +26,9 @@ import requests
 logger = logging.getLogger(__name__)
 
 SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-NASDAQ100_WIKI_URL = "https://en.wikipedia.org/wiki/Nasdaq-100"
+# Wikipedia quitó la tabla de componentes de la página de Nasdaq-100 (ahora solo
+# enlaza externamente a nasdaq.com) -- slickcharts sí mantiene la tabla completa.
+NASDAQ100_URL = "https://www.slickcharts.com/nasdaq100"
 RUSSELL2000_ISHARES_URL = (
     "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
     "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund"
@@ -76,7 +78,7 @@ def get_sp500_tickers() -> list[str]:
 
 
 def get_nasdaq100_tickers() -> list[str]:
-    tables = _fetch_tables(NASDAQ100_WIKI_URL)
+    tables = _fetch_tables(NASDAQ100_URL)
     candidate = None
     for t in tables:
         cols = {c.strip().lower() for c in t.columns.astype(str)}
@@ -84,7 +86,7 @@ def get_nasdaq100_tickers() -> list[str]:
             candidate = t
             break
     if candidate is None:
-        raise UniverseScrapeError("No se encontró tabla con columna Ticker/Symbol en Nasdaq-100 Wikipedia")
+        raise UniverseScrapeError("No se encontró tabla con columna Ticker/Symbol en slickcharts Nasdaq-100")
     col = "Ticker" if "Ticker" in candidate.columns else "Symbol"
     tickers = candidate[col].astype(str).str.replace(".", "-", regex=False).str.strip().tolist()
     if len(tickers) < 80:
