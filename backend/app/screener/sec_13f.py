@@ -293,20 +293,21 @@ def _get_xml_url_from_index(cik: str, accession: str) -> str | None:
         if len(xml_hrefs) == 1:
             return f"https://www.sec.gov{xml_hrefs[0]}"
 
-        # Si hay varios, elegir el más cercano a "INFORMATION TABLE" (solo entre
-        # los ya filtrados, para no reintroducir la copia xslForm/HTML)
-        pos_info = html.lower().find("information table")
-        if pos_info >= 0:
-            best, best_dist = xml_hrefs[0], float("inf")
-            for m in re.finditer(r'href="(/Archives/edgar/data/[^"]+\.xml)"', html, re.IGNORECASE):
-                href = m.group(1)
-                if href not in xml_hrefs:
-                    continue
-                d = abs(m.start() - pos_info)
-                if d < best_dist:
-                    best_dist = d
-                    best = href
-            return f"https://www.sec.gov{best}"
+        # Si hay varios (típico: primary_doc.xml de portada + el XML real de
+        # holdings), cada documento aparece en su propia fila <tr> de la tabla
+        # "Document Format Files", con una columna Type que vale literalmente
+        # "INFORMATION TABLE" para el XML de holdings (frente a "13F-HR" para
+        # la portada) -- se busca el href dentro de esa fila en concreto, en vez
+        # de una heurística de "texto más cercano" que es frágil: EDGAR repite
+        # la etiqueta "INFORMATION TABLE" pegada a un href excluido (la copia
+        # xslForm/) justo antes del href real, haciendo que la distancia de
+        # texto favorezca por error al primary_doc.xml de portada.
+        for row in re.findall(r"<tr[^>]*>.*?</tr>", html, re.IGNORECASE | re.DOTALL):
+            if "information table" not in row.lower():
+                continue
+            for href in re.findall(r'href="(/Archives/edgar/data/[^"]+\.xml)"', row, re.IGNORECASE):
+                if href in xml_hrefs:
+                    return f"https://www.sec.gov{href}"
 
         return f"https://www.sec.gov{xml_hrefs[0]}"
 
