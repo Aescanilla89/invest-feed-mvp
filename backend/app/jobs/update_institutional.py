@@ -149,8 +149,10 @@ def run(
             stats["institutions_processed"] += 1
             continue
 
-        # 3. Descargar y parsear 13F
-        holdings, report_date = download_institution_holdings(cik, inst_name)
+        # 3. Descargar y parsear 13F -- si el caller pidió un trimestre concreto
+        # (`quarter` explícito, no el default "último disponible"), se busca ese
+        # filing histórico específico en vez del más reciente.
+        holdings, report_date = download_institution_holdings(cik, inst_name, target_quarter=quarter)
         if not holdings:
             logger.warning("%s: sin holdings descargados", inst_name)
             stats["errors"] += 1

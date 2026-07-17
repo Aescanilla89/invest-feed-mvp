@@ -262,6 +262,72 @@ def get_latest_13f_accession(cik: str) -> tuple[str, date] | None:
     return None
 
 
+def get_13f_accession_for_quarter(cik: str, quarter: date) -> str | None:
+    """Retorna el accession_number del 13F-HR cuyo reportDate coincide exactamente
+    con `quarter`, o None si esa institución no tiene un filing para ese trimestre.
+
+    A diferencia de get_latest_13f_accession (que siempre trae el más reciente),
+    esto permite descargar un trimestre histórico concreto -- necesario para
+    cargar el trimestre ANTERIOR y así poder calcular la tendencia de
+    acumulación/distribución del criterio I (ver evaluate_i en canslim.py)."""
+    padded = cik.zfill(10)
+    url = f"{_EDGAR_BASE}/submissions/CIK{padded}.json"
+    try:
+        time.sleep(_REQUEST_DELAY)
+        r = requests.get(url, headers=_HEADERS, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as exc:
+        logger.warning("Error obteniendo submissions para CIK %s: %s", cik, exc)
+        return None
+
+    recent = data.get("filings", {}).get("recent", {})
+    forms = recent.get("form", [])
+    accessions = recent.get("accessionNumber", [])
+    report_dates = recent.get("reportDate", [])
+
+    for i, form in enumerate(forms):
+        if form != "13F-HR" or i >= len(accessions) or i >= len(report_dates):
+            continue
+        try:
+            rd = date.fromisoformat(report_dates[i])
+        except ValueError:
+            continue
+        if rd == quarter:
+            return accessions[i]
+
+    # El trimestre buscado puede quedar fuera de la ventana "recent" (~1000
+    # filings más recientes) para filers muy antiguos -- se revisan los
+    # archivos de filings históricos paginados si existen.
+    for page in data.get("filings", {}).get("files", []):
+        page_name = page.get("name")
+        if not page_name:
+            continue
+        try:
+            time.sleep(_REQUEST_DELAY)
+            pr = requests.get(f"{_EDGAR_BASE}/submissions/{page_name}", headers=_HEADERS, timeout=20)
+            pr.raise_for_status()
+            page_data = pr.json()
+        except Exception as exc:
+            logger.warning("Error obteniendo página histórica %s para CIK %s: %s", page_name, cik, exc)
+            continue
+        forms_p = page_data.get("form", [])
+        accessions_p = page_data.get("accessionNumber", [])
+        report_dates_p = page_data.get("reportDate", [])
+        for i, form in enumerate(forms_p):
+            if form != "13F-HR" or i >= len(accessions_p) or i >= len(report_dates_p):
+                continue
+            try:
+                rd = date.fromisoformat(report_dates_p[i])
+            except ValueError:
+                continue
+            if rd == quarter:
+                return accessions_p[i]
+
+    logger.info("Sin 13F-HR con reportDate=%s para CIK %s", quarter, cik)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Descarga y parseo del XML de holdings
 # ---------------------------------------------------------------------------
@@ -359,13 +425,24 @@ def _parse_holdings_xml(xml_bytes: bytes) -> list[Holding]:
     return holdings
 
 
-def download_institution_holdings(cik: str, institution_name: str) -> tuple[list[Holding], date | None]:
-    """Descarga y parsea las posiciones del último 13F-HR de una institución.
+def download_institution_holdings(
+    cik: str, institution_name: str, target_quarter: date | None = None,
+) -> tuple[list[Holding], date | None]:
+    """Descarga y parsea las posiciones del 13F-HR de una institución.
+    Si `target_quarter` es None, coge el más reciente disponible; si se indica,
+    busca específicamente el filing de ese trimestre (necesario para cargar
+    trimestres históricos, p.ej. el anterior, para la tendencia del criterio I).
     Retorna (holdings, report_date). Lista vacía si falla."""
-    result = get_latest_13f_accession(cik)
-    if result is None:
-        return [], None
-    accession, report_date = result
+    if target_quarter is not None:
+        accession = get_13f_accession_for_quarter(cik, target_quarter)
+        if accession is None:
+            return [], None
+        report_date = target_quarter
+    else:
+        result = get_latest_13f_accession(cik)
+        if result is None:
+            return [], None
+        accession, report_date = result
 
     xml_url = _get_xml_url_from_index(cik, accession)
     if xml_url is None:
