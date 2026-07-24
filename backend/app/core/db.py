@@ -18,6 +18,8 @@ _ADD_COLUMN_MIGRATIONS = [
     "ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS strategies JSONB DEFAULT '{}'",
     "ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS signal_date DATE",
     "ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS exit_signal_date DATE",
+    "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_daily_close FLOAT",
+    "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_daily_price_date DATE",
 ]
 
 

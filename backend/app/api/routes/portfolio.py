@@ -15,7 +15,13 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 _EARLY_STAGE2 = "early_stage2"
 
 
-def _latest_price(db: Session, ticker_id: int) -> float | None:
+def _latest_price(db: Session, ticker_id: int, ticker: Ticker | None = None) -> float | None:
+    """Precio "actual" para la cartera pública: prioriza el último cierre DIARIO
+    (Ticker.last_daily_close, ver app/jobs/run_screener.py) sobre el cierre
+    semanal de PriceSnapshot -- así el retorno se refleja día a día y no solo
+    cada viernes, que es la cadencia que usa el análisis Weinstein/CAN SLIM."""
+    if ticker is not None and ticker.last_daily_close is not None:
+        return float(ticker.last_daily_close)
     row = (
         db.query(PriceSnapshot.close)
         .filter(PriceSnapshot.ticker_id == ticker_id)
@@ -48,7 +54,7 @@ def _strategy_details(opp: Opportunity, method: str) -> str | None:
 @router.get("", response_model=PortfolioSchema)
 def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     spy_ticker = db.query(Ticker).filter_by(symbol=BENCHMARK_SYMBOL).one_or_none()
-    current_spy_price = _latest_price(db, spy_ticker.id) if spy_ticker else None
+    current_spy_price = _latest_price(db, spy_ticker.id, spy_ticker) if spy_ticker else None
 
     rows = (
         db.query(PortfolioPosition, Ticker)
@@ -80,7 +86,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             current_price = pos.exit_price or pos.entry_price
             spy_price_now = pos.exit_spy_price or pos.entry_spy_price
         else:
-            current_price = _latest_price(db, pos.ticker_id) or pos.entry_price
+            current_price = _latest_price(db, pos.ticker_id, ticker) or pos.entry_price
             spy_price_now = current_spy_price or pos.entry_spy_price
 
         return_pct = (current_price / pos.entry_price - 1) * 100

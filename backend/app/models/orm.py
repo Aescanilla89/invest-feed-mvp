@@ -35,6 +35,11 @@ class Ticker(Base):
     sector: Mapped[str | None] = mapped_column(String(128), nullable=True)
     universe: Mapped[str] = mapped_column(String(32), nullable=False)  # "sp500" | "nasdaq100"
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Último cierre diario (no semanal) -- solo para mostrar precio/rentabilidad
+    # "de hoy" en la cartera pública; el análisis Weinstein/CAN SLIM sigue usando
+    # exclusivamente los cierres semanales de PriceSnapshot.
+    last_daily_close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_daily_price_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     opportunities: Mapped[list["Opportunity"]] = relationship(back_populates="ticker")
     explanations: Mapped[list["Explanation"]] = relationship(back_populates="ticker")

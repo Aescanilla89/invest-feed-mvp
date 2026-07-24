@@ -35,6 +35,18 @@ _SESSION = requests.Session()
 _SESSION.headers.update(_BROWSER_HEADERS)
 
 
+def _stash_latest_daily(weekly: pd.DataFrame, daily: pd.DataFrame) -> None:
+    """Guarda el último cierre DIARIO (no semanal) como metadata del DataFrame
+    devuelto -- vía pandas .attrs, sin cambiar la firma de get_weekly_prices.
+    Se usa solo para el precio "actual" de la cartera pública; el análisis
+    Weinstein/CAN SLIM sigue operando exclusivamente sobre `weekly`."""
+    if daily.empty:
+        return
+    last_date = daily.index[-1]
+    weekly.attrs["latest_daily_date"] = last_date.date() if hasattr(last_date, "date") else last_date
+    weekly.attrs["latest_daily_close"] = float(daily["Close"].iloc[-1])
+
+
 @dataclass
 class DividendData:
     yield_pct: float | None       # e.g. 0.025 para 2.5% anual
@@ -80,7 +92,9 @@ class YFinanceDataSource:
         weekly = daily.resample("W-FRI").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
         ).dropna()
-        return weekly.tail(lookback_weeks)
+        weekly = weekly.tail(lookback_weeks)
+        _stash_latest_daily(weekly, daily)
+        return weekly
 
     def get_fundamentals(self, symbol: str) -> FundamentalData:
         ticker = yf.Ticker(symbol, session=_SESSION)
@@ -201,7 +215,9 @@ class AlpacaDataSource:
         weekly = daily.resample("W-FRI").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
         ).dropna()
-        return weekly.tail(lookback_weeks)
+        weekly = weekly.tail(lookback_weeks)
+        _stash_latest_daily(weekly, daily)
+        return weekly
 
     def get_fundamentals(self, symbol: str) -> FundamentalData:
         from app.screener.sec_edgar import get_eps_series

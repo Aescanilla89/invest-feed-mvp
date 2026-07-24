@@ -185,6 +185,19 @@ def _upsert_price_snapshots(db: Session, ticker: Ticker, weekly: "pd.DataFrame")
     return len(new_rows)
 
 
+def _update_latest_daily_price(ticker: Ticker, weekly: "pd.DataFrame") -> None:
+    """Persiste el último cierre diario (guardado como metadata por data_source.py)
+    para que la cartera pública pueda mostrar precio/rentabilidad "de hoy" sin
+    esperar al cierre semanal del viernes -- ver app/api/routes/portfolio.py."""
+    latest_date = weekly.attrs.get("latest_daily_date")
+    latest_close = weekly.attrs.get("latest_daily_close")
+    if latest_date is None or latest_close is None:
+        return
+    if ticker.last_daily_price_date is None or latest_date > ticker.last_daily_price_date:
+        ticker.last_daily_close = latest_close
+        ticker.last_daily_price_date = latest_date
+
+
 def _upsert_opportunity(db: Session, ticker: Ticker, run_date: date, score: scoring.CombinedScore,
                          weinstein_result, criteria: dict[str, canslim.CriterionResult],
                          strategies: dict | None = None) -> None:
@@ -239,6 +252,7 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
         db.add(benchmark_ticker)
         db.flush()
     _upsert_price_snapshots(db, benchmark_ticker, benchmark_weekly)
+    _update_latest_daily_price(benchmark_ticker, benchmark_weekly)
     db.commit()
 
     logger.info("Pre-cargando ATH histórico, retornos de universo y datos institucionales...")
@@ -290,6 +304,7 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
 
                 ticker = _get_or_create_ticker(db, symbol, universe_name, name, sector)
                 _upsert_price_snapshots(db, ticker, weekly)
+                _update_latest_daily_price(ticker, weekly)
                 _upsert_opportunity(db, ticker, run_date, score, weinstein_result, criteria, strategies)
                 db.commit()
                 processed += 1
