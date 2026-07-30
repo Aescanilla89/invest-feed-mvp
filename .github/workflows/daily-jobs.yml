@@ -10,6 +10,10 @@ on:
         description: "Forzar actualización de institutional_holdings (13F) aunque no sea lunes"
         type: boolean
         default: false
+      clear_explanations:
+        description: "Borrar el historial de explicaciones IA antes de correr (fuerza regeneración completa, p.ej. tras cambiar el tono del prompt)"
+        type: boolean
+        default: false
 
 jobs:
   run-daily-jobs:
@@ -30,6 +34,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - if: ${{ github.event.inputs.clear_explanations == 'true' }}
+        run: python scripts/clear_explanations.py
+        env:
+          PYTHONPATH: .
       - run: python scripts/run_daily_jobs.py
         env:
           PYTHONPATH: .
