@@ -68,28 +68,23 @@ def test_pick_top_for_method_returns_none_without_candidates():
     assert _pick_top_for_method([_opp(weinstein_stage=1)], "early_stage2") is None
 
 
-def test_exit_signal_early_stage2_follows_weinstein_stage():
-    still_stage2 = _opp(weinstein_stage=2)
-    broke_stage2 = _opp(weinstein_stage=3)
-    assert _exit_signal(still_stage2, "early_stage2") is None
-    assert _exit_signal(broke_stage2, "early_stage2") == "weinstein_stage_3"
+def test_exit_signal_holds_through_stage_2_and_3():
+    # Stage 3 es solo desaceleración del momentum con el precio TODAVÍA por
+    # encima de la MA30 -- no es una ruptura real, no debe disparar salida
+    # para ningún método (antes sí lo hacía, y generaba churn: CMCSA entró y
+    # salió 13 veces en un año bajo Lynch sin ganar ni perder nada en conjunto).
+    stage2 = _opp(weinstein_stage=2)
+    stage3 = _opp(weinstein_stage=3)
+    for method in ("early_stage2", "minervini", "lynch", "berkshire", "dividendos"):
+        assert _exit_signal(stage2, method) is None
+        assert _exit_signal(stage3, method) is None
 
 
-def test_exit_signal_other_methods_ignore_weinstein_stage():
-    # Rompe Stage 2 pero lynch sigue pasando -- no debe salir por eso, es el
-    # bug real que generaba churn (entradas/salidas cada ~2 semanas en el
-    # mismo ticker sin ganar ni perder nada en conjunto).
-    still_passing = _opp(weinstein_stage=3, strategies={"lynch": {"passed": True, "score": 80}})
-    assert _exit_signal(still_passing, "lynch") is None
-
-
-def test_exit_signal_other_methods_exit_when_strategy_stops_passing():
-    no_longer_passing = _opp(weinstein_stage=2, strategies={"berkshire": {"passed": False, "score": 40}})
-    assert _exit_signal(no_longer_passing, "berkshire") == "berkshire_no_longer_passes"
-
-
-def test_exit_signal_other_methods_hold_when_data_missing():
-    # passed=None (no verificable) nunca se trata como señal negativa --
-    # mismo principio que el resto del screener (canslim.py, strategies.py).
-    no_data = _opp(strategies={})
-    assert _exit_signal(no_data, "dividendos") is None
+def test_exit_signal_exits_on_ma30_breakdown_for_any_method():
+    # Stage 1 o 4 = cierre por debajo de la MA30 -- el stop-loss dinámico
+    # único, igual para las 5 estrategias.
+    stage4 = _opp(weinstein_stage=4)
+    stage1 = _opp(weinstein_stage=1)
+    for method in ("early_stage2", "minervini", "lynch", "berkshire", "dividendos"):
+        assert _exit_signal(stage4, method) == "weinstein_stage_4"
+        assert _exit_signal(stage1, method) == "weinstein_stage_1"

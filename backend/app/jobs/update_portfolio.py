@@ -34,15 +34,14 @@ feed. Las posiciones de los otros 4 métodos NO usan el narrador AI: su
 vez de las métricas de calidad/GARP/dividendo reales sería una
 explicación técnicamente cierta pero equivocada para el pick.
 
-Salida: cada método sale por la ruptura de SU PROPIA tesis (ver
-_exit_signal) -- early_stage2 cuando el ticker deja Weinstein Stage 2;
-minervini/lynch/berkshire/dividendos cuando su propia estrategia deja de
-pasar (`passed is False` en app/screener/strategies.py), no por un cambio
-de Stage de Weinstein ajeno a su tesis de PEG/calidad/dividendo/trend-
-template. La ruptura se detecta con el cierre de `exit_signal_date`, y la
-venta se ejecuta a la apertura del día hábil siguiente (`exit_date`) --
-mismo criterio anti-look-ahead que la entrada. El retorno final del
-ticker y del S&P 500 se fijan en ese mismo `exit_date`.
+Salida: stop-loss dinámico único para las 5 estrategias (ver
+_exit_signal) -- se sale cuando el precio cierra por debajo de la media
+móvil de 30 semanas (Stage 1 o 4), nunca en Stage 3 (desaceleración con
+precio todavía por encima de la MA30, no una ruptura real). La ruptura
+se detecta con el cierre de `exit_signal_date`, y la venta se ejecuta a
+la apertura del día hábil siguiente (`exit_date`) -- mismo criterio
+anti-look-ahead que la entrada. El retorno final del ticker y del S&P
+500 se fijan en ese mismo `exit_date`.
 
 Uso manual:
     python -m app.jobs.update_portfolio
@@ -119,30 +118,23 @@ def _is_exceptional(opp: Opportunity, method: str) -> bool:
 
 
 def _exit_signal(latest_opp: Opportunity, method: str) -> str | None:
-    """Determina si `latest_opp` dispara la salida de una posición de `method`,
-    devolviendo el `exit_reason` o None si sigue en pie. Cada método sale por
-    la ruptura de SU PROPIA tesis, no todos por Weinstein:
+    """Determina si `latest_opp` dispara la salida de una posición de
+    `method`, devolviendo el `exit_reason` o None si sigue en pie.
 
-    - early_stage2 es literalmente el método Weinstein -- sale cuando el
-      ticker deja Stage 2 (comportamiento original).
-    - minervini/lynch/berkshire/dividendos son estrategias de fundamentales/
-      trend-template con su propio pasa/no-pasa (app/screener/strategies.py).
-      Atarlas a una ruptura de Weinstein Stage 2 (un cambio técnico de corto
-      plazo, no relacionado con su tesis de PEG/calidad/dividendo) generaba
-      entradas y salidas cada ~2 semanas en el mismo ticker sin ganar ni
-      perder nada en conjunto -- puro ruido. Ahora salen cuando SU estrategia
-      dejar de pasar (`passed is False`); si el dato no es verificable
-      (`passed is None`) se mantiene la posición, igual que en el resto del
-      screener nunca se trata "sin datos" como señal negativa.
-    """
-    if method == _EARLY_STAGE2:
-        if latest_opp.weinstein_stage != 2:
-            return f"weinstein_stage_{latest_opp.weinstein_stage}"
-        return None
-
-    result = _strategy_result(latest_opp, method)
-    if result is not None and result.get("passed") is False:
-        return f"{method}_no_longer_passes"
+    Stop-loss dinámico único para las 5 estrategias, al estilo Weinstein:
+    se sale SOLO cuando el precio cierra por debajo de la media móvil de 30
+    semanas (Stage 1 o 4) -- nunca en Stage 3, que es solo desaceleración
+    del momentum con el precio TODAVÍA por encima de la MA30, no una
+    ruptura real. Antes se salía en cuanto el stage dejaba de ser
+    exactamente 2 (incluyendo Stage 3) o en cuanto la estrategia propia
+    dejaba de "pasar" (p.ej. Minervini exigía 7/7 criterios sin margen) --
+    ambas reglas cortaban posiciones ganadoras a la primera semana floja,
+    generando churn real sin ganar ni perder nada en conjunto (ver CMCSA:
+    13 entradas/salidas en un año bajo Lynch, -0.45% acumulado). Este stop
+    deja correr Stage 2 y Stage 3, y solo corta en una ruptura de precio
+    genuina -- acompaña la subida en vez de vender al primer amague."""
+    if latest_opp.weinstein_stage in (1, 4):
+        return f"weinstein_stage_{latest_opp.weinstein_stage}"
     return None
 
 
