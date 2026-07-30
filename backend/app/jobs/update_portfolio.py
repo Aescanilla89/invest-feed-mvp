@@ -34,11 +34,15 @@ feed. Las posiciones de los otros 4 métodos NO usan el narrador AI: su
 vez de las métricas de calidad/GARP/dividendo reales sería una
 explicación técnicamente cierta pero equivocada para el pick.
 
-Salida: se detecta la ruptura de Weinstein Stage 2 (a Stage 3 o Stage 4)
-con el cierre de `exit_signal_date`, y la venta se ejecuta a la apertura
-del día hábil siguiente (`exit_date`) -- mismo criterio anti-look-ahead
-que la entrada. El retorno final del ticker y del S&P 500 se fijan en
-ese mismo `exit_date`.
+Salida: cada método sale por la ruptura de SU PROPIA tesis (ver
+_exit_signal) -- early_stage2 cuando el ticker deja Weinstein Stage 2;
+minervini/lynch/berkshire/dividendos cuando su propia estrategia deja de
+pasar (`passed is False` en app/screener/strategies.py), no por un cambio
+de Stage de Weinstein ajeno a su tesis de PEG/calidad/dividendo/trend-
+template. La ruptura se detecta con el cierre de `exit_signal_date`, y la
+venta se ejecuta a la apertura del día hábil siguiente (`exit_date`) --
+mismo criterio anti-look-ahead que la entrada. El retorno final del
+ticker y del S&P 500 se fijan en ese mismo `exit_date`.
 
 Uso manual:
     python -m app.jobs.update_portfolio
@@ -112,6 +116,34 @@ def _is_exceptional(opp: Opportunity, method: str) -> bool:
     if method in ("minervini", "berkshire"):
         return result.get("score") == 100
     return result.get("passed") is True
+
+
+def _exit_signal(latest_opp: Opportunity, method: str) -> str | None:
+    """Determina si `latest_opp` dispara la salida de una posición de `method`,
+    devolviendo el `exit_reason` o None si sigue en pie. Cada método sale por
+    la ruptura de SU PROPIA tesis, no todos por Weinstein:
+
+    - early_stage2 es literalmente el método Weinstein -- sale cuando el
+      ticker deja Stage 2 (comportamiento original).
+    - minervini/lynch/berkshire/dividendos son estrategias de fundamentales/
+      trend-template con su propio pasa/no-pasa (app/screener/strategies.py).
+      Atarlas a una ruptura de Weinstein Stage 2 (un cambio técnico de corto
+      plazo, no relacionado con su tesis de PEG/calidad/dividendo) generaba
+      entradas y salidas cada ~2 semanas en el mismo ticker sin ganar ni
+      perder nada en conjunto -- puro ruido. Ahora salen cuando SU estrategia
+      dejar de pasar (`passed is False`); si el dato no es verificable
+      (`passed is None`) se mantiene la posición, igual que en el resto del
+      screener nunca se trata "sin datos" como señal negativa.
+    """
+    if method == _EARLY_STAGE2:
+        if latest_opp.weinstein_stage != 2:
+            return f"weinstein_stage_{latest_opp.weinstein_stage}"
+        return None
+
+    result = _strategy_result(latest_opp, method)
+    if result is not None and result.get("passed") is False:
+        return f"{method}_no_longer_passes"
+    return None
 
 
 def _pick_top_for_method(opportunities: list[Opportunity], method: str) -> Opportunity | None:
@@ -207,13 +239,14 @@ def run(run_date: date | None = None) -> dict:
 
         stats = {"opened": 0, "closed": 0}
 
-        # 1. Cerrar posiciones que ya no están en Weinstein Stage 2. Misma lógica
-        #    anti-look-ahead que la entrada, en dos fases: se detecta la ruptura
-        #    de Stage 2 el día de `exit_signal_date` (con su cierre), y se
-        #    ejecuta la venta a la primera apertura disponible después de esa
-        #    fecha -- nunca al mismo cierre que confirmó la ruptura. Si esa
-        #    apertura aún no existe, la posición queda pendiente y se reintenta
-        #    en el próximo run (sin volver a re-detectar).
+        # 1. Cerrar posiciones cuya propia tesis (no necesariamente Weinstein,
+        #    ver _exit_signal) ya no se sostiene. Misma lógica anti-look-ahead
+        #    que la entrada, en dos fases: se detecta la ruptura el día de
+        #    `exit_signal_date` (con su cierre), y se ejecuta la venta a la
+        #    primera apertura disponible después de esa fecha -- nunca al
+        #    mismo cierre que confirmó la ruptura. Si esa apertura aún no
+        #    existe, la posición queda pendiente y se reintenta en el próximo
+        #    run (sin volver a re-detectar).
         for pos in db.query(PortfolioPosition).filter_by(status="open").all():
             if pos.exit_signal_date is None:
                 latest_opp = (
@@ -222,11 +255,14 @@ def run(run_date: date | None = None) -> dict:
                     .order_by(Opportunity.run_date.desc())
                     .first()
                 )
-                if latest_opp is None or latest_opp.weinstein_stage == 2:
+                if latest_opp is None:
+                    continue
+                exit_reason = _exit_signal(latest_opp, pos.method)
+                if exit_reason is None:
                     continue
                 pos.exit_signal_date = latest_opp.run_date
-                pos.exit_reason = f"weinstein_stage_{latest_opp.weinstein_stage}"
-                logger.info("Posición %s (ticker_id=%s) rompió Stage 2 el %s, pendiente de ejecutar salida", pos.method, pos.ticker_id, latest_opp.run_date)
+                pos.exit_reason = exit_reason
+                logger.info("Posición %s (ticker_id=%s) disparó salida (%s) el %s, pendiente de ejecutar", pos.method, pos.ticker_id, exit_reason, latest_opp.run_date)
 
             exit_row = _open_price_after(db, pos.ticker_id, pos.exit_signal_date)
             if exit_row is None:
