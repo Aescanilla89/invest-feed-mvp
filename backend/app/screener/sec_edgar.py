@@ -85,9 +85,30 @@ def _fetch_companyfacts(cik: int) -> dict | None:
     return resp.json()
 
 
-def get_edgar_data(symbol: str, quarters_to_compare: int = 4) -> tuple[SupplySignal, EpsSeriesData, QualityMetrics]:
+def get_company_facts(symbol: str) -> dict | None:
+    """Descarga el companyfacts crudo de un ticker (1 sola petición HTTP).
+    Pensado para un backtest histórico: se descarga UNA vez por ticker y se
+    reutiliza con get_edgar_data_from_facts(facts, as_of=...) para muchas
+    fechas distintas sin repetir la petición a EDGAR."""
+    cik = get_cik(symbol)
+    if cik is None:
+        return None
+    try:
+        return _fetch_companyfacts(cik)
+    except Exception:
+        return None
+
+
+def get_edgar_data(
+    symbol: str, quarters_to_compare: int = 4, as_of: date | None = None,
+) -> tuple[SupplySignal, EpsSeriesData, QualityMetrics]:
     """Una sola petición a companyfacts extrae S (supply), C/A (EPS) y métricas de calidad.
-    Usar siempre esta función en lugar de get_supply_signal + get_eps_series por separado."""
+    Usar siempre esta función en lugar de get_supply_signal + get_eps_series por separado.
+
+    `as_of`: si se pasa, solo se usan filings con fecha de publicación (`filed`)
+    <= as_of -- para reconstruir "qué sabíamos en esa fecha" en un backtest
+    histórico, sin look-ahead bias. None (default) usa todo lo disponible hoy,
+    igual que antes de este parámetro (comportamiento de producción sin cambios)."""
     cik = get_cik(symbol)
     if cik is None:
         return SupplySignal(None, None, 0), EpsSeriesData(), QualityMetrics(None, None, None, None)
@@ -100,10 +121,35 @@ def get_edgar_data(symbol: str, quarters_to_compare: int = 4) -> tuple[SupplySig
     if facts is None:
         return SupplySignal(None, None, 0), EpsSeriesData(), QualityMetrics(None, None, None, None)
 
-    return _extract_supply(facts, quarters_to_compare), _extract_eps(facts), _extract_quality(facts)
+    return get_edgar_data_from_facts(facts, quarters_to_compare, as_of)
 
 
-def _extract_supply(facts: dict, quarters_to_compare: int) -> SupplySignal:
+def get_edgar_data_from_facts(
+    facts: dict, quarters_to_compare: int = 4, as_of: date | None = None,
+) -> tuple[SupplySignal, EpsSeriesData, QualityMetrics]:
+    """Igual que get_edgar_data pero reutilizando un companyfacts ya descargado --
+    permite a un backtest histórico descargar cada ticker UNA vez y reevaluar
+    muchas fechas `as_of` distintas sin repetir la petición HTTP a EDGAR."""
+    return (
+        _extract_supply(facts, quarters_to_compare, as_of),
+        _extract_eps(facts, as_of),
+        _extract_quality(facts, as_of),
+    )
+
+
+def _filed_ok(item: dict, as_of: date | None) -> bool:
+    if as_of is None:
+        return True
+    filed = item.get("filed")
+    if not filed:
+        return False
+    try:
+        return date.fromisoformat(filed) <= as_of
+    except ValueError:
+        return False
+
+
+def _extract_supply(facts: dict, quarters_to_compare: int, as_of: date | None = None) -> SupplySignal:
     series = None
     for tag in SHARES_OUTSTANDING_TAGS:
         node = (
@@ -111,7 +157,7 @@ def _extract_supply(facts: dict, quarters_to_compare: int) -> SupplySignal:
             or facts.get("facts", {}).get("us-gaap", {}).get(tag)
         )
         if node:
-            units = node.get("units", {}).get("shares", [])
+            units = [u for u in node.get("units", {}).get("shares", []) if _filed_ok(u, as_of)]
             if units:
                 series = sorted(units, key=lambda u: u.get("end", ""))
                 break
@@ -132,7 +178,7 @@ def _extract_supply(facts: dict, quarters_to_compare: int) -> SupplySignal:
     )
 
 
-def _extract_eps(facts: dict) -> EpsSeriesData:
+def _extract_eps(facts: dict, as_of: date | None = None) -> EpsSeriesData:
     units: list[dict] = []
     for tag in _EPS_TAGS:
         node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
@@ -145,7 +191,7 @@ def _extract_eps(facts: dict) -> EpsSeriesData:
     if not units:
         return EpsSeriesData()
 
-    sorted_units = sorted(units, key=lambda u: u.get("filed", ""))
+    sorted_units = sorted((u for u in units if _filed_ok(u, as_of)), key=lambda u: u.get("filed", ""))
     quarterly: dict[date, float] = {}
     annual: dict[date, float] = {}
 
@@ -175,7 +221,7 @@ def _extract_eps(facts: dict) -> EpsSeriesData:
     )
 
 
-def _annual_series(facts: dict, *tags: str, unit: str = "USD") -> list[float]:
+def _annual_series(facts: dict, *tags: str, unit: str = "USD", as_of: date | None = None) -> list[float]:
     """Extrae la serie anual (10-K) de un concepto XBRL. Prueba tags en orden."""
     for tag in tags:
         node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
@@ -184,15 +230,14 @@ def _annual_series(facts: dict, *tags: str, unit: str = "USD") -> list[float]:
         items = node.get("units", {}).get(unit, [])
         annual: dict[str, float] = {}
         for item in items:
-            if item.get("form") != "10-K":
+            if item.get("form") != "10-K" or not _filed_ok(item, as_of):
                 continue
             start, end = item.get("start"), item.get("end")
             val = item.get("val")
             if not start or not end or val is None:
                 continue
-            from datetime import date as _date
             try:
-                days = (_date.fromisoformat(end) - _date.fromisoformat(start)).days
+                days = (date.fromisoformat(end) - date.fromisoformat(start)).days
             except ValueError:
                 continue
             if 330 <= days <= 400:
@@ -202,19 +247,20 @@ def _annual_series(facts: dict, *tags: str, unit: str = "USD") -> list[float]:
     return []
 
 
-def _extract_quality(facts: dict) -> QualityMetrics:
+def _extract_quality(facts: dict, as_of: date | None = None) -> QualityMetrics:
     """Extrae métricas de calidad del mismo companyfacts que ya descargamos."""
-    gross_profits = _annual_series(facts, "GrossProfit")
+    gross_profits = _annual_series(facts, "GrossProfit", as_of=as_of)
     revenues = _annual_series(
         facts,
         "Revenues",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "SalesRevenueNet",
         "RevenueFromContractWithCustomerIncludingAssessedTax",
+        as_of=as_of,
     )
-    net_incomes = _annual_series(facts, "NetIncomeLoss")
-    ocfs = _annual_series(facts, "NetCashProvidedByUsedInOperatingActivities")
-    equities = _annual_series(facts, "StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
+    net_incomes = _annual_series(facts, "NetIncomeLoss", as_of=as_of)
+    ocfs = _annual_series(facts, "NetCashProvidedByUsedInOperatingActivities", as_of=as_of)
+    equities = _annual_series(facts, "StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", as_of=as_of)
 
     def _avg_ratio(numerators: list[float], denominators: list[float], n_years: int = 3) -> float | None:
         pairs = [

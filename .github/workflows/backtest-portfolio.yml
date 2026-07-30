@@ -1,0 +1,43 @@
+name: Backtest cartera pública
+
+on:
+  workflow_dispatch:
+    inputs:
+      weeks:
+        description: "Nº de semanas hacia atrás (52 = 1 año)"
+        type: string
+        default: "52"
+      tickers:
+        description: "Override de tickers separados por coma (vacío = S&P500+Nasdaq100 completo)"
+        type: string
+        default: ""
+      institutions:
+        description: "Override de instituciones 13F separadas por coma (vacío = las 30 de producción)"
+        type: string
+        default: ""
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: |
+          python -m app.jobs.backtest_portfolio \
+            --weeks "${{ github.event.inputs.weeks }}" \
+            ${{ github.event.inputs.tickers != '' && format('--tickers {0}', github.event.inputs.tickers) || '' }} \
+            ${{ github.event.inputs.institutions != '' && format('--institutions {0}', github.event.inputs.institutions) || '' }}
