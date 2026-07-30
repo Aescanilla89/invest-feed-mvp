@@ -3,7 +3,7 @@
     "backend": {
       "root": "backend",
       "entrypoint": "app.main:app",
-      "routePrefix": "/api"
+      "routePrefix": "/"
     }
   }
 }
