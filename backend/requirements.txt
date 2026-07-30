@@ -12,6 +12,5 @@ anthropic==0.40.0
 alembic==1.13.3
 pytest==8.3.3
 python-dotenv==1.0.1
-apscheduler==3.10.4
 psycopg2-binary==2.9.9
 lxml==5.3.0
