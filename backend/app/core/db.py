@@ -7,7 +7,13 @@ from app.core.config import settings
 from app.models.orm import Base
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=connect_args)
+# pool_pre_ping: Neon (Postgres serverless) cierra conexiones inactivas tras un
+# rato -- sin esto, una sesión abierta mucho tiempo sin usarse (p.ej. durante
+# una fase de un job que solo hace peticiones HTTP, no BD) revienta con
+# "SSL connection has been closed unexpectedly" al primer query siguiente.
+# pre_ping hace un SELECT 1 barato antes de reusar la conexión del pool y la
+# reconecta transparentemente si ya no es válida.
+engine = create_engine(settings.database_url, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 # Columns added after initial deploy that create_all() won't add to existing tables.

@@ -249,7 +249,6 @@ def run(
     institutions_override: list[str] | None = None,
 ) -> dict:
     init_db()
-    db = SessionLocal()
 
     if not (settings.alpaca_api_key and settings.alpaca_secret_key):
         raise RuntimeError("Backtest requiere ALPACA_API_KEY/ALPACA_SECRET_KEY (precio histórico real)")
@@ -280,6 +279,12 @@ def run(
         quarters.append(q)
         q = prior_quarter_end(q)
     holdings_by_quarter = _fetch_institutional_by_quarter(tickers, quarters, inst_names)
+
+    # La sesión de BD se abre aquí, no al principio de run(): las fases 1 y 2
+    # son puro I/O HTTP (pueden tardar 20+ min) y una sesión abierta tanto
+    # tiempo sin usarse contra Neon (Postgres serverless) muere por inactividad
+    # antes de que llegue a hacer su primera query real.
+    db = SessionLocal()
 
     logger.info("=== Fase 3/4: persistiendo precio histórico + Opportunity semana a semana ===")
     benchmark_ticker = _get_or_create_ticker(db, BENCHMARK_SYMBOL, "benchmark", "SPDR S&P 500 ETF Trust", None)
