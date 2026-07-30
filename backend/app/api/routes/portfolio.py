@@ -2,6 +2,8 @@
 automáticamente app/jobs/update_portfolio.py."""
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,19 @@ from app.models.schemas import PortfolioPositionSchema, PortfolioSchema, Portfol
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 _EARLY_STAGE2 = "early_stage2"
+
+
+def _price_on_or_after(db: Session, ticker_id: int, on_or_after: date) -> float | None:
+    """Primer cierre disponible a partir de `on_or_after` (inclusive) -- se
+    usa como precio base para calcular la rentabilidad YTD sin necesitar que
+    exista un snapshot exacto del 1 de enero."""
+    row = (
+        db.query(PriceSnapshot.close)
+        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date >= on_or_after)
+        .order_by(PriceSnapshot.date.asc())
+        .first()
+    )
+    return float(row[0]) if row else None
 
 
 def _latest_price(db: Session, ticker_id: int, ticker: Ticker | None = None) -> float | None:
@@ -80,7 +95,29 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         for o in db.query(Opportunity).filter(Opportunity.ticker_id.in_(ticker_ids)).all()
     } if ticker_ids else {}
 
+    # Rentabilidad YTD: solo tiene sentido para posiciones que estuvieron
+    # vigentes en algún momento del año en curso (abiertas ahora, o cerradas
+    # dentro de este año). El precio base es el de entrada si la posición se
+    # abrió este año, o el primer cierre disponible desde el 1 de enero si
+    # viene de un año anterior -- así no se cuenta la parte de la ganancia
+    # ya generada antes de que empezara el año.
+    year_start = date(date.today().year, 1, 1)
+    _year_start_price_cache: dict[int, float | None] = {}
+
+    def _year_start_price(ticker_id: int) -> float | None:
+        if ticker_id not in _year_start_price_cache:
+            _year_start_price_cache[ticker_id] = _price_on_or_after(db, ticker_id, year_start)
+        return _year_start_price_cache[ticker_id]
+
+    spy_year_start_price = _year_start_price(spy_ticker.id) if spy_ticker else None
+    ytd_spy_return_pct = (
+        round((current_spy_price / spy_year_start_price - 1) * 100, 2)
+        if current_spy_price and spy_year_start_price
+        else None
+    )
+
     positions: list[PortfolioPositionSchema] = []
+    ytd_position_returns: list[float] = []
     for pos, ticker in rows:
         if pos.status == "closed":
             current_price = pos.exit_price or pos.entry_price
@@ -116,26 +153,34 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             exit_reason=pos.exit_reason,
         ))
 
+        was_alive_in_ytd = pos.exit_date is None or pos.exit_date >= year_start
+        if was_alive_in_ytd:
+            base_price = pos.entry_price if pos.entry_date >= year_start else _year_start_price(pos.ticker_id)
+            if base_price:
+                ytd_position_returns.append((current_price / base_price - 1) * 100)
+
     total = len(positions)
     open_count = sum(1 for p in positions if p.status == "open")
 
     if total:
-        win_rate = round(sum(1 for p in positions if p.return_pct > 0) / total * 100, 1)
         avg_return = round(sum(p.return_pct for p in positions) / total, 2)
         avg_spy_return = round(sum(p.spy_return_pct for p in positions) / total, 2)
         best = max(positions, key=lambda p: p.return_pct)
         worst = min(positions, key=lambda p: p.return_pct)
     else:
-        win_rate = avg_return = avg_spy_return = None
+        avg_return = avg_spy_return = None
         best = worst = None
+
+    ytd_return_pct = round(sum(ytd_position_returns) / len(ytd_position_returns), 2) if ytd_position_returns else None
 
     stats = PortfolioStatsSchema(
         total_positions=total,
         open_positions=open_count,
         closed_positions=total - open_count,
-        win_rate=win_rate,
         avg_return_pct=avg_return,
         avg_spy_return_pct=avg_spy_return,
+        ytd_return_pct=ytd_return_pct,
+        ytd_spy_return_pct=ytd_spy_return_pct,
         best=best,
         worst=worst,
     )

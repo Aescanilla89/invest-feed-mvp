@@ -30,6 +30,31 @@ function ReturnValue({ pct }: { pct: number }) {
   );
 }
 
+/** Cerradas: en vez de listar las ~20+ operaciones cerradas (muchas del
+ * mismo ticker reabriéndose tras el stop-loss), se muestra solo lo
+ * representativo: la mejor operación de cada ticker que cerró en positivo, y
+ * un puñado de ejemplos reales donde el stop-loss cortó una pérdida -- prueba
+ * de que la salida funciona, sin enterrar la lista en ruido repetido. */
+const MAX_LOSS_EXAMPLES = 4;
+
+function curateClosedPositions(closed: PortfolioPosition[]): PortfolioPosition[] {
+  const bestPerTicker = new Map<string, PortfolioPosition>();
+  for (const p of closed) {
+    const current = bestPerTicker.get(p.ticker);
+    if (!current || p.return_pct > current.return_pct) bestPerTicker.set(p.ticker, p);
+  }
+  const winners = [...bestPerTicker.values()]
+    .filter((p) => p.return_pct > 0)
+    .sort((a, b) => b.return_pct - a.return_pct);
+
+  const losses = closed
+    .filter((p) => p.return_pct <= 0)
+    .sort((a, b) => a.return_pct - b.return_pct)
+    .slice(0, MAX_LOSS_EXAMPLES);
+
+  return [...winners, ...losses].sort((a, b) => b.entry_date.localeCompare(a.entry_date));
+}
+
 function StatCard({ label, value, sublabel }: { label: string; value: React.ReactNode; sublabel?: string }) {
   return (
     <Card className="px-4 py-3.5">
@@ -115,7 +140,7 @@ export default async function PortfolioPage() {
 
   const { stats, positions } = portfolio;
   const open = positions.filter((p) => p.status === "open");
-  const closed = positions.filter((p) => p.status === "closed");
+  const closed = curateClosedPositions(positions.filter((p) => p.status === "closed"));
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
@@ -150,8 +175,9 @@ export default async function PortfolioPage() {
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Posiciones" value={stats.total_positions} sublabel={`${stats.open_positions} abiertas · ${stats.closed_positions} cerradas`} />
             <StatCard
-              label="Win rate"
-              value={stats.win_rate !== null ? `${stats.win_rate}%` : "—"}
+              label="Rentabilidad YTD"
+              value={stats.ytd_return_pct !== null ? <ReturnValue pct={stats.ytd_return_pct} /> : "—"}
+              sublabel={stats.ytd_spy_return_pct !== null ? `S&P 500: ${stats.ytd_spy_return_pct >= 0 ? "+" : ""}${stats.ytd_spy_return_pct}%` : undefined}
             />
             <StatCard
               label="Retorno medio"
@@ -192,7 +218,12 @@ export default async function PortfolioPage() {
 
           {closed.length > 0 && (
             <div className="mt-8 flex flex-col gap-3">
-              <h2 className="text-sm font-semibold text-foreground">Cerradas ({closed.length})</h2>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Cerradas destacadas ({closed.length})</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  La mejor operación de cada ticker que cerró en positivo, y ejemplos reales donde el stop-loss cortó una pérdida.
+                </p>
+              </div>
               <div className="flex flex-col gap-2">
                 {closed.map((p) => (
                   <PositionRow key={`${p.ticker}-${p.entry_date}`} position={p} />

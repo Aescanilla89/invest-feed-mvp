@@ -158,9 +158,10 @@ export interface PortfolioStats {
   total_positions: number;
   open_positions: number;
   closed_positions: number;
-  win_rate: number | null;
   avg_return_pct: number | null;
   avg_spy_return_pct: number | null;
+  ytd_return_pct: number | null;
+  ytd_spy_return_pct: number | null;
   best: PortfolioPosition | null;
   worst: PortfolioPosition | null;
 }

@@ -87,9 +87,10 @@ class PortfolioStatsSchema(BaseModel):
     total_positions: int
     open_positions: int
     closed_positions: int
-    win_rate: float | None  # % de posiciones con retorno positivo
     avg_return_pct: float | None
     avg_spy_return_pct: float | None
+    ytd_return_pct: float | None  # rentabilidad media de las posiciones vigentes en el año en curso
+    ytd_spy_return_pct: float | None  # retorno real del S&P 500 desde el 1 de enero
     best: PortfolioPositionSchema | None
     worst: PortfolioPositionSchema | None
 

@@ -404,13 +404,16 @@ export const DEMO_PORTFOLIO: Portfolio = {
     total_positions: DEMO_PORTFOLIO_POSITIONS.length,
     open_positions: DEMO_PORTFOLIO_POSITIONS.filter((p) => p.status === "open").length,
     closed_positions: DEMO_PORTFOLIO_POSITIONS.filter((p) => p.status === "closed").length,
-    win_rate: Math.round(
-      (DEMO_PORTFOLIO_POSITIONS.filter((p) => p.return_pct > 0).length / DEMO_PORTFOLIO_POSITIONS.length) * 1000,
-    ) / 10,
     avg_return_pct: Math.round(
       (DEMO_PORTFOLIO_POSITIONS.reduce((sum, p) => sum + p.return_pct, 0) / DEMO_PORTFOLIO_POSITIONS.length) * 100,
     ) / 100,
     avg_spy_return_pct: Math.round(
+      (DEMO_PORTFOLIO_POSITIONS.reduce((sum, p) => sum + p.spy_return_pct, 0) / DEMO_PORTFOLIO_POSITIONS.length) * 100,
+    ) / 100,
+    ytd_return_pct: Math.round(
+      (DEMO_PORTFOLIO_POSITIONS.reduce((sum, p) => sum + p.return_pct, 0) / DEMO_PORTFOLIO_POSITIONS.length) * 100,
+    ) / 100,
+    ytd_spy_return_pct: Math.round(
       (DEMO_PORTFOLIO_POSITIONS.reduce((sum, p) => sum + p.spy_return_pct, 0) / DEMO_PORTFOLIO_POSITIONS.length) * 100,
     ) / 100,
     best: DEMO_PORTFOLIO_POSITIONS.reduce((a, b) => (b.return_pct > a.return_pct ? b : a)),
