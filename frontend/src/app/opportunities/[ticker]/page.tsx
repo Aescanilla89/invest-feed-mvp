@@ -8,8 +8,10 @@ import { RiskBadge } from "@/components/risk-badge";
 import { StagePill } from "@/components/stage-pill";
 import { WeinsteinCycleDiagram } from "@/components/weinstein-cycle-diagram";
 import { ExplanationBullets } from "@/components/explanation-bullets";
-import { StrategyBadges } from "@/components/strategy-badges";
+import { STRATEGY_META } from "@/components/strategy-badges";
+import { TimeHorizonBadge } from "@/components/time-horizon-badge";
 import { getOpportunityDetail } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
@@ -40,8 +42,8 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <StagePill weinstein={weinstein} />
             <RiskBadge risk={risk_bucket} />
+            <TimeHorizonBadge opportunity={detail} />
           </div>
-          {strategies && <StrategyBadges strategies={strategies} className="mt-2" />}
         </div>
       </div>
 
@@ -98,21 +100,43 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
         </div>
       </section>
 
-      {/* Estrategias adicionales -- sección de referencia, sin chrome de
-       * card: divisor superior simple y encabezado discreto en vez de otra
-       * caja idéntica. */}
-      {strategies && Object.values(strategies).some((r) => r.passed) && (
+      {/* Metodologías -- muestra las 4 estrategias completas (cumple o no),
+       * no solo las que pasan, para que el detalle sea la única vista donde
+       * se ve el desglose de metodología. */}
+      {strategies && (
         <section className="mt-8 border-t border-border/60 pt-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estrategias adicionales</h2>
-          <ul className="mt-3 space-y-3">
-            {(Object.entries(strategies) as [string, { passed: boolean | null; score: number | null; details: string }][])
-              .filter(([, r]) => r.passed)
-              .map(([name, r]) => (
-                <li key={name} className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium capitalize">{name} {r.score !== null && `· ${r.score}/100`}</span>
-                  <span className="text-xs text-muted-foreground">{r.details}</span>
-                </li>
-              ))}
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Metodologías</h2>
+          <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(Object.entries(STRATEGY_META) as [keyof typeof STRATEGY_META, (typeof STRATEGY_META)[keyof typeof STRATEGY_META]][])
+              .map(([name, meta]) => {
+                const result = strategies[name];
+                const Icon = meta.icon;
+                const passed = result?.passed ?? null;
+                return (
+                  <li
+                    key={name}
+                    className={cn(
+                      "flex items-start gap-2.5 rounded-lg border px-3 py-2.5",
+                      passed === true && meta.classes,
+                      passed === false && "border-border/40 text-muted-foreground/60",
+                      passed === null && "border-dashed border-border/40 text-muted-foreground/60",
+                    )}
+                  >
+                    <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-none">
+                        {meta.label}
+                        {result?.score !== null && result?.score !== undefined && (
+                          <span className="ml-1.5 font-normal opacity-70">{result.score}/100</span>
+                        )}
+                        {passed === false && <span className="ml-1.5 font-normal">· no cumple</span>}
+                        {passed === null && <span className="ml-1.5 font-normal">· sin datos</span>}
+                      </p>
+                      <p className="mt-1 text-xs leading-snug opacity-80">{result?.details ?? meta.sublabel}</p>
+                    </div>
+                  </li>
+                );
+              })}
           </ul>
         </section>
       )}

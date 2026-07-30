@@ -5,6 +5,7 @@ actualización de la cartera pública, la detección de catalizadores y (solo
 los lunes) la comprobación trimestral de holdings institucionales.
 """
 import logging
+import os
 import sys
 from datetime import date
 
@@ -44,11 +45,13 @@ def main() -> None:
 
     # 13F-HR solo se publica ~1 vez por trimestre; comprobar los lunes basta
     # y update_institutional.run() se salta el trabajo si el trimestre ya
-    # está cargado (ver _quarter_already_loaded).
-    if date.today().weekday() == 0:
-        logger.info("Comprobando actualización trimestral de institutional_holdings")
+    # está cargado (ver _quarter_already_loaded). `force_institutional` permite
+    # forzarlo desde un workflow_dispatch manual (p.ej. tras poblar una BD nueva).
+    force_institutional = os.environ.get("FORCE_INSTITUTIONAL", "").lower() == "true"
+    if date.today().weekday() == 0 or force_institutional:
+        logger.info("Comprobando actualización trimestral de institutional_holdings (force=%s)", force_institutional)
         try:
-            update_institutional.run()
+            update_institutional.run(force=force_institutional)
         except Exception:
             logger.exception("Error actualizando institutional_holdings")
             failed = True

@@ -21,7 +21,9 @@ from sqlalchemy.orm import Session
 from app.core.db import SessionLocal, init_db
 from app.models.orm import InstitutionalHolding, Ticker
 from app.screener.sec_13f import (
+    MULTI_CIK_OVERRIDES,
     TOP_INSTITUTION_NAMES,
+    Holding,
     download_institution_holdings,
     latest_available_quarter,
     normalize_company_name,
@@ -151,8 +153,23 @@ def run(
 
         # 3. Descargar y parsear 13F -- si el caller pidió un trimestre concreto
         # (`quarter` explícito, no el default "último disponible"), se busca ese
-        # filing histórico específico en vez del más reciente.
-        holdings, report_date = download_institution_holdings(cik, inst_name, target_quarter=quarter)
+        # filing histórico específico en vez del más reciente. Instituciones en
+        # MULTI_CIK_OVERRIDES reparten sus holdings entre varias entidades
+        # legales (ninguna presenta un 13F-HR combinado) -- se descargan todas
+        # y se suman bajo el CIK canónico de la institución.
+        holdings: list[Holding]
+        report_date = None
+        if inst_name in MULTI_CIK_OVERRIDES:
+            holdings = []
+            for sub_cik in MULTI_CIK_OVERRIDES[inst_name]:
+                sub_holdings, sub_report_date = download_institution_holdings(
+                    sub_cik, inst_name, target_quarter=quarter,
+                )
+                holdings.extend(sub_holdings)
+                report_date = report_date or sub_report_date
+        else:
+            holdings, report_date = download_institution_holdings(cik, inst_name, target_quarter=quarter)
+
         if not holdings:
             logger.warning("%s: sin holdings descargados", inst_name)
             stats["errors"] += 1

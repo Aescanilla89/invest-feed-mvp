@@ -82,6 +82,28 @@ KNOWN_CIK_OVERRIDES: dict[str, str] = {
     "Calvert Research": "0000895421",  # combinado bajo Morgan Stanley (adquisición 2021)
 }
 
+# Instituciones cuyas holdings quedan repartidas entre VARIAS entidades legales,
+# cada una presentando su propio 13F-HR, sin un filer combinado único (a
+# diferencia de KNOWN_CIK_OVERRIDES). Vanguard Group Inc (CIK 102909) presentó
+# un 13F-NT en Q1 2026 delegando en estas 10 sub-entidades -- verificado que
+# cada una tiene 13F-HR propio con holdings reales. Se suman sus posiciones y
+# se guardan bajo el CIK canónico de Vanguard Group para mantener una sola fila
+# por institución en institutional_holdings.
+MULTI_CIK_OVERRIDES: dict[str, list[str]] = {
+    "Vanguard Group": [
+        "0000933478",  # Vanguard Fiduciary Trust Co
+        "0001550100",  # Vanguard Investments Australia, Ltd.
+        "0002100121",  # Vanguard Portfolio Management LLC
+        "0002100119",  # Vanguard Capital Management LLC
+        "0000217448",  # Vanguard Marketing Corporation
+        "0001767306",  # Vanguard Personalized Indexing Management, LLC
+        "0001680208",  # Vanguard Asset Management, Ltd
+        "0001984256",  # Vanguard National Trust Co
+        "0001811242",  # Vanguard Global Advisers, LLC
+        "0000947529",  # Vanguard Advisers Inc
+    ],
+}
+
 # Sufijos comunes a eliminar para normalización de nombre de empresa
 _SUFFIX_RE = re.compile(
     r"\b(INCORPORATED|CORPORATION|COMPANY|LIMITED|LTD|INC|CORP|CO|PLC|LLC|LP|"

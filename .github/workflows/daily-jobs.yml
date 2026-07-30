@@ -4,7 +4,12 @@ on:
   schedule:
     # 06:00 UTC — mismo horario que el antiguo scheduler de Railway
     - cron: "0 6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_institutional:
+        description: "Forzar actualización de institutional_holdings (13F) aunque no sea lunes"
+        type: boolean
+        default: false
 
 jobs:
   run-daily-jobs:
@@ -28,3 +33,4 @@ jobs:
       - run: python scripts/run_daily_jobs.py
         env:
           PYTHONPATH: .
+          FORCE_INSTITUTIONAL: ${{ github.event.inputs.force_institutional }}
