@@ -70,21 +70,26 @@ def test_pick_top_for_method_returns_none_without_candidates():
 
 def test_exit_signal_holds_through_stage_2_and_3():
     # Stage 3 es solo desaceleración del momentum con el precio TODAVÍA por
-    # encima de la MA30 -- no es una ruptura real, no debe disparar salida
-    # para ningún método (antes sí lo hacía, y generaba churn: CMCSA entró y
-    # salió 13 veces en un año bajo Lynch sin ganar ni perder nada en conjunto).
+    # encima de la MA30 -- no es una ruptura real, no debe disparar salida.
     stage2 = _opp(weinstein_stage=2)
     stage3 = _opp(weinstein_stage=3)
-    for method in ("early_stage2", "minervini", "lynch", "berkshire", "dividendos"):
-        assert _exit_signal(stage2, method) is None
-        assert _exit_signal(stage3, method) is None
+    assert _exit_signal([stage2, stage2]) is None
+    assert _exit_signal([stage3, stage3]) is None
 
 
-def test_exit_signal_exits_on_ma30_breakdown_for_any_method():
-    # Stage 1 o 4 = cierre por debajo de la MA30 -- el stop-loss dinámico
-    # único, igual para las 5 estrategias.
+def test_exit_signal_requires_two_consecutive_weeks_below_ma30():
+    # Una sola semana por debajo de la MA30 (ruido, no ruptura real) no basta
+    # -- es el bug real que generaba churn: CMCSA entró y salió 11 veces en
+    # un año porque su precio cotiza pegado a la MA30 y la cruza a menudo
+    # por una sola semana. Hacen falta 2 semanas CONSECUTIVAS por debajo.
     stage4 = _opp(weinstein_stage=4)
-    stage1 = _opp(weinstein_stage=1)
-    for method in ("early_stage2", "minervini", "lynch", "berkshire", "dividendos"):
-        assert _exit_signal(stage4, method) == "weinstein_stage_4"
-        assert _exit_signal(stage1, method) == "weinstein_stage_1"
+    stage2 = _opp(weinstein_stage=2)
+    assert _exit_signal([stage4, stage2]) is None  # solo la última semana rompió
+    assert _exit_signal([stage4, stage4]) == "weinstein_stage_4"  # 2 semanas seguidas
+
+
+def test_exit_signal_holds_with_insufficient_history():
+    # Con menos de 2 Opportunity para el ticker no se puede confirmar una
+    # ruptura -- se mantiene la posición.
+    assert _exit_signal([]) is None
+    assert _exit_signal([_opp(weinstein_stage=4)]) is None

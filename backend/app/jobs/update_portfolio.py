@@ -117,24 +117,30 @@ def _is_exceptional(opp: Opportunity, method: str) -> bool:
     return result.get("passed") is True
 
 
-def _exit_signal(latest_opp: Opportunity, method: str) -> str | None:
-    """Determina si `latest_opp` dispara la salida de una posición de
-    `method`, devolviendo el `exit_reason` o None si sigue en pie.
+def _exit_signal(recent_opps: list[Opportunity]) -> str | None:
+    """Determina si las Opportunity más recientes de un ticker (ordenadas
+    de más a menos reciente) disparan la salida, devolviendo el
+    `exit_reason` o None si sigue en pie.
 
     Stop-loss dinámico único para las 5 estrategias, al estilo Weinstein:
-    se sale SOLO cuando el precio cierra por debajo de la media móvil de 30
+    se sale cuando el precio cierra por debajo de la media móvil de 30
     semanas (Stage 1 o 4) -- nunca en Stage 3, que es solo desaceleración
     del momentum con el precio TODAVÍA por encima de la MA30, no una
-    ruptura real. Antes se salía en cuanto el stage dejaba de ser
-    exactamente 2 (incluyendo Stage 3) o en cuanto la estrategia propia
-    dejaba de "pasar" (p.ej. Minervini exigía 7/7 criterios sin margen) --
-    ambas reglas cortaban posiciones ganadoras a la primera semana floja,
-    generando churn real sin ganar ni perder nada en conjunto (ver CMCSA:
-    13 entradas/salidas en un año bajo Lynch, -0.45% acumulado). Este stop
-    deja correr Stage 2 y Stage 3, y solo corta en una ruptura de precio
-    genuina -- acompaña la subida en vez de vender al primer amague."""
-    if latest_opp.weinstein_stage in (1, 4):
-        return f"weinstein_stage_{latest_opp.weinstein_stage}"
+    ruptura real.
+
+    Requiere confirmación de 2 semanas CONSECUTIVAS por debajo de la MA30
+    antes de disparar la venta -- una sola semana marginal por debajo de
+    la media no es una ruptura real, es ruido. Sin esta confirmación,
+    acciones que cotizan pegadas a su MA30 generan churn real: CMCSA entró
+    y salió del portfolio 11 veces en un año con el stop de una sola
+    semana, sin ganar ni perder nada en conjunto. Con datos insuficientes
+    (menos de 2 semanas de histórico para el ticker) se mantiene la
+    posición -- nunca se confirma una ruptura con una sola muestra."""
+    if len(recent_opps) < 2:
+        return None
+    latest, prior = recent_opps[0], recent_opps[1]
+    if latest.weinstein_stage in (1, 4) and prior.weinstein_stage in (1, 4):
+        return f"weinstein_stage_{latest.weinstein_stage}"
     return None
 
 
@@ -231,30 +237,30 @@ def run(run_date: date | None = None) -> dict:
 
         stats = {"opened": 0, "closed": 0}
 
-        # 1. Cerrar posiciones cuya propia tesis (no necesariamente Weinstein,
-        #    ver _exit_signal) ya no se sostiene. Misma lógica anti-look-ahead
-        #    que la entrada, en dos fases: se detecta la ruptura el día de
-        #    `exit_signal_date` (con su cierre), y se ejecuta la venta a la
-        #    primera apertura disponible después de esa fecha -- nunca al
-        #    mismo cierre que confirmó la ruptura. Si esa apertura aún no
-        #    existe, la posición queda pendiente y se reintenta en el próximo
-        #    run (sin volver a re-detectar).
+        # 1. Cerrar posiciones que rompen el stop-loss dinámico (ver
+        #    _exit_signal: 2 semanas consecutivas por debajo de la MA30).
+        #    Misma lógica anti-look-ahead que la entrada, en dos fases: se
+        #    detecta la ruptura el día de `exit_signal_date` (con su
+        #    cierre), y se ejecuta la venta a la primera apertura disponible
+        #    después de esa fecha -- nunca al mismo cierre que confirmó la
+        #    ruptura. Si esa apertura aún no existe, la posición queda
+        #    pendiente y se reintenta en el próximo run (sin volver a
+        #    re-detectar).
         for pos in db.query(PortfolioPosition).filter_by(status="open").all():
             if pos.exit_signal_date is None:
-                latest_opp = (
+                recent_opps = (
                     db.query(Opportunity)
                     .filter(Opportunity.ticker_id == pos.ticker_id, Opportunity.run_date <= target_date)
                     .order_by(Opportunity.run_date.desc())
-                    .first()
+                    .limit(2)
+                    .all()
                 )
-                if latest_opp is None:
-                    continue
-                exit_reason = _exit_signal(latest_opp, pos.method)
+                exit_reason = _exit_signal(recent_opps)
                 if exit_reason is None:
                     continue
-                pos.exit_signal_date = latest_opp.run_date
+                pos.exit_signal_date = recent_opps[0].run_date
                 pos.exit_reason = exit_reason
-                logger.info("Posición %s (ticker_id=%s) disparó salida (%s) el %s, pendiente de ejecutar", pos.method, pos.ticker_id, exit_reason, latest_opp.run_date)
+                logger.info("Posición %s (ticker_id=%s) disparó salida (%s) el %s, pendiente de ejecutar", pos.method, pos.ticker_id, exit_reason, recent_opps[0].run_date)
 
             exit_row = _open_price_after(db, pos.ticker_id, pos.exit_signal_date)
             if exit_row is None:
