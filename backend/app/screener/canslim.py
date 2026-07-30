@@ -112,9 +112,13 @@ def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) 
 
     high_52w = float(weekly_prices["High"].tail(52).max())
     current_close = weekly_prices["Close"].iloc[-1]
-    avg_volume_10w = weekly_prices["Volume"].tail(10).mean()
-    # Volumen confirmatorio: media de las últimas 4 semanas vs media 10 semanas
-    recent_vol = weekly_prices["Volume"].tail(4).mean()
+    # Volumen confirmatorio: la semana ACTUAL vs media de las 10 semanas previas
+    # (excluyéndola) -- una rotura real es un pico puntual de 1 semana, no un
+    # nivel sostenido un mes; promediar 4 semanas (como antes) diluía cualquier
+    # pico real y hacía que este criterio casi nunca disparase (verificado:
+    # 0/50+ oportunidades reales lo cumplían con ese cálculo).
+    avg_volume_10w = weekly_prices["Volume"].iloc[-11:-1].mean()
+    recent_vol = weekly_prices["Volume"].iloc[-1]
     rel_volume = (recent_vol / avg_volume_10w) if avg_volume_10w > 0 else 0
 
     near_high = current_close >= high_52w * NEW_HIGH_PROXIMITY_PCT
@@ -125,7 +129,7 @@ def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) 
     detail = (
         f"Cierre {current_close:.2f} vs máx 52w {high_52w:.2f} "
         f"({current_close / high_52w:.1%} del máximo){ath_str}; "
-        f"volumen relativo 4w {rel_volume:.2f}x (umbral {NEW_HIGH_VOLUME_RATIO}x). "
+        f"volumen esta semana {rel_volume:.2f}x vs media 10 semanas previas (umbral {NEW_HIGH_VOLUME_RATIO}x). "
         "Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil "
         "('nuevo producto/gestión') no se verifica aquí."
     )
