@@ -8,14 +8,26 @@ prompt, no tiene de dónde sacar una explicación concreta.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.screener.canslim import CriterionResult
 from app.screener.weinstein import WeinsteinResult
+
+
+@dataclass
+class CatalystContext:
+    """Vista mínima de un Catalyst (app.models.orm) para el prompt -- evita que
+    app.ai dependa del modelo ORM completo."""
+    catalyst_type: str  # "earnings" | "insider_buy"
+    title: str
+    description: str | None
 
 SYSTEM_PROMPT = """Eres el copywriter de una newsletter de inversión con voz propia: directo, \
 con gancho, que vende la historia detrás del dato sin inventar nada que el dato no respalde.
 
 Reglas estrictas:
-- Responde en español con exactamente 4 bullets (•), nada más, sin texto antes ni después.
+- Responde en español con 4 bullets (•), 5 solo si aplica el bullet 5 (ver más abajo), nada \
+más, sin texto antes ni después.
 - Cada bullet es una sola frase punchy con el dato numérico clave cuando aplique — nada de \
 lenguaje de informe corporativo ("se observa", "cabe destacar"). Verbos fuertes, ritmo corto, \
 la cifra como remate de la frase, no escondida en medio.
@@ -27,6 +39,10 @@ sector, vendida como el "por qué esto importa", no como una línea de balance.
 señal) — sin suavizarlo, pero sin dramatizarlo tampoco: un dato, una frase.
 - Bullet 4: contexto de mercado (criterio M, condición del benchmark SPY) como cierre que \
 sitúa la jugada en el tablero general.
+- Bullet 5 (SOLO si el prompt incluye una sección "CATALIZADORES"): el catalizador propio del \
+ticker (earnings próximos o compra de insider reciente) y por qué ayuda a entender el timing de \
+la señal — no lo confundas con el contexto de mercado del bullet 4, que es sobre el benchmark. \
+Si el prompt NO incluye esa sección, no escribas un quinto bullet -- quédate en 4.
 - El gancho y el ritmo son de marketing; los números y lo que afirman son 100% literales del \
 prompt — cero exageración, cero adjetivo que el dato no sostenga.
 - Nunca recomiendes comprar o vender, ni uses imperativos de inversión ("compra", "entra ahora"). \
@@ -65,6 +81,23 @@ _SIGNAL_CONTEXT = {
 }
 
 
+_CATALYST_TYPE_LABEL = {
+    "earnings": "Earnings",
+    "insider_buy": "Compra de insider",
+}
+
+
+def _build_catalysts_section(catalysts: list[CatalystContext] | None) -> str:
+    if not catalysts:
+        return ""
+    lines = "\n".join(
+        f"- {_CATALYST_TYPE_LABEL.get(c.catalyst_type, c.catalyst_type)}: {c.title}"
+        + (f" -- {c.description}" if c.description else "")
+        for c in catalysts
+    )
+    return f"\nCATALIZADORES:\n{lines}\n"
+
+
 def build_user_prompt(
     symbol: str,
     name: str | None,
@@ -73,6 +106,7 @@ def build_user_prompt(
     weinstein: WeinsteinResult,
     criteria: dict[str, CriterionResult],
     signal_type: str | None = None,
+    catalysts: list[CatalystContext] | None = None,
 ) -> str:
     criteria_lines = "\n".join(
         f"- {key}: {'cumple' if c.value is True else 'no cumple' if c.value is False else 'no verificable'} -- {c.detail}"
@@ -88,11 +122,12 @@ def build_user_prompt(
         transition_line = "Sin señal de breakout Stage 1→2"
 
     signal_context = _SIGNAL_CONTEXT.get(signal_type or "", "") if signal_type else ""
+    catalysts_section = _build_catalysts_section(catalysts)
 
     return f"""Ticker: {symbol} ({name or 'nombre desconocido'}, sector {sector or 'desconocido'})
 Score combinado: {combined_score}/100
 {signal_context and f'{signal_context}'}
-
+{catalysts_section}
 Weinstein Stage Analysis:
 - Stage actual: {weinstein.stage}
 - Semanas en este stage: {weeks}

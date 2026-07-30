@@ -20,6 +20,7 @@ _ADD_COLUMN_MIGRATIONS = [
     "ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS exit_signal_date DATE",
     "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_daily_close FLOAT",
     "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_daily_price_date DATE",
+    "ALTER TABLE explanations ADD COLUMN IF NOT EXISTS catalyst_ids_at_generation VARCHAR(255)",
 ]
 
 

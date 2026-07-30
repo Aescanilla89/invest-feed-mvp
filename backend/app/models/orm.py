@@ -128,6 +128,10 @@ class Explanation(Base):
     combined_score_at_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(String(1000), nullable=False)
     model_used: Mapped[str] = mapped_column(String(64), nullable=False)
+    # IDs de catalysts (comma-separated) vistos en el momento de generación --
+    # si cambian respecto a la última explicación cacheada, se regenera aunque
+    # el combined_score no haya cambiado (ver ai/cache.py).
+    catalyst_ids_at_generation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     ticker: Mapped["Ticker"] = relationship(back_populates="explanations")

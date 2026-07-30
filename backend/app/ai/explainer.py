@@ -9,7 +9,7 @@ import logging
 
 import anthropic
 
-from app.ai.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.ai.prompts import SYSTEM_PROMPT, CatalystContext, build_user_prompt
 from app.core.config import settings
 from app.screener.canslim import CriterionResult
 from app.screener.weinstein import WeinsteinResult
@@ -42,8 +42,11 @@ class ClaudeExplainer:
         weinstein: WeinsteinResult,
         criteria: dict[str, CriterionResult],
         signal_type: str | None = None,
+        catalysts: list[CatalystContext] | None = None,
     ) -> str:
-        user_prompt = build_user_prompt(symbol, name, sector, combined_score, weinstein, criteria, signal_type)
+        user_prompt = build_user_prompt(
+            symbol, name, sector, combined_score, weinstein, criteria, signal_type, catalysts,
+        )
         try:
             response = self._client.messages.create(
                 model=self.model,
