@@ -21,30 +21,36 @@ from app.screener.universe import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _mock_response(text: str, status_code: int = 200) -> MagicMock:
+def _mock_response(text: str, status_code: int = 200, json_data: dict | None = None) -> MagicMock:
     resp = MagicMock()
     resp.status_code = status_code
     resp.text = text
+    if json_data is not None:
+        resp.json = MagicMock(return_value=json_data)
     resp.raise_for_status = MagicMock()
     if status_code >= 400:
         resp.raise_for_status.side_effect = Exception(f"HTTP {status_code}")
     return resp
 
 
-def _make_iwm_csv(tickers: list[str], include_cash: bool = True) -> str:
-    """Construye un CSV de iShares IWM sintético con la estructura real."""
-    lines = [
-        "iShares Russell 2000 ETF",
-        "Fund Holdings as of,2026-06-30",
-        "",
-        "Ticker,Name,Asset Class,Market Value,Weight (%),Shares",
-    ]
-    for t in tickers:
-        lines.append(f"{t},{t} Inc,Equity,1000000,0.05,1000")
-    if include_cash:
-        lines.append("CASH_USD,USD CASH,Cash,500000,0.01,500000")
-        lines.append("-,FUTURES,-,0,0.00,1")
-    return "\n".join(lines)
+def _make_vanguard_payload(tickers: list[str], include_blank: bool = True) -> dict:
+    """Construye una respuesta JSON de Vanguard VTWO sintética con la estructura real."""
+    entities = [{"ticker": t, "longName": f"{t} Inc"} for t in tickers]
+    if include_blank:
+        entities.append({"ticker": "", "longName": "CASH"})
+    return {
+        "size": len(tickers),
+        "asOfDate": "2026-07-31T00:00:00-04:00",
+        "fund": {"entity": entities},
+    }
+
+
+def _mock_vanguard_responses(tickers: list[str], include_blank: bool = True):
+    """Mock secuencial: 1ª llamada (probe de tamaño) + 2ª llamada (payload completo)."""
+    payload = _make_vanguard_payload(tickers, include_blank=include_blank)
+    probe = _mock_response("", json_data={"size": len(tickers)})
+    full = _mock_response("", json_data=payload)
+    return [probe, full]
 
 
 def _make_wikipedia_html(ticker_col: str, tickers: list[str]) -> str:
@@ -67,39 +73,36 @@ def _make_wikipedia_html(ticker_col: str, tickers: list[str]) -> str:
 class TestGetRussell2000Tickers:
 
     def test_returns_equity_tickers_only(self):
-        csv = _make_iwm_csv(["AAPL", "MSFT", "GOOG"], include_cash=True)
-        with patch("app.screener.universe.requests.get", return_value=_mock_response(csv)):
+        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(["AAPL", "MSFT", "GOOG"])):
             with pytest.raises(UniverseScrapeError, match="1500"):
                 # Solo 3 tickers → debe fallar la validación de mínimo
                 get_russell2000_tickers()
 
     def test_raises_on_http_error(self):
         with patch("app.screener.universe.requests.get", side_effect=Exception("Connection refused")):
-            with pytest.raises(UniverseScrapeError, match="iShares"):
+            with pytest.raises(UniverseScrapeError, match="Vanguard"):
                 get_russell2000_tickers()
 
-    def test_raises_when_no_header_row(self):
-        csv = "some metadata\nanother line\nno valid header here"
-        with patch("app.screener.universe.requests.get", return_value=_mock_response(csv)):
-            with pytest.raises(UniverseScrapeError, match="cabecera"):
+    def test_raises_when_no_entities(self):
+        probe = _mock_response("", json_data={"size": 1600})
+        empty = _mock_response("", json_data={"size": 1600, "fund": {"entity": []}})
+        with patch("app.screener.universe.requests.get", side_effect=[probe, empty]):
+            with pytest.raises(UniverseScrapeError, match="sin holdings"):
                 get_russell2000_tickers()
 
-    def test_filters_out_cash_and_invalid_rows(self):
-        """Con 1500+ tickers de equity, cash y guiones deben excluirse del resultado."""
+    def test_filters_out_blank_tickers(self):
+        """Filas sin ticker (p.ej. posiciones de cash) deben excluirse del resultado."""
         tickers = [f"TK{i:04d}" for i in range(1600)]
-        csv = _make_iwm_csv(tickers, include_cash=True)
-        with patch("app.screener.universe.requests.get", return_value=_mock_response(csv)):
+        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(tickers, include_blank=True)):
             result = get_russell2000_tickers()
-        assert "CASH_USD" not in result
-        assert "-" not in result
+        assert "" not in result
         assert all(t.startswith("TK") for t in result)
         assert len(result) == 1600
 
     def test_dot_converted_to_dash(self):
         """Tickers con punto (p.ej. BRK.A) deben convertirse a BRK-A."""
         tickers = ["BRK.A", "BRK.B"] + [f"TK{i:04d}" for i in range(1598)]
-        csv = _make_iwm_csv(tickers, include_cash=False)
-        with patch("app.screener.universe.requests.get", return_value=_mock_response(csv)):
+        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(tickers, include_blank=False)):
             result = get_russell2000_tickers()
         assert "BRK-A" in result
         assert "BRK-B" in result
@@ -107,8 +110,7 @@ class TestGetRussell2000Tickers:
 
     def test_returns_sorted_deduplicated_list(self):
         tickers = [f"TK{i:04d}" for i in range(1600)] + ["TK0001"]  # duplicado intencional
-        csv = _make_iwm_csv(tickers, include_cash=False)
-        with patch("app.screener.universe.requests.get", return_value=_mock_response(csv)):
+        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(tickers, include_blank=False)):
             result = get_russell2000_tickers()
         assert result == sorted(set(result))
         assert len(result) == 1600  # deduplicado

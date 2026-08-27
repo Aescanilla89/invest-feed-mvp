@@ -1,8 +1,11 @@
 """Universo de tickers para el screener.
 
 S&P 500 / Nasdaq 100  : scraping Wikipedia (fuente primaria, siempre actualizado).
-Russell 2000           : holdings CSV del ETF iShares IWM (~2000 small caps US).
-                         Funciona en Railway via Alpaca (todos son tickers US).
+Russell 2000           : holdings JSON del ETF Vanguard VTWO (~2000 small caps US).
+                         Todos son tickers US, compatibles con la fuente de datos Alpaca.
+                         (El CSV de holdings de iShares IWM, usado antes, bloquea IPs de
+                         datacenter con una interstitial en vez de servir el CSV -- pasaba en
+                         el 100% de las corridas de GitHub Actions, ver commit que migró a Vanguard).
 Europa (sin microcaps) : FTSE 100, DAX 40, CAC 40, IBEX 35, FTSE MIB, AEX via Wikipedia.
                          Tickers en formato yfinance con sufijo de bolsa (.L, .DE, .PA…).
                          NOTA: Solo funcionan localmente con yfinance; Yahoo bloquea Railway,
@@ -51,10 +54,24 @@ _NASDAQ100_FALLBACK: list[str] = [
     "STX", "TER", "TMUS", "TRI", "TSLA", "TTWO", "TXN", "VRTX", "WBD", "WDAY",
     "WDC", "WMT", "XEL",
 ]
-RUSSELL2000_ISHARES_URL = (
-    "https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
-    "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund"
+# La fuente original (CSV de holdings del ETF iShares IWM) bloquea IPs de
+# datacenter con una interstitial de selección de país/idioma en vez de servir
+# el CSV -- confirmado que ocurre en TODAS las corridas de GitHub Actions, no es
+# un fallo puntual. Vanguard sirve el mismo tipo de dato (holdings del ETF VTWO,
+# que también replica el índice Russell 2000) vía un endpoint JSON público sin
+# ese bloqueo -- usado en su lugar.
+RUSSELL2000_VANGUARD_URL = (
+    "https://investor.vanguard.com/investment-products/etfs/profile/api/vtwo/"
+    "portfolio-holding/stock"
 )
+_VANGUARD_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+}
 
 # (url, lista de posibles nombres de columna ticker, sufijo yfinance, min tickers esperados)
 _EUROPEAN_INDICES: list[tuple[str, list[str], str, int]] = [
@@ -67,15 +84,6 @@ _EUROPEAN_INDICES: list[tuple[str, list[str], str, int]] = [
 ]
 
 _HEADERS = {"User-Agent": "invest-feed-mvp/0.1 (contacto: escanillaalberto@gmail.com)"}
-_ISHARES_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/125.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Referer": "https://www.ishares.com/",
-}
 
 
 class UniverseScrapeError(RuntimeError):
@@ -117,59 +125,46 @@ def get_nasdaq100_tickers() -> list[str]:
 
 
 def get_russell2000_tickers() -> list[str]:
-    """Obtiene los componentes del Russell 2000 desde el CSV de holdings del ETF iShares IWM.
+    """Obtiene los componentes del Russell 2000 desde las holdings del ETF Vanguard VTWO.
 
-    El CSV de iShares incluye filas de metadatos al principio y posiciones de cash al
-    final; se localizan la cabecera real y se filtran las filas equity.
-    Usa csv.DictReader (no pandas) para manejar correctamente los campos con comas.
+    Pide primero 1 fila para leer `size` (nº total de holdings) y luego una sola
+    página con count=size+buffer, ya que el endpoint pagina de 500 en 500 por defecto.
     """
-    import csv as _csv
+    try:
+        probe = requests.get(
+            RUSSELL2000_VANGUARD_URL, headers=_VANGUARD_HEADERS,
+            params={"start": 1, "count": 1}, timeout=20,
+        )
+        probe.raise_for_status()
+        total = probe.json()["size"]
+    except Exception as exc:
+        raise UniverseScrapeError(f"No se pudo leer el tamaño de holdings de Vanguard VTWO: {exc}") from exc
 
     try:
-        resp = requests.get(RUSSELL2000_ISHARES_URL, headers=_ISHARES_HEADERS, timeout=30)
+        resp = requests.get(
+            RUSSELL2000_VANGUARD_URL, headers=_VANGUARD_HEADERS,
+            params={"start": 1, "count": total + 50}, timeout=30,
+        )
         resp.raise_for_status()
+        data = resp.json()
     except Exception as exc:
-        raise UniverseScrapeError(f"No se pudo descargar IWM holdings de iShares: {exc}") from exc
+        raise UniverseScrapeError(f"No se pudo descargar holdings de Vanguard VTWO: {exc}") from exc
 
-    text = resp.text
-    if text.lstrip().startswith("<"):
-        raise UniverseScrapeError(
-            "iShares IWM devolvió HTML en lugar de CSV (bot detection). "
-            "El screener continuará sin Russell 2000 en esta corrida."
-        )
-
-    lines = text.splitlines()
-
-    # Localizar la fila de cabecera real: primera línea donde "Ticker" es un campo separado
-    header_idx = None
-    for i, line in enumerate(lines):
-        fields = [f.strip().strip('"') for f in line.split(",")]
-        if "Ticker" in fields and "Name" in fields:
-            header_idx = i
-            break
-
-    if header_idx is None:
-        raise UniverseScrapeError(
-            "iShares IWM CSV: no se encontró fila de cabecera con columnas 'Ticker' y 'Name'."
-        )
-
-    csv_text = "\n".join(lines[header_idx:])
-    reader = _csv.DictReader(io.StringIO(csv_text))
+    entities = (data.get("fund") or {}).get("entity") or []
+    if not entities:
+        raise UniverseScrapeError("Vanguard VTWO: respuesta sin holdings ('fund.entity' vacío o ausente).")
 
     tickers: list[str] = []
-    for row in reader:
-        ticker = (row.get("Ticker") or "").strip().strip('"')
-        asset_class = (row.get("Asset Class") or "").strip()
-        if not ticker or ticker in ("-", "CASH_USD"):
-            continue
-        if asset_class and asset_class != "Equity":
+    for row in entities:
+        ticker = (row.get("ticker") or "").strip()
+        if not ticker:
             continue
         tickers.append(ticker.replace(".", "-"))
 
     if len(tickers) < 1500:
         raise UniverseScrapeError(
-            f"Russell 2000 scraping devolvió solo {len(tickers)} tickers, esperado ≥1500. "
-            "Comprueba que el CSV de iShares IWM sigue siendo accesible."
+            f"Russell 2000 (Vanguard VTWO) devolvió solo {len(tickers)} tickers, esperado ≥1500. "
+            "Comprueba que el endpoint de holdings de Vanguard sigue siendo accesible."
         )
 
     return sorted(set(tickers))
