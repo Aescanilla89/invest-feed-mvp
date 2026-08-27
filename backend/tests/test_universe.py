@@ -45,12 +45,9 @@ def _make_vanguard_payload(tickers: list[str], include_blank: bool = True) -> di
     }
 
 
-def _mock_vanguard_responses(tickers: list[str], include_blank: bool = True):
-    """Mock secuencial: 1ª llamada (probe de tamaño) + 2ª llamada (payload completo)."""
+def _mock_vanguard_response(tickers: list[str], include_blank: bool = True) -> MagicMock:
     payload = _make_vanguard_payload(tickers, include_blank=include_blank)
-    probe = _mock_response("", json_data={"size": len(tickers)})
-    full = _mock_response("", json_data=payload)
-    return [probe, full]
+    return _mock_response("", json_data=payload)
 
 
 def _make_wikipedia_html(ticker_col: str, tickers: list[str]) -> str:
@@ -73,7 +70,7 @@ def _make_wikipedia_html(ticker_col: str, tickers: list[str]) -> str:
 class TestGetRussell2000Tickers:
 
     def test_returns_equity_tickers_only(self):
-        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(["AAPL", "MSFT", "GOOG"])):
+        with patch("app.screener.universe.requests.get", return_value=_mock_vanguard_response(["AAPL", "MSFT", "GOOG"])):
             with pytest.raises(UniverseScrapeError, match="1500"):
                 # Solo 3 tickers → debe fallar la validación de mínimo
                 get_russell2000_tickers()
@@ -83,17 +80,25 @@ class TestGetRussell2000Tickers:
             with pytest.raises(UniverseScrapeError, match="Vanguard"):
                 get_russell2000_tickers()
 
+    def test_retries_once_on_transient_error_then_succeeds(self):
+        tickers = [f"TK{i:04d}" for i in range(1600)]
+        with patch(
+            "app.screener.universe.requests.get",
+            side_effect=[TimeoutError("Read timed out"), _mock_vanguard_response(tickers, include_blank=False)],
+        ):
+            result = get_russell2000_tickers()
+        assert len(result) == 1600
+
     def test_raises_when_no_entities(self):
-        probe = _mock_response("", json_data={"size": 1600})
-        empty = _mock_response("", json_data={"size": 1600, "fund": {"entity": []}})
-        with patch("app.screener.universe.requests.get", side_effect=[probe, empty]):
+        empty = _mock_response("", json_data={"size": 0, "fund": {"entity": []}})
+        with patch("app.screener.universe.requests.get", return_value=empty):
             with pytest.raises(UniverseScrapeError, match="sin holdings"):
                 get_russell2000_tickers()
 
     def test_filters_out_blank_tickers(self):
         """Filas sin ticker (p.ej. posiciones de cash) deben excluirse del resultado."""
         tickers = [f"TK{i:04d}" for i in range(1600)]
-        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(tickers, include_blank=True)):
+        with patch("app.screener.universe.requests.get", return_value=_mock_vanguard_response(tickers, include_blank=True)):
             result = get_russell2000_tickers()
         assert "" not in result
         assert all(t.startswith("TK") for t in result)
@@ -102,7 +107,7 @@ class TestGetRussell2000Tickers:
     def test_dot_converted_to_dash(self):
         """Tickers con punto (p.ej. BRK.A) deben convertirse a BRK-A."""
         tickers = ["BRK.A", "BRK.B"] + [f"TK{i:04d}" for i in range(1598)]
-        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(tickers, include_blank=False)):
+        with patch("app.screener.universe.requests.get", return_value=_mock_vanguard_response(tickers, include_blank=False)):
             result = get_russell2000_tickers()
         assert "BRK-A" in result
         assert "BRK-B" in result
@@ -110,7 +115,7 @@ class TestGetRussell2000Tickers:
 
     def test_returns_sorted_deduplicated_list(self):
         tickers = [f"TK{i:04d}" for i in range(1600)] + ["TK0001"]  # duplicado intencional
-        with patch("app.screener.universe.requests.get", side_effect=_mock_vanguard_responses(tickers, include_blank=False)):
+        with patch("app.screener.universe.requests.get", return_value=_mock_vanguard_response(tickers, include_blank=False)):
             result = get_russell2000_tickers()
         assert result == sorted(set(result))
         assert len(result) == 1600  # deduplicado

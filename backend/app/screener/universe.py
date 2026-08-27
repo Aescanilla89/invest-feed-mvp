@@ -130,25 +130,28 @@ def get_russell2000_tickers() -> list[str]:
     Pide primero 1 fila para leer `size` (nº total de holdings) y luego una sola
     página con count=size+buffer, ya que el endpoint pagina de 500 en 500 por defecto.
     """
-    try:
-        probe = requests.get(
-            RUSSELL2000_VANGUARD_URL, headers=_VANGUARD_HEADERS,
-            params={"start": 1, "count": 1}, timeout=20,
-        )
-        probe.raise_for_status()
-        total = probe.json()["size"]
-    except Exception as exc:
-        raise UniverseScrapeError(f"No se pudo leer el tamaño de holdings de Vanguard VTWO: {exc}") from exc
-
-    try:
-        resp = requests.get(
-            RUSSELL2000_VANGUARD_URL, headers=_VANGUARD_HEADERS,
-            params={"start": 1, "count": total + 50}, timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as exc:
-        raise UniverseScrapeError(f"No se pudo descargar holdings de Vanguard VTWO: {exc}") from exc
+    # Una sola llamada con count generoso (el Russell 2000 tiene ~2000 posiciones
+    # por definición del índice) en vez de sondear el tamaño primero y pedir
+    # después -- evita depender de dos peticiones de red seguidas. Se reintenta
+    # una vez porque en GitHub Actions esta respuesta (~1-2 MB de JSON) a veces
+    # supera un timeout corto por lentitud de red del runner, no por bloqueo
+    # (visto en producción: "Read timed out (read timeout=20)").
+    last_exc: Exception | None = None
+    data = None
+    for attempt in range(2):
+        try:
+            resp = requests.get(
+                RUSSELL2000_VANGUARD_URL, headers=_VANGUARD_HEADERS,
+                params={"start": 1, "count": 2500}, timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("Vanguard VTWO: intento %d/2 falló (%s)", attempt + 1, exc)
+    if data is None:
+        raise UniverseScrapeError(f"No se pudo descargar holdings de Vanguard VTWO: {last_exc}") from last_exc
 
     entities = (data.get("fund") or {}).get("entity") or []
     if not entities:
