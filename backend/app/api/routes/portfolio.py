@@ -16,6 +16,57 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 _EARLY_STAGE2 = "early_stage2"
 
+# Position sizing por volatilidad: cada posición pesa según el inverso de su
+# ATR%(14 semanas) en el momento de la entrada (más volátil = menos peso,
+# para que cada posición aporte un riesgo similar a la cartera en vez de un
+# capital idéntico), normalizado para que el peso medio siga siendo 1 y
+# limitado a [0.5x, 2.0x] para que ni una acción ultra-tranquila domine ni
+# una ultra-volátil quede casi a cero.
+_ATR_WINDOW_WEEKS = 14
+_WEIGHT_CAP_MIN = 0.5
+_WEIGHT_CAP_MAX = 2.0
+
+
+def _atr_pct(db: Session, ticker_id: int, as_of: date) -> float | None:
+    """ATR%(14 semanas) = ATR / Close, con velas <= as_of -- nunca posteriores,
+    para no usar volatilidad "futura" que un trader real no habría visto al
+    abrir la posición. None si no hay histórico suficiente."""
+    rows = (
+        db.query(PriceSnapshot.high, PriceSnapshot.low, PriceSnapshot.close)
+        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date <= as_of)
+        .order_by(PriceSnapshot.date.asc())
+        .all()
+    )
+    if len(rows) < _ATR_WINDOW_WEEKS + 1:
+        return None
+    highs = [float(r[0]) for r in rows]
+    lows = [float(r[1]) for r in rows]
+    closes = [float(r[2]) for r in rows]
+    true_ranges = [
+        max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        for i in range(1, len(rows))
+    ]
+    atr = sum(true_ranges[-_ATR_WINDOW_WEEKS:]) / _ATR_WINDOW_WEEKS
+    last_close = closes[-1]
+    return atr / last_close if last_close > 0 else None
+
+
+def _position_weights(raw_weights: dict[int, float | None]) -> dict[int, float]:
+    """Decisión pura: normaliza pesos brutos (1/ATR%, o None si no hay ATR)
+    para que la media sea 1 y aplica el cap [0.5x, 2.0x]. Los tickers sin
+    ATR disponible reciben el peso medio de los que sí lo tienen (peso
+    neutro tras normalizar, fail-open en vez de excluir la posición)."""
+    known = [w for w in raw_weights.values() if w is not None]
+    fallback = (sum(known) / len(known)) if known else 1.0
+    filled = {tid: (w if w is not None else fallback) for tid, w in raw_weights.items()}
+    mean_raw = sum(filled.values()) / len(filled) if filled else 1.0
+    if mean_raw <= 0:
+        return {tid: 1.0 for tid in filled}
+    return {
+        tid: min(max(w / mean_raw, _WEIGHT_CAP_MIN), _WEIGHT_CAP_MAX)
+        for tid, w in filled.items()
+    }
+
 
 def _price_on_or_after(db: Session, ticker_id: int, on_or_after: date) -> float | None:
     """Primer cierre disponible a partir de `on_or_after` (inclusive) -- se
@@ -179,15 +230,27 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     else:
         best = worst = None
 
-    ytd_ticker_returns: list[float] = []
-    for trades in ytd_returns_by_ticker.values():
+    ytd_ticker_returns: dict[int, float] = {}
+    raw_weights: dict[int, float | None] = {}
+    for ticker_id, trades in ytd_returns_by_ticker.items():
         trades.sort(key=lambda t: t[0])
         compounded = 1.0
         for _, ret_fraction in trades:
             compounded *= 1 + ret_fraction
-        ytd_ticker_returns.append((compounded - 1) * 100)
+        ytd_ticker_returns[ticker_id] = (compounded - 1) * 100
+        # Peso por la volatilidad en la PRIMERA entrada del año para este
+        # ticker -- el riesgo que un trader real habría visto al abrir la
+        # posición, no el actual (evita look-ahead).
+        raw_weights[ticker_id] = _atr_pct(db, ticker_id, trades[0][0])
+        raw_weights[ticker_id] = 1 / raw_weights[ticker_id] if raw_weights[ticker_id] else None
 
-    ytd_return_pct = round(sum(ytd_ticker_returns) / len(ytd_ticker_returns), 2) if ytd_ticker_returns else None
+    weights = _position_weights(raw_weights)
+    weight_total = sum(weights[tid] for tid in ytd_ticker_returns)
+    ytd_return_pct = (
+        round(sum(weights[tid] * ret for tid, ret in ytd_ticker_returns.items()) / weight_total, 2)
+        if ytd_ticker_returns and weight_total
+        else None
+    )
 
     stats = PortfolioStatsSchema(
         total_positions=total,
