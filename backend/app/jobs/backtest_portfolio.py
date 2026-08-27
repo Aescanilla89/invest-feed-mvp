@@ -33,7 +33,7 @@ Estrategia de ejecución (2 pasadas, ambas seguras frente a lookahead):
      fecha.
 
 Uso:
-    python -m app.jobs.backtest_portfolio                              # completo: 52 semanas, S&P500+Nasdaq100
+    python -m app.jobs.backtest_portfolio                              # completo: 52 semanas, S&P500+Nasdaq100+Russell2000
     python -m app.jobs.backtest_portfolio --weeks 8 --tickers AAPL,MSFT,NVDA  # prueba rápida
 """
 from __future__ import annotations
@@ -56,7 +56,7 @@ from app.jobs.run_screener import (
     _upsert_price_snapshots,
 )
 from app.jobs.update_institutional import _match_ticker
-from app.models.orm import Ticker
+from app.models.orm import PortfolioPosition, Ticker
 from app.screener import canslim, scoring, universe
 from app.screener.canslim import InstitutionalData
 from app.screener.data_source import AlpacaDataSource, DividendData, FundamentalData, _yoy_growth
@@ -84,11 +84,18 @@ QUARTERS_BACK_INSTITUTIONAL = 8  # ~2 años, cubre semanas antiguas + comparaci�
 
 
 def _reduced_universe() -> dict[str, list[str]]:
-    """S&P 500 + Nasdaq 100 -- universo reducido para que el backtest sea viable."""
-    return {
+    """S&P 500 + Nasdaq 100 + Russell 2000 -- universo US completo servible por
+    Alpaca (se excluye Europa: esos tickers no tienen datos en Alpaca y solo
+    desperdiciarían tiempo de descarga sin aportar nada al backtest)."""
+    universes = {
         "sp500": universe.get_sp500_tickers(),
         "nasdaq100": universe.get_nasdaq100_tickers(),
     }
+    try:
+        universes["russell2000"] = universe.get_russell2000_tickers()
+    except universe.UniverseScrapeError:
+        logger.warning("Russell 2000 no disponible para este backtest, se omite")
+    return universes
 
 
 def _available_quarter_as_of(as_of: date) -> date:
@@ -356,6 +363,18 @@ def run(
     db.close()
 
     logger.info("=== Fase 4/4: simulando cartera pública semana a semana ===")
+    # Re-correr el backtest (p.ej. tras ampliar el universo) sin borrar antes
+    # la cartera pública dejaría posiciones "open" del backtest anterior
+    # interfiriendo con la simulación desde la primera semana -- mismo motivo
+    # por el que resimulate_portfolio.py la borra antes de resimular.
+    db = SessionLocal()
+    try:
+        deleted = db.query(PortfolioPosition).delete()
+        db.commit()
+        logger.info("Borradas %d posiciones de la cartera pública antes de resimular", deleted)
+    finally:
+        db.close()
+
     portfolio_stats = {"opened": 0, "closed": 0}
     for week_date in week_dates:
         try:
