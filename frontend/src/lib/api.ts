@@ -158,8 +158,6 @@ export interface PortfolioStats {
   total_positions: number;
   open_positions: number;
   closed_positions: number;
-  avg_return_pct: number | null;
-  avg_spy_return_pct: number | null;
   ytd_return_pct: number | null;
   ytd_spy_return_pct: number | null;
   best: PortfolioPosition | null;

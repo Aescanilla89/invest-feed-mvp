@@ -172,17 +172,12 @@ export default async function PortfolioPage() {
         </div>
       ) : (
         <>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
             <StatCard label="Posiciones" value={stats.total_positions} sublabel={`${stats.open_positions} abiertas · ${stats.closed_positions} cerradas`} />
             <StatCard
               label="Rentabilidad YTD"
               value={stats.ytd_return_pct !== null ? <ReturnValue pct={stats.ytd_return_pct} /> : "—"}
               sublabel={stats.ytd_spy_return_pct !== null ? `S&P 500: ${stats.ytd_spy_return_pct >= 0 ? "+" : ""}${stats.ytd_spy_return_pct}%` : undefined}
-            />
-            <StatCard
-              label="Retorno medio"
-              value={stats.avg_return_pct !== null ? <ReturnValue pct={stats.avg_return_pct} /> : "—"}
-              sublabel={stats.avg_spy_return_pct !== null ? `S&P 500: ${stats.avg_spy_return_pct >= 0 ? "+" : ""}${stats.avg_spy_return_pct}%` : undefined}
             />
             <StatCard
               label="Mejor / peor pick"

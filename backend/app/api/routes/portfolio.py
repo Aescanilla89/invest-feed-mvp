@@ -163,12 +163,9 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     open_count = sum(1 for p in positions if p.status == "open")
 
     if total:
-        avg_return = round(sum(p.return_pct for p in positions) / total, 2)
-        avg_spy_return = round(sum(p.spy_return_pct for p in positions) / total, 2)
         best = max(positions, key=lambda p: p.return_pct)
         worst = min(positions, key=lambda p: p.return_pct)
     else:
-        avg_return = avg_spy_return = None
         best = worst = None
 
     ytd_return_pct = round(sum(ytd_position_returns) / len(ytd_position_returns), 2) if ytd_position_returns else None
@@ -177,8 +174,6 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         total_positions=total,
         open_positions=open_count,
         closed_positions=total - open_count,
-        avg_return_pct=avg_return,
-        avg_spy_return_pct=avg_spy_return,
         ytd_return_pct=ytd_return_pct,
         ytd_spy_return_pct=ytd_spy_return_pct,
         best=best,

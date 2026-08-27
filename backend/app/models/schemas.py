@@ -87,10 +87,14 @@ class PortfolioStatsSchema(BaseModel):
     total_positions: int
     open_positions: int
     closed_positions: int
-    avg_return_pct: float | None
-    avg_spy_return_pct: float | None
-    ytd_return_pct: float | None  # rentabilidad media de las posiciones vigentes en el año en curso
-    ytd_spy_return_pct: float | None  # retorno real del S&P 500 desde el 1 de enero
+    # Única métrica de rentabilidad de cartera: equiponderada, año en curso,
+    # vs S&P 500 en el mismo periodo. Se descartó promediar return_pct de TODAS
+    # las posiciones (histórico completo, cualquier antigüedad) por mezclar
+    # periodos de tenencia muy distintos (posiciones de hace casi 2 años junto
+    # a otras de la semana pasada) -- inflaba el promedio con ganadoras muy
+    # antiguas y no reflejaba cómo se comporta la cartera como conjunto ahora.
+    ytd_return_pct: float | None
+    ytd_spy_return_pct: float | None
     best: PortfolioPositionSchema | None
     worst: PortfolioPositionSchema | None
 
