@@ -117,7 +117,17 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     )
 
     positions: list[PortfolioPositionSchema] = []
-    ytd_position_returns: list[float] = []
+    # (ticker_id -> [(entry_date, return_fraction), ...]) -- se agrupa por
+    # ticker porque un mismo nombre puede entrar y salir varias veces en el
+    # año (p.ej. IMMR o CLMB, que "chopean" cada 2-4 semanas): contar cada
+    # entrada/salida como una posición más con el mismo peso que un ganador
+    # de una sola operación (p.ej. AMAT +78%) diluía brutalmente a los
+    # ganadores reales -- 6-7 operaciones de un ticker que apenas se mueve
+    # pesaban tanto en la media como 6-7 ganadores distintos. Equiponderar
+    # de verdad significa un peso por TICKER, componiendo sus operaciones
+    # sucesivas dentro del año (como si fueras reinvirtiendo ese hueco de
+    # cartera cada vez que la señal se repite).
+    ytd_returns_by_ticker: dict[int, list[tuple[date, float]]] = {}
     for pos, ticker in rows:
         if pos.status == "closed":
             current_price = pos.exit_price or pos.entry_price
@@ -157,7 +167,8 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         if was_alive_in_ytd:
             base_price = pos.entry_price if pos.entry_date >= year_start else _year_start_price(pos.ticker_id)
             if base_price:
-                ytd_position_returns.append((current_price / base_price - 1) * 100)
+                ret_fraction = current_price / base_price - 1
+                ytd_returns_by_ticker.setdefault(pos.ticker_id, []).append((pos.entry_date, ret_fraction))
 
     total = len(positions)
     open_count = sum(1 for p in positions if p.status == "open")
@@ -168,7 +179,15 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     else:
         best = worst = None
 
-    ytd_return_pct = round(sum(ytd_position_returns) / len(ytd_position_returns), 2) if ytd_position_returns else None
+    ytd_ticker_returns: list[float] = []
+    for trades in ytd_returns_by_ticker.values():
+        trades.sort(key=lambda t: t[0])
+        compounded = 1.0
+        for _, ret_fraction in trades:
+            compounded *= 1 + ret_fraction
+        ytd_ticker_returns.append((compounded - 1) * 100)
+
+    ytd_return_pct = round(sum(ytd_ticker_returns) / len(ytd_ticker_returns), 2) if ytd_ticker_returns else None
 
     stats = PortfolioStatsSchema(
         total_positions=total,

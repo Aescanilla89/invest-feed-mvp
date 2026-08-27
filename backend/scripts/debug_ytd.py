@@ -98,7 +98,26 @@ def main() -> None:
 
     if included:
         avg = sum(r[-1] for r in included) / len(included)
-        print(f"\nAVG (equal-weighted) = {avg:.2f}%  sobre {len(included)} posiciones")
+        print(f"\nAVG por-operación (BUG: pesa 6-7x tickers que chopean) = {avg:.2f}%  sobre {len(included)} operaciones")
+
+    by_ticker: dict[str, list[tuple]] = {}
+    for symbol, status, entry_date, exit_date, base_price, current_price, ret in included:
+        by_ticker.setdefault(symbol, []).append((entry_date, ret))
+
+    print(f"\n--- FIX: compuesto por ticker único ({len(by_ticker)} tickers) ---")
+    ticker_returns = []
+    for symbol, trades in sorted(by_ticker.items()):
+        trades.sort(key=lambda t: t[0])
+        compounded = 1.0
+        for _, ret in trades:
+            compounded *= 1 + ret / 100
+        compounded_pct = (compounded - 1) * 100
+        ticker_returns.append(compounded_pct)
+        print(f"  {symbol:6s} {len(trades)} operación(es) -> compuesto = {compounded_pct:+7.2f}%")
+
+    if ticker_returns:
+        avg_by_ticker = sum(ticker_returns) / len(ticker_returns)
+        print(f"\nAVG equiponderado por ticker (FIX) = {avg_by_ticker:.2f}%  sobre {len(ticker_returns)} tickers")
 
     db.close()
 
