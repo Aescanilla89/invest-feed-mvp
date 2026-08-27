@@ -1,6 +1,11 @@
 from types import SimpleNamespace
 
-from app.jobs.update_portfolio import _exit_signal, _is_exceptional, _pick_top_for_method
+from app.jobs.update_portfolio import (
+    _exit_signal,
+    _is_exceptional,
+    _market_regime_stage_ok,
+    _pick_top_for_method,
+)
 
 
 def _opp(**kwargs):
@@ -93,3 +98,14 @@ def test_exit_signal_holds_with_insufficient_history():
     # ruptura -- se mantiene la posición.
     assert _exit_signal([]) is None
     assert _exit_signal([_opp(weinstein_stage=4)]) is None
+
+
+def test_market_regime_only_allows_entries_in_stage_2():
+    # Filtro de régimen (Weinstein/O'Neil): solo se abren posiciones nuevas
+    # si el índice general también está en tendencia alcista -- comprar
+    # roturas individuales con el mercado en techo/caída va contra la propia
+    # lógica del método.
+    assert _market_regime_stage_ok(2) is True
+    assert _market_regime_stage_ok(1) is False
+    assert _market_regime_stage_ok(3) is False
+    assert _market_regime_stage_ok(4) is False

@@ -49,8 +49,9 @@ Uso manual:
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.ai import cache as ai_cache
@@ -59,7 +60,7 @@ from app.core.db import SessionLocal, init_db
 from app.jobs.run_screener import BENCHMARK_SYMBOL
 from app.models.orm import Opportunity, PortfolioPosition, PriceSnapshot, Ticker
 from app.screener.canslim import CriterionResult
-from app.screener.weinstein import WeinsteinResult
+from app.screener.weinstein import InsufficientDataError, WeinsteinResult, analyze
 
 logger = logging.getLogger("update_portfolio")
 
@@ -67,6 +68,21 @@ _STRATEGY_METHODS = ("minervini", "lynch", "berkshire", "dividendos")
 _EARLY_STAGE2 = "early_stage2"
 _EARLY_STAGE2_MAX_WEEKS = 6
 _WEINSTEIN_MAX_WEEKS = 8  # mismo umbral que _compute_signal_type en opportunities.py
+
+# Semanas de "enfriamiento" tras un stop-loss antes de permitir que el mismo
+# ticker vuelva a entrar (por cualquier método). Sin esto, un ticker que
+# cotiza pegado a su MA30 puede entrar/salir varias veces en pocos meses
+# (visto en producción: IMMR 6 veces, CLMB 7 veces en lo que va de año) --
+# cada ronda es ruido puro, no aporta retorno neto y diluye a los ganadores
+# reales en la rentabilidad equiponderada de la cartera.
+_REENTRY_COOLDOWN_WEEKS = 4
+
+# Filtro de régimen de mercado (Weinstein / O'Neil: solo comprar roturas
+# cuando el índice general también está en tendencia alcista). Sin esto se
+# abren posiciones nuevas aunque el S&P 500 esté en techo o en caída, lo que
+# va contra la propia lógica del método que se está usando para elegir cada
+# pick.
+_MARKET_REGIME_OK_STAGES = (2,)
 
 
 def _compute_signal_type(opp: Opportunity) -> str | None:
@@ -163,6 +179,52 @@ def _pick_top_for_method(opportunities: list[Opportunity], method: str) -> Oppor
         return None
     scored.sort(key=lambda pair: pair[1]["score"], reverse=True)
     return scored[0][0]
+
+
+def _tickers_in_cooldown(db: Session, as_of: date) -> set[int]:
+    """Tickers que salieron por stop-loss (weinstein_stage_*) en las últimas
+    `_REENTRY_COOLDOWN_WEEKS` semanas -- se bloquea su reentrada por
+    cualquier método hasta que pase el enfriamiento. Solo aplica a salidas
+    por stop, no a cualquier otro motivo de cierre futuro."""
+    cutoff = as_of - timedelta(weeks=_REENTRY_COOLDOWN_WEEKS)
+    rows = (
+        db.query(PortfolioPosition.ticker_id)
+        .filter(
+            PortfolioPosition.status == "closed",
+            PortfolioPosition.exit_reason.like("weinstein_stage_%"),
+            PortfolioPosition.exit_date >= cutoff,
+            PortfolioPosition.exit_date <= as_of,
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def _market_regime_stage_ok(stage: int) -> bool:
+    """Decisión pura: ¿el stage actual del S&P 500 permite abrir posiciones
+    nuevas? Solo Stage 2 (avance) -- ver _MARKET_REGIME_OK_STAGES."""
+    return stage in _MARKET_REGIME_OK_STAGES
+
+
+def _market_regime_ok(db: Session, spy_ticker_id: int, as_of: date) -> bool:
+    """Régimen de mercado: solo se abren posiciones nuevas si el S&P 500
+    también está en Weinstein Stage 2 (avance) en `as_of`. Sin histórico
+    suficiente se deja pasar (fail-open) -- no bloquear el arranque en frío
+    de una BD nueva por falta de datos, no por señal de mercado real."""
+    rows = (
+        db.query(PriceSnapshot.date, PriceSnapshot.close, PriceSnapshot.volume)
+        .filter(PriceSnapshot.ticker_id == spy_ticker_id, PriceSnapshot.date <= as_of)
+        .order_by(PriceSnapshot.date.asc())
+        .all()
+    )
+    if not rows:
+        return True
+    weekly = pd.DataFrame(rows, columns=["date", "Close", "Volume"]).set_index("date")
+    try:
+        result = analyze(weekly)
+    except InsufficientDataError:
+        return True
+    return _market_regime_stage_ok(result.stage)
 
 
 def _open_price_on(db: Session, ticker_id: int, exact_date: date) -> float | None:
@@ -285,11 +347,17 @@ def run(run_date: date | None = None) -> dict:
         signal_date = _prior_run_date(db, target_date)
         if signal_date is None:
             logger.info("Sin corrida previa a %s todavía, no hay señales que promocionar", target_date)
+        elif not _market_regime_ok(db, spy_ticker.id, signal_date):
+            logger.info(
+                "S&P 500 fuera de Stage 2 en %s, no se abren posiciones nuevas esta corrida "
+                "(filtro de régimen de mercado)", signal_date,
+            )
         else:
             signal_opps = db.query(Opportunity).filter_by(run_date=signal_date).all()
             tickers_with_open = {
                 row[0] for row in db.query(PortfolioPosition.ticker_id).filter_by(status="open").all()
             }
+            tickers_cooling_down = _tickers_in_cooldown(db, target_date)
             spy_entry_price = _open_price_on(db, spy_ticker.id, target_date)
             try:
                 explainer = ClaudeExplainer()
@@ -302,6 +370,12 @@ def run(run_date: date | None = None) -> dict:
                 if top is None or not _is_exceptional(top, method):
                     continue
                 if top.ticker_id in tickers_with_open:
+                    continue
+                if top.ticker_id in tickers_cooling_down:
+                    logger.info(
+                        "%s: ticker_id=%s en enfriamiento tras stop-loss reciente, se omite",
+                        method, top.ticker_id,
+                    )
                     continue
                 entry_price = _open_price_on(db, top.ticker_id, target_date)
                 if entry_price is None or spy_entry_price is None:
