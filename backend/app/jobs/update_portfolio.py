@@ -34,10 +34,19 @@ feed. Las posiciones de los otros 4 métodos NO usan el narrador AI: su
 vez de las métricas de calidad/GARP/dividendo reales sería una
 explicación técnicamente cierta pero equivocada para el pick.
 
-Salida: stop-loss dinámico único para las 5 estrategias (ver
-_exit_signal) -- se sale cuando el precio cierra por debajo de la media
-móvil de 30 semanas (Stage 1 o 4), nunca en Stage 3 (desaceleración con
-precio todavía por encima de la MA30, no una ruptura real). La ruptura
+Salida: dos stops técnicos distintos según el tipo de estrategia --
+- early_stage2 / minervini (momentum puro): ver _exit_signal -- se sale
+  cuando el precio cierra por debajo de la media móvil de 30 semanas
+  (Stage 1 o 4), nunca en Stage 3 (desaceleración con precio todavía por
+  encima de la MA30, no una ruptura real).
+- lynch / berkshire / dividendos (tesis de calidad/valor): ver
+  _fundamentals_exit_signal -- ruptura de la media móvil de 40 semanas
+  (más lenta, da más margen a una tesis de plazo más largo). NO salen
+  por dejar de cumplir su propio criterio (probado y revertido, ver
+  commit 3e9b737: exigir 7/7 sin margen cortaba ganadoras al primer
+  criterio que fallara, p.ej. un RS Rating que cae de 71 a 69).
+Ambos exigen 2 semanas CONSECUTIVAS por debajo de su media antes de
+confirmar la ruptura (ruido de una sola semana no cuenta). La ruptura
 se detecta con el cierre de `exit_signal_date`, y la venta se ejecuta a
 la apertura del día hábil siguiente (`exit_date`) -- mismo criterio
 anti-look-ahead que la entrada. El retorno final del ticker y del S&P
@@ -66,6 +75,11 @@ logger = logging.getLogger("update_portfolio")
 
 _STRATEGY_METHODS = ("minervini", "lynch", "berkshire", "dividendos")
 _EARLY_STAGE2 = "early_stage2"
+# Stop de momentum (MA30, ver _exit_signal) vs stop de tesis larga (MA40,
+# ver _fundamentals_exit_signal) -- early_stage2/minervini son señales de
+# rotura de corto plazo, lynch/berkshire/dividendos son tesis de calidad/
+# valor/dividendo que necesitan más margen (ver docstring del módulo).
+_MOMENTUM_METHODS = (_EARLY_STAGE2, "minervini")
 _EARLY_STAGE2_MAX_WEEKS = 6
 _WEINSTEIN_MAX_WEEKS = 8  # mismo umbral que _compute_signal_type en opportunities.py
 
@@ -158,6 +172,46 @@ def _exit_signal(recent_opps: list[Opportunity]) -> str | None:
     if latest.weinstein_stage in (1, 4) and prior.weinstein_stage in (1, 4):
         return f"weinstein_stage_{latest.weinstein_stage}"
     return None
+
+
+_FUNDAMENTALS_MA_WINDOW_WEEKS = 40
+
+
+def _closes_below_ma(closes: list[float], window_weeks: int) -> bool | None:
+    """Decisión pura: ¿las 2 últimas velas semanales de `closes` (ascendente
+    por fecha) cierran por debajo de su media móvil de `window_weeks`
+    semanas? None si no hay histórico suficiente para calcular la MA en
+    ambas semanas -- no se puede confirmar una ruptura sin datos."""
+    if len(closes) < window_weeks + 1:
+        return None
+    series = pd.Series(closes)
+    ma = series.rolling(window_weeks).mean()
+    below = series < ma
+    if pd.isna(ma.iloc[-1]) or pd.isna(ma.iloc[-2]):
+        return None
+    return bool(below.iloc[-1]) and bool(below.iloc[-2])
+
+
+def _fundamentals_exit_signal(db: Session, ticker_id: int, as_of: date) -> tuple[date, str] | None:
+    """Stop de las estrategias de tesis larga (lynch/berkshire/dividendos):
+    ruptura de la media móvil de 40 semanas (más lenta que la MA30 de
+    momentum, da más margen a una tesis de calidad/valor) -- NO salen por
+    dejar de cumplir su propio criterio (ver docstring del módulo: probado
+    y revertido, cortaba ganadoras al primer sub-criterio que fallara).
+    Misma confirmación de 2 semanas consecutivas que el stop de momentum."""
+    rows = (
+        db.query(PriceSnapshot.date, PriceSnapshot.close)
+        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date <= as_of)
+        .order_by(PriceSnapshot.date.asc())
+        .all()
+    )
+    if len(rows) < _FUNDAMENTALS_MA_WINDOW_WEEKS + 1:
+        return None
+    dates = [r[0] for r in rows]
+    closes = [float(r[1]) for r in rows]
+    if _closes_below_ma(closes, _FUNDAMENTALS_MA_WINDOW_WEEKS) is not True:
+        return None
+    return dates[-1], "ma40_break"
 
 
 def _pick_top_for_method(opportunities: list[Opportunity], method: str) -> Opportunity | None:
@@ -310,19 +364,24 @@ def run(run_date: date | None = None) -> dict:
         #    re-detectar).
         for pos in db.query(PortfolioPosition).filter_by(status="open").all():
             if pos.exit_signal_date is None:
-                recent_opps = (
-                    db.query(Opportunity)
-                    .filter(Opportunity.ticker_id == pos.ticker_id, Opportunity.run_date <= target_date)
-                    .order_by(Opportunity.run_date.desc())
-                    .limit(2)
-                    .all()
-                )
-                exit_reason = _exit_signal(recent_opps)
+                if pos.method in _MOMENTUM_METHODS:
+                    recent_opps = (
+                        db.query(Opportunity)
+                        .filter(Opportunity.ticker_id == pos.ticker_id, Opportunity.run_date <= target_date)
+                        .order_by(Opportunity.run_date.desc())
+                        .limit(2)
+                        .all()
+                    )
+                    exit_reason = _exit_signal(recent_opps)
+                    exit_signal_date = recent_opps[0].run_date if exit_reason else None
+                else:
+                    fundamentals_exit = _fundamentals_exit_signal(db, pos.ticker_id, target_date)
+                    exit_signal_date, exit_reason = fundamentals_exit if fundamentals_exit else (None, None)
                 if exit_reason is None:
                     continue
-                pos.exit_signal_date = recent_opps[0].run_date
+                pos.exit_signal_date = exit_signal_date
                 pos.exit_reason = exit_reason
-                logger.info("Posición %s (ticker_id=%s) disparó salida (%s) el %s, pendiente de ejecutar", pos.method, pos.ticker_id, exit_reason, recent_opps[0].run_date)
+                logger.info("Posición %s (ticker_id=%s) disparó salida (%s) el %s, pendiente de ejecutar", pos.method, pos.ticker_id, exit_reason, exit_signal_date)
 
             exit_row = _open_price_after(db, pos.ticker_id, pos.exit_signal_date)
             if exit_row is None:

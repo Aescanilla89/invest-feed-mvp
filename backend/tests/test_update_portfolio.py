@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from app.jobs.update_portfolio import (
+    _closes_below_ma,
     _exit_signal,
     _is_exceptional,
     _market_regime_stage_ok,
@@ -98,6 +99,21 @@ def test_exit_signal_holds_with_insufficient_history():
     # ruptura -- se mantiene la posición.
     assert _exit_signal([]) is None
     assert _exit_signal([_opp(weinstein_stage=4)]) is None
+
+
+def test_closes_below_ma_requires_two_consecutive_weeks():
+    # Mismo criterio anti-ruido que el stop de momentum (MA30): una sola
+    # semana marginal por debajo de la media no confirma ruptura.
+    window = 10
+    steady = [100.0] * window  # MA estable en 100
+    only_last_week_below = steady + [95.0]  # 1 semana por debajo
+    two_weeks_below = steady + [95.0, 94.0]  # 2 semanas consecutivas
+    assert _closes_below_ma(only_last_week_below, window) is False
+    assert _closes_below_ma(two_weeks_below, window) is True
+
+
+def test_closes_below_ma_insufficient_history_returns_none():
+    assert _closes_below_ma([100.0, 99.0], window_weeks=40) is None
 
 
 def test_market_regime_only_allows_entries_in_stage_2():
