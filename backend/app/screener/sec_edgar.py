@@ -85,8 +85,43 @@ def _fetch_companyfacts(cik: int) -> dict | None:
     return resp.json()
 
 
+_RELEVANT_TAGS = {
+    "dei": SHARES_OUTSTANDING_TAGS,
+    "us-gaap": (
+        *SHARES_OUTSTANDING_TAGS,
+        *_EPS_TAGS,
+        "GrossProfit",
+        "Revenues",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "SalesRevenueNet",
+        "RevenueFromContractWithCustomerIncludingAssessedTax",
+        "NetIncomeLoss",
+        "NetCashProvidedByUsedInOperatingActivities",
+        "StockholdersEquity",
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+    ),
+}
+
+
+def _trim_companyfacts(facts: dict) -> dict:
+    """El companyfacts crudo de EDGAR trae CADA concepto XBRL que la empresa ha
+    reportado jamás (a menudo cientos de tags) -- solo usamos ~12. Un backtest
+    guarda esta estructura en memoria simultáneamente para miles de tickers
+    durante toda la corrida, así que quedarnos con todo el JSON crudo agota la
+    RAM del runner con universos grandes (visto en producción: "the hosted
+    runner lost communication with the server... starves it for CPU/Memory").
+    Se descarta todo lo que no sea uno de los tags que de verdad se lee."""
+    raw = facts.get("facts", {})
+    trimmed = {
+        taxonomy: {tag: raw[taxonomy][tag] for tag in tags if tag in raw.get(taxonomy, {})}
+        for taxonomy, tags in _RELEVANT_TAGS.items()
+    }
+    return {"facts": trimmed}
+
+
 def get_company_facts(symbol: str) -> dict | None:
-    """Descarga el companyfacts crudo de un ticker (1 sola petición HTTP).
+    """Descarga el companyfacts de un ticker (1 sola petición HTTP), recortado
+    a los ~12 tags XBRL que realmente se usan.
     Pensado para un backtest histórico: se descarga UNA vez por ticker y se
     reutiliza con get_edgar_data_from_facts(facts, as_of=...) para muchas
     fechas distintas sin repetir la petición a EDGAR."""
@@ -94,9 +129,12 @@ def get_company_facts(symbol: str) -> dict | None:
     if cik is None:
         return None
     try:
-        return _fetch_companyfacts(cik)
+        raw = _fetch_companyfacts(cik)
     except Exception:
         return None
+    if raw is None:
+        return None
+    return _trim_companyfacts(raw)
 
 
 def get_edgar_data(
