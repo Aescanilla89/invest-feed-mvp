@@ -349,12 +349,17 @@ def _generate_explanations(db: Session, run_date: date, screened: list[ScreenedT
     )
 
     for item in candidates:
-        explanation = ai_cache.get_or_create_explanation(
-            db, item.ticker, run_date, item.score.combined_score,
-            item.weinstein_result, item.criteria, explainer,
-            signal_type=item.signal_type,
-        )
-        db.commit()
+        try:
+            explanation = ai_cache.get_or_create_explanation(
+                db, item.ticker, run_date, item.score.combined_score,
+                item.weinstein_result, item.criteria, explainer,
+                signal_type=item.signal_type,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("%s: fallo generando/guardando explicación, se omite", item.ticker.symbol)
+            continue
         if explanation is not None:
             logger.info("%s: explicación lista", item.ticker.symbol)
 

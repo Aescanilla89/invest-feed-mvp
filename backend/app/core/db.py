@@ -27,6 +27,10 @@ _ADD_COLUMN_MIGRATIONS = [
     "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_daily_close FLOAT",
     "ALTER TABLE tickers ADD COLUMN IF NOT EXISTS last_daily_price_date DATE",
     "ALTER TABLE explanations ADD COLUMN IF NOT EXISTS catalyst_ids_at_generation VARCHAR(255)",
+    # Las explicaciones IA a veces superan 1000 caracteres (visto en producción,
+    # p.ej. ~1800 para BNY) y el varchar(1000) truncaba con
+    # StringDataRightTruncation, abortando el job diario antes de update_portfolio.
+    "ALTER TABLE explanations ALTER COLUMN text TYPE TEXT",
 ]
 
 

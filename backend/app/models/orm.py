@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -126,7 +127,7 @@ class Explanation(Base):
     ticker_id: Mapped[int] = mapped_column(ForeignKey("tickers.id"), nullable=False, index=True)
     run_date: Mapped[date] = mapped_column(Date, nullable=False)
     combined_score_at_generation: Mapped[int] = mapped_column(Integer, nullable=False)
-    text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
     model_used: Mapped[str] = mapped_column(String(64), nullable=False)
     # IDs de catalysts (comma-separated) vistos en el momento de generación --
     # si cambian respecto a la última explicación cacheada, se regenera aunque
