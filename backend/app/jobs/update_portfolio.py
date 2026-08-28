@@ -123,9 +123,17 @@ _HARD_STOP_PCT_FUNDAMENTALS = 0.15
 
 # Filtro de régimen de mercado (Weinstein / O'Neil: solo comprar roturas
 # cuando el índice general también está en tendencia alcista). Sin esto se
-# abren posiciones nuevas aunque el S&P 500 esté en techo o en caída, lo que
-# va contra la propia lógica del método que se está usando para elegir cada
-# pick.
+# abren posiciones momentum aunque el S&P 500 esté en techo o en caída, lo
+# que va contra la propia lógica del método que se está usando para elegir
+# cada pick.
+#
+# Solo aplica a los métodos momentum (_MOMENTUM_METHODS: early_stage2,
+# minervini) -- lynch/berkshire/dividendos son tesis de calidad/valor que NO
+# hacen timing de mercado; Berkshire (estilo Buffett) compra calidad
+# precisamente cuando el mercado general cae ("sé codicioso cuando otros
+# tienen miedo"), y Lynch/dividendos tampoco basan su selección en el ciclo
+# del índice. Bloquearlas por el stage de Weinstein del S&P 500 contradice
+# la filosofía de esos propios métodos, no la respeta.
 _MARKET_REGIME_OK_STAGES = (2,)
 
 
@@ -330,15 +338,18 @@ def _tickers_in_cooldown(db: Session, as_of: date) -> set[int]:
 
 def _market_regime_stage_ok(stage: int) -> bool:
     """Decisión pura: ¿el stage actual del S&P 500 permite abrir posiciones
-    nuevas? Solo Stage 2 (avance) -- ver _MARKET_REGIME_OK_STAGES."""
+    momentum nuevas (early_stage2/minervini)? Solo Stage 2 (avance) -- ver
+    _MARKET_REGIME_OK_STAGES."""
     return stage in _MARKET_REGIME_OK_STAGES
 
 
 def _market_regime_ok(db: Session, spy_ticker_id: int, as_of: date) -> bool:
-    """Régimen de mercado: solo se abren posiciones nuevas si el S&P 500
-    también está en Weinstein Stage 2 (avance) en `as_of`. Sin histórico
-    suficiente se deja pasar (fail-open) -- no bloquear el arranque en frío
-    de una BD nueva por falta de datos, no por señal de mercado real."""
+    """Régimen de mercado: solo se abren posiciones MOMENTUM nuevas
+    (early_stage2/minervini) si el S&P 500 también está en Weinstein Stage 2
+    (avance) en `as_of` -- lynch/berkshire/dividendos no usan este resultado,
+    ver _MARKET_REGIME_OK_STAGES. Sin histórico suficiente se deja pasar
+    (fail-open) -- no bloquear el arranque en frío de una BD nueva por falta
+    de datos, no por señal de mercado real."""
     rows = (
         db.query(PriceSnapshot.date, PriceSnapshot.close, PriceSnapshot.volume)
         .filter(PriceSnapshot.ticker_id == spy_ticker_id, PriceSnapshot.date <= as_of)
@@ -483,12 +494,14 @@ def run(run_date: date | None = None) -> dict:
         signal_date = _prior_run_date(db, target_date)
         if signal_date is None:
             logger.info("Sin corrida previa a %s todavía, no hay señales que promocionar", target_date)
-        elif not _market_regime_ok(db, spy_ticker.id, signal_date):
-            logger.info(
-                "S&P 500 fuera de Stage 2 en %s, no se abren posiciones nuevas esta corrida "
-                "(filtro de régimen de mercado)", signal_date,
-            )
         else:
+            market_regime_ok = _market_regime_ok(db, spy_ticker.id, signal_date)
+            if not market_regime_ok:
+                logger.info(
+                    "S&P 500 fuera de Stage 2 en %s, se omiten entradas momentum (early_stage2/"
+                    "minervini) esta corrida -- lynch/berkshire/dividendos no dependen del ciclo "
+                    "del índice y siguen evaluándose (filtro de régimen de mercado)", signal_date,
+                )
             signal_opps = db.query(Opportunity).filter_by(run_date=signal_date).all()
             tickers_with_open = {
                 row[0] for row in db.query(PortfolioPosition.ticker_id).filter_by(status="open").all()
@@ -502,6 +515,8 @@ def run(run_date: date | None = None) -> dict:
                 explainer = None
 
             for method in (_EARLY_STAGE2, *_STRATEGY_METHODS):
+                if method in _MOMENTUM_METHODS and not market_regime_ok:
+                    continue
                 top = _pick_top_for_method(signal_opps, method)
                 if top is None or not _is_exceptional(top, method):
                     continue
