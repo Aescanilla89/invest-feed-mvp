@@ -4,9 +4,12 @@ en cada corrida (mismo run_date, misma foto de Opportunity/PriceSnapshot).
 
 Entrada (una vez al día, por método, solo si el top-1 de ese método
 cumple su umbral "excepcional" en la corrida ANTERIOR, `signal_date`):
-  - early_stage2: Weinstein Stage 2 recién confirmado (<=6 semanas) Y
-    signal_type == "both" (CAN SLIM completo también en verde) -- la
-    configuración más sólida del método.
+  - early_stage2: método puramente Weinstein -- transición Stage 1->2
+    confirmada (weinstein_transition, con su propia validación de volumen
+    >=2x y RSI>50 en el cruce, ver weinstein.py) y reciente (<=6 semanas).
+    NO exige CAN SLIM (versión anterior exigía signal_type=="both", una
+    intersección con O'Neil tan rara que nunca disparó en producción: 0
+    operaciones en 52 semanas sobre >1500 tickers).
   - minervini / berkshire: el top-1 por score de ese método tiene
     score == 100 (TODOS los sub-criterios en verde, no solo el umbral
     de "passed" que exige la pestaña normal). minervini exige además
@@ -202,7 +205,15 @@ def _strategy_result(opp: Opportunity, method: str) -> dict | None:
 def _is_exceptional(opp: Opportunity, method: str) -> bool:
     """Umbral "excepcional" por método -- ver docstring del módulo."""
     if method == _EARLY_STAGE2:
-        return _compute_signal_type(opp) == "both"
+        # Método puramente Weinstein -- exigir además CAN SLIM completo (como
+        # antes, ver commit que introdujo signal_type=="both") mezclaba dos
+        # metodologías distintas en una intersección tan rara que nunca
+        # disparó en 52 semanas sobre >1500 tickers: 0 operaciones. La
+        # transición 1->2 de weinstein.analyze() ya exige su propia
+        # confirmación (volumen >=2x, RSI>50 en el cruce, ver
+        # weinstein.BREAKOUT_VOLUME_RATIO/RSI_BREAKOUT_THRESHOLD) -- es
+        # suficiente por sí sola.
+        return bool(opp.weinstein_transition) and opp.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS
     result = _strategy_result(opp, method)
     if result is None:
         return False
@@ -328,7 +339,7 @@ def _pick_top_for_method(opportunities: list[Opportunity], method: str) -> Oppor
     if method == _EARLY_STAGE2:
         candidates = [
             o for o in opportunities
-            if o.weinstein_stage == 2 and o.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS
+            if o.weinstein_stage == 2 and o.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS and o.weinstein_transition
         ]
         if not candidates:
             return None

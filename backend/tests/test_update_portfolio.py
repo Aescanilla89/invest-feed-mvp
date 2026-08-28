@@ -61,15 +61,26 @@ def test_lynch_and_dividendos_use_plain_passed():
     assert _is_exceptional(failing, "lynch") is False
 
 
-def test_early_stage2_requires_signal_both():
-    weinstein_only = _opp(weinstein_transition=True, weeks_in_stage=2, canslim_criteria={
+def test_early_stage2_is_pure_weinstein_no_canslim_required():
+    # Método puramente Weinstein -- exigir CAN SLIM completo además (versión
+    # anterior) era una intersección tan rara que nunca disparó en 52
+    # semanas de producción sobre >1500 tickers. Ahora basta con la
+    # transición 1->2 confirmada (su propia validación de volumen/RSI ya
+    # está en weinstein.analyze()) dentro de las primeras 6 semanas.
+    confirmed_no_canslim = _opp(weinstein_transition=True, weeks_in_stage=2, canslim_criteria={
         "N": {"value": False}, "C": {"value": True},
     })
-    both = _opp(weinstein_transition=True, weeks_in_stage=2, canslim_criteria={
-        "N": {"value": True}, "C": {"value": True}, "A": {"value": True},
-    })
-    assert _is_exceptional(weinstein_only, "early_stage2") is False
-    assert _is_exceptional(both, "early_stage2") is True
+    assert _is_exceptional(confirmed_no_canslim, "early_stage2") is True
+
+
+def test_early_stage2_requires_confirmed_transition():
+    not_confirmed = _opp(weinstein_transition=False, weeks_in_stage=2)
+    assert _is_exceptional(not_confirmed, "early_stage2") is False
+
+
+def test_early_stage2_requires_recent_transition():
+    too_old = _opp(weinstein_transition=True, weeks_in_stage=7)  # > _EARLY_STAGE2_MAX_WEEKS (6)
+    assert _is_exceptional(too_old, "early_stage2") is False
 
 
 def test_pick_top_for_method_picks_highest_score():
@@ -80,10 +91,17 @@ def test_pick_top_for_method_picks_highest_score():
 
 
 def test_pick_top_for_method_early_stage2_prefers_fewer_weeks():
-    older = _opp(ticker_id=1, weeks_in_stage=5, combined_score=90)
-    newer = _opp(ticker_id=2, weeks_in_stage=1, combined_score=40)
+    older = _opp(ticker_id=1, weeks_in_stage=5, combined_score=90, weinstein_transition=True)
+    newer = _opp(ticker_id=2, weeks_in_stage=1, combined_score=40, weinstein_transition=True)
     top = _pick_top_for_method([older, newer], "early_stage2")
     assert top.ticker_id == 2
+
+
+def test_pick_top_for_method_early_stage2_requires_confirmed_transition():
+    # stage==2 y dentro de la ventana de semanas no basta -- también hace
+    # falta que la transición esté confirmada (volumen/RSI en el cruce).
+    unconfirmed = _opp(ticker_id=1, weeks_in_stage=2, weinstein_transition=False)
+    assert _pick_top_for_method([unconfirmed], "early_stage2") is None
 
 
 def test_pick_top_for_method_returns_none_without_candidates():
