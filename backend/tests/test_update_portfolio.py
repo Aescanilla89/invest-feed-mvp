@@ -22,6 +22,7 @@ def _opp(**kwargs):
         weinstein_stage=2,
         weinstein_transition=False,
         weeks_in_stage=10,
+        weinstein_relative_volume=1.0,  # neutro: pasa el gate de volumen de minervini por defecto
         combined_score=50,
         canslim_criteria={},
         strategies={},
@@ -35,6 +36,15 @@ def test_minervini_exceptional_requires_score_100():
     strong = _opp(strategies={"minervini": {"passed": True, "score": 100}})
     assert _is_exceptional(weak, "minervini") is False
     assert _is_exceptional(strong, "minervini") is True
+
+
+def test_minervini_exceptional_requires_relative_volume():
+    # El Trend Template en sí no evalúa volumen -- el gate exige por separado
+    # volumen relativo >= 1x (media 10 semanas), ver _MINERVINI_MIN_RELATIVE_VOLUME.
+    quiet = _opp(strategies={"minervini": {"passed": True, "score": 100}}, weinstein_relative_volume=0.6)
+    active = _opp(strategies={"minervini": {"passed": True, "score": 100}}, weinstein_relative_volume=1.2)
+    assert _is_exceptional(quiet, "minervini") is False
+    assert _is_exceptional(active, "minervini") is True
 
 
 def test_berkshire_exceptional_requires_score_100():

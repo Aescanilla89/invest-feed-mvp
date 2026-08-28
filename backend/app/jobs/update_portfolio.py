@@ -9,7 +9,10 @@ cumple su umbral "excepcional" en la corrida ANTERIOR, `signal_date`):
     configuración más sólida del método.
   - minervini / berkshire: el top-1 por score de ese método tiene
     score == 100 (TODOS los sub-criterios en verde, no solo el umbral
-    de "passed" que exige la pestaña normal).
+    de "passed" que exige la pestaña normal). minervini exige además
+    volumen relativo >= 1x (ver _MINERVINI_MIN_RELATIVE_VOLUME) y no
+    estar demasiado extendido sobre su MA10w (ver _minervini_overextended)
+    -- el Trend Template en sí no evalúa volumen ni distancia al pivote.
   - lynch / dividendos: el top-1 por score de ese método tiene
     passed == True (son pasa/no-pasa único; no hay umbral más estricto
     posible que ese).
@@ -132,6 +135,18 @@ _HARD_STOP_PCT_FUNDAMENTALS = 0.15
 # resolución semanal de los datos (más gruesa que velas diarias).
 _MINERVINI_MAX_EXTENSION_PCT = 0.10
 
+# Volumen relativo mínimo (vs media 10 semanas) para dejar entrar un pick de
+# minervini -- el Trend Template (evaluate_minervini en strategies.py) solo
+# evalúa estructura de medias móviles y fuerza relativa (RS), nunca si hay
+# volumen real detrás; a diferencia de early_stage2, que sí exige volumen
+# >= 2x en el cruce (ver weinstein.BREAKOUT_VOLUME_RATIO). Sin esto se puede
+# entrar en una estructura técnica perfecta sin convicción compradora real --
+# justo lo que Minervini enseña en SEPA: sin volumen institucional no hay
+# tendencia de fiar. Se exige volumen en la media (>=1.0x) o más, no el 2x de
+# una rotura fresca, porque minervini puede entrar en cualquier semana de un
+# Stage 2 ya establecido, no solo en el cruce inicial.
+_MINERVINI_MIN_RELATIVE_VOLUME = 1.0
+
 # Filtro de régimen de mercado (Weinstein / O'Neil: solo comprar roturas
 # cuando el índice general también está en tendencia alcista). Sin esto se
 # abren posiciones momentum aunque el S&P 500 esté en techo o en caída, lo
@@ -191,7 +206,9 @@ def _is_exceptional(opp: Opportunity, method: str) -> bool:
     result = _strategy_result(opp, method)
     if result is None:
         return False
-    if method in ("minervini", "berkshire"):
+    if method == "minervini":
+        return result.get("score") == 100 and opp.weinstein_relative_volume >= _MINERVINI_MIN_RELATIVE_VOLUME
+    if method == "berkshire":
         return result.get("score") == 100
     return result.get("passed") is True
 
