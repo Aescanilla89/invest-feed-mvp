@@ -10,7 +10,7 @@ from app.jobs.update_portfolio import (
     _market_regime_stage_ok,
     _minervini_extension_pct,
     _minervini_overextended,
-    _pick_top_for_method,
+    _pick_all_for_method,
     _trailing_stop_pct,
     _trailing_stop_signal,
 )
@@ -83,30 +83,34 @@ def test_early_stage2_requires_recent_transition():
     assert _is_exceptional(too_old, "early_stage2") is False
 
 
-def test_pick_top_for_method_picks_highest_score():
+def test_pick_all_for_method_returns_every_qualifying_candidate():
+    # Antes solo se abría el top-1 por método/día -- un tope artificial de la
+    # selección, no una decisión de riesgo. Ahora TODOS los que superan el
+    # umbral "excepcional" del método entran en la lista (ordenados por
+    # score descendente para logging determinista), no solo el mejor.
     low = _opp(ticker_id=1, strategies={"lynch": {"passed": True, "score": 40}})
     high = _opp(ticker_id=2, strategies={"lynch": {"passed": True, "score": 90}})
-    top = _pick_top_for_method([low, high], "lynch")
-    assert top.ticker_id == 2
+    result = _pick_all_for_method([low, high], "lynch")
+    assert [o.ticker_id for o in result] == [2, 1]
 
 
-def test_pick_top_for_method_early_stage2_prefers_fewer_weeks():
+def test_pick_all_for_method_early_stage2_orders_by_fewer_weeks_first():
     older = _opp(ticker_id=1, weeks_in_stage=5, combined_score=90, weinstein_transition=True)
     newer = _opp(ticker_id=2, weeks_in_stage=1, combined_score=40, weinstein_transition=True)
-    top = _pick_top_for_method([older, newer], "early_stage2")
-    assert top.ticker_id == 2
+    result = _pick_all_for_method([older, newer], "early_stage2")
+    assert [o.ticker_id for o in result] == [2, 1]
 
 
-def test_pick_top_for_method_early_stage2_requires_confirmed_transition():
+def test_pick_all_for_method_early_stage2_requires_confirmed_transition():
     # stage==2 y dentro de la ventana de semanas no basta -- también hace
     # falta que la transición esté confirmada (volumen/RSI en el cruce).
     unconfirmed = _opp(ticker_id=1, weeks_in_stage=2, weinstein_transition=False)
-    assert _pick_top_for_method([unconfirmed], "early_stage2") is None
+    assert _pick_all_for_method([unconfirmed], "early_stage2") == []
 
 
-def test_pick_top_for_method_returns_none_without_candidates():
-    assert _pick_top_for_method([], "minervini") is None
-    assert _pick_top_for_method([_opp(weinstein_stage=1)], "early_stage2") is None
+def test_pick_all_for_method_returns_empty_without_candidates():
+    assert _pick_all_for_method([], "minervini") == []
+    assert _pick_all_for_method([_opp(weinstein_stage=1)], "early_stage2") == []
 
 
 def test_exit_signal_holds_through_stage_2_and_3():

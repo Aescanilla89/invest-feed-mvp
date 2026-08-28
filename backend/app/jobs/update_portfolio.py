@@ -2,23 +2,25 @@
 PortfolioPosition en app/models/orm.py. Se ejecuta después de run_screener
 en cada corrida (mismo run_date, misma foto de Opportunity/PriceSnapshot).
 
-Entrada (una vez al día, por método, solo si el top-1 de ese método
-cumple su umbral "excepcional" en la corrida ANTERIOR, `signal_date`):
+Entrada (una vez al día, por método, para TODOS los tickers de ese método que
+cumplan su umbral "excepcional" en la corrida ANTERIOR, `signal_date` -- ver
+_pick_all_for_method. Antes solo se abría el top-1 por método/día, un tope
+artificial de la selección -- no una decisión de riesgo -- que en 52 semanas
+sobre >1500 tickers dejó la cartera en solo 79 operaciones en todo el año):
   - early_stage2: método puramente Weinstein -- transición Stage 1->2
     confirmada (weinstein_transition, con su propia validación de volumen
     >=2x y RSI>50 en el cruce, ver weinstein.py) y reciente (<=6 semanas).
     NO exige CAN SLIM (versión anterior exigía signal_type=="both", una
     intersección con O'Neil tan rara que nunca disparó en producción: 0
     operaciones en 52 semanas sobre >1500 tickers).
-  - minervini / berkshire: el top-1 por score de ese método tiene
-    score == 100 (TODOS los sub-criterios en verde, no solo el umbral
-    de "passed" que exige la pestaña normal). minervini exige además
-    volumen relativo >= 1x (ver _MINERVINI_MIN_RELATIVE_VOLUME) y no
-    estar demasiado extendido sobre su MA10w (ver _minervini_overextended)
-    -- el Trend Template en sí no evalúa volumen ni distancia al pivote.
-  - lynch / dividendos: el top-1 por score de ese método tiene
-    passed == True (son pasa/no-pasa único; no hay umbral más estricto
-    posible que ese).
+  - minervini / berkshire: score == 100 (TODOS los sub-criterios en verde,
+    no solo el umbral de "passed" que exige la pestaña normal). minervini
+    exige además volumen relativo >= 1x (ver _MINERVINI_MIN_RELATIVE_VOLUME)
+    y no estar demasiado extendido sobre su MA10w (ver
+    _minervini_overextended) -- el Trend Template en sí no evalúa volumen ni
+    distancia al pivote.
+  - lynch / dividendos: passed == True (son pasa/no-pasa único; no hay
+    umbral más estricto posible que ese).
 
 La señal solo se confirma con el cierre de `signal_date`, así que la
 compra se ejecuta a la apertura del día hábil siguiente (`entry_date`,
@@ -335,25 +337,23 @@ def _fundamentals_exit_signal(db: Session, ticker_id: int, as_of: date) -> tuple
     return dates[-1], "ma40_break"
 
 
-def _pick_top_for_method(opportunities: list[Opportunity], method: str) -> Opportunity | None:
+def _pick_all_for_method(opportunities: list[Opportunity], method: str) -> list[Opportunity]:
+    """TODOS los candidatos que superan el umbral "excepcional" del método ese
+    día (ver _is_exceptional) -- antes solo se abría el mejor (top-1) por
+    método/día, un tope artificial de la selección (no una decisión de
+    gestión de riesgo) que limitaba la cartera a como mucho 5 entradas/día en
+    todo el universo. En 52 semanas sobre >1500 tickers eso dejó la cartera
+    con solo 79 operaciones en todo el año -- muy poco desplegada frente a un
+    benchmark que está invertido el 100% del tiempo. Ahora se abren TODAS las
+    que cumplen el criterio; el resto de guardas (ticker ya abierto,
+    cooldown, extensión/volumen de minervini, régimen de mercado) se siguen
+    aplicando individualmente por candidato en run()."""
+    candidates = [o for o in opportunities if _is_exceptional(o, method)]
     if method == _EARLY_STAGE2:
-        candidates = [
-            o for o in opportunities
-            if o.weinstein_stage == 2 and o.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS and o.weinstein_transition
-        ]
-        if not candidates:
-            return None
         candidates.sort(key=lambda o: (o.weeks_in_stage, -o.combined_score))
-        return candidates[0]
-
-    scored = [
-        (o, r) for o in opportunities
-        if (r := _strategy_result(o, method)) is not None and r.get("score") is not None
-    ]
-    if not scored:
-        return None
-    scored.sort(key=lambda pair: pair[1]["score"], reverse=True)
-    return scored[0][0]
+    else:
+        candidates.sort(key=lambda o: -(_strategy_result(o, method) or {}).get("score", 0))
+    return candidates
 
 
 def _minervini_extension_pct(db: Session, ticker_id: int, as_of: date) -> float | None:
@@ -583,52 +583,50 @@ def run(run_date: date | None = None) -> dict:
             for method in (_EARLY_STAGE2, *_STRATEGY_METHODS):
                 if method in _MOMENTUM_METHODS and not market_regime_ok:
                     continue
-                top = _pick_top_for_method(signal_opps, method)
-                if top is None or not _is_exceptional(top, method):
-                    continue
-                if method == "minervini" and _minervini_overextended(db, top.ticker_id, signal_date):
+                for top in _pick_all_for_method(signal_opps, method):
+                    if method == "minervini" and _minervini_overextended(db, top.ticker_id, signal_date):
+                        logger.info(
+                            "minervini: ticker_id=%s demasiado extendido sobre su MA10w, se omite "
+                            "(evita perseguir roturas ya agotadas)", top.ticker_id,
+                        )
+                        continue
+                    if top.ticker_id in tickers_with_open:
+                        continue
+                    if top.ticker_id in tickers_cooling_down:
+                        logger.info(
+                            "%s: ticker_id=%s en enfriamiento tras stop-loss reciente, se omite",
+                            method, top.ticker_id,
+                        )
+                        continue
+                    entry_price = _open_price_on(db, top.ticker_id, target_date)
+                    if entry_price is None or spy_entry_price is None:
+                        logger.warning(
+                            "%s: sin apertura del %s (día siguiente a la señal del %s) para ticker_id=%s, se pospone",
+                            method, target_date, signal_date, top.ticker_id,
+                        )
+                        continue
+                    db.add(PortfolioPosition(
+                        ticker_id=top.ticker_id,
+                        method=method,
+                        status="open",
+                        signal_date=signal_date,
+                        entry_date=target_date,
+                        entry_price=entry_price,
+                        entry_spy_price=spy_entry_price,
+                    ))
+                    tickers_with_open.add(top.ticker_id)
+                    stats["opened"] += 1
                     logger.info(
-                        "minervini: ticker_id=%s demasiado extendido sobre su MA10w, se omite "
-                        "(evita perseguir roturas ya agotadas)", top.ticker_id,
+                        "Nueva posición %s: ticker_id=%s señal %s, entrada %.2f (apertura %s)",
+                        method, top.ticker_id, signal_date, entry_price, target_date,
                     )
-                    continue
-                if top.ticker_id in tickers_with_open:
-                    continue
-                if top.ticker_id in tickers_cooling_down:
-                    logger.info(
-                        "%s: ticker_id=%s en enfriamiento tras stop-loss reciente, se omite",
-                        method, top.ticker_id,
-                    )
-                    continue
-                entry_price = _open_price_on(db, top.ticker_id, target_date)
-                if entry_price is None or spy_entry_price is None:
-                    logger.warning(
-                        "%s: sin apertura del %s (día siguiente a la señal del %s) para ticker_id=%s, se pospone",
-                        method, target_date, signal_date, top.ticker_id,
-                    )
-                    continue
-                db.add(PortfolioPosition(
-                    ticker_id=top.ticker_id,
-                    method=method,
-                    status="open",
-                    signal_date=signal_date,
-                    entry_date=target_date,
-                    entry_price=entry_price,
-                    entry_spy_price=spy_entry_price,
-                ))
-                tickers_with_open.add(top.ticker_id)
-                stats["opened"] += 1
-                logger.info(
-                    "Nueva posición %s: ticker_id=%s señal %s, entrada %.2f (apertura %s)",
-                    method, top.ticker_id, signal_date, entry_price, target_date,
-                )
-                # Solo early_stage2 se explica con el narrador AI de Weinstein+CAN
-                # SLIM -- es literalmente su criterio. Los otros 4 métodos ya
-                # tienen su propio "details" factual (ROE, PEG, payout...) en
-                # Opportunity.strategies[method], que es el "porqué" correcto
-                # y no requiere ninguna llamada a la API de Claude.
-                if method == _EARLY_STAGE2:
-                    _ensure_explanation(db, explainer, top, top.ticker)
+                    # Solo early_stage2 se explica con el narrador AI de Weinstein+CAN
+                    # SLIM -- es literalmente su criterio. Los otros 4 métodos ya
+                    # tienen su propio "details" factual (ROE, PEG, payout...) en
+                    # Opportunity.strategies[method], que es el "porqué" correcto
+                    # y no requiere ninguna llamada a la API de Claude.
+                    if method == _EARLY_STAGE2:
+                        _ensure_explanation(db, explainer, top, top.ticker)
 
         db.commit()
         logger.info("update_portfolio completado: %s", stats)
