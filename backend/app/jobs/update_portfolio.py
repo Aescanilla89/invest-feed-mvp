@@ -34,23 +34,36 @@ feed. Las posiciones de los otros 4 métodos NO usan el narrador AI: su
 vez de las métricas de calidad/GARP/dividendo reales sería una
 explicación técnicamente cierta pero equivocada para el pick.
 
-Salida: dos stops técnicos distintos según el tipo de estrategia --
-- early_stage2 / minervini (momentum puro): ver _exit_signal -- se sale
-  cuando el precio cierra por debajo de la media móvil de 30 semanas
-  (Stage 1 o 4), nunca en Stage 3 (desaceleración con precio todavía por
-  encima de la MA30, no una ruptura real).
-- lynch / berkshire / dividendos (tesis de calidad/valor): ver
-  _fundamentals_exit_signal -- ruptura de la media móvil de 40 semanas
-  (más lenta, da más margen a una tesis de plazo más largo). NO salen
-  por dejar de cumplir su propio criterio (probado y revertido, ver
-  commit 3e9b737: exigir 7/7 sin margen cortaba ganadoras al primer
-  criterio que fallara, p.ej. un RS Rating que cae de 71 a 69).
-Ambos exigen 2 semanas CONSECUTIVAS por debajo de su media antes de
-confirmar la ruptura (ruido de una sola semana no cuenta). La ruptura
-se detecta con el cierre de `exit_signal_date`, y la venta se ejecuta a
-la apertura del día hábil siguiente (`exit_date`) -- mismo criterio
-anti-look-ahead que la entrada. El retorno final del ticker y del S&P
-500 se fijan en ese mismo `exit_date`.
+Salida: cada posición abierta se evalúa cada corrida contra DOS stops en
+paralelo -- el que dispare primero cierra la posición:
+- Stop-loss duro por % (ver _hard_stop_signal): dispara sin esperar
+  confirmación en cuanto el último cierre cae 8% (early_stage2/minervini,
+  el clásico no negociable de Minervini/O'Neil) o 15% (lynch/berkshire/
+  dividendos, tesis de más plazo) por debajo del precio de entrada. Existe
+  porque el stop de tendencia de abajo, al depender de una media móvil
+  lenta, puede dejar correr una pérdida grande cuando la entrada fue cerca
+  de máximos: en producción AMAT llegó a -25% con Stage 2 todavía vigente
+  porque el precio, pese al desplome, seguía por encima de su MA30 (la
+  media tarda en caer, va más lenta que el precio).
+- Stop de tendencia técnico según el tipo de estrategia --
+  - early_stage2 / minervini (momentum puro): ver _exit_signal -- se sale
+    cuando el precio cierra por debajo de la media móvil de 30 semanas
+    (Stage 1 o 4), nunca en Stage 3 (desaceleración con precio todavía por
+    encima de la MA30, no una ruptura real).
+  - lynch / berkshire / dividendos (tesis de calidad/valor): ver
+    _fundamentals_exit_signal -- ruptura de la media móvil de 40 semanas
+    (más lenta, da más margen a una tesis de plazo más largo). NO salen
+    por dejar de cumplir su propio criterio (probado y revertido, ver
+    commit 3e9b737: exigir 7/7 sin margen cortaba ganadoras al primer
+    criterio que fallara, p.ej. un RS Rating que cae de 71 a 69).
+  Exige 2 semanas CONSECUTIVAS por debajo de su media antes de confirmar
+  la ruptura (ruido de una sola semana no cuenta) -- el stop duro de arriba
+  no tiene esta espera porque su objetivo es justo el contrario, cortar la
+  pérdida cuanto antes.
+La ruptura (de cualquiera de los dos stops) se detecta con el cierre de
+`exit_signal_date`, y la venta se ejecuta a la apertura del día hábil
+siguiente (`exit_date`) -- mismo criterio anti-look-ahead que la entrada.
+El retorno final del ticker y del S&P 500 se fijan en ese mismo `exit_date`.
 
 Uso manual:
     python -m app.jobs.update_portfolio
@@ -90,6 +103,19 @@ _WEINSTEIN_MAX_WEEKS = 8  # mismo umbral que _compute_signal_type en opportuniti
 # cada ronda es ruido puro, no aporta retorno neto y diluye a los ganadores
 # reales en la rentabilidad equiponderada de la cartera.
 _REENTRY_COOLDOWN_WEEKS = 4
+
+# Stop-loss duro por % desde la entrada, independiente del stop de tendencia
+# (MA30/MA40) de arriba -- ver _hard_stop_signal. Sin esto, una rotura brusca
+# desde una entrada cerca de máximos (justo el escenario de los métodos
+# momentum) puede seguir "viva" mucho tiempo: visto en producción, AMAT llegó
+# a -25% con Stage 2 todavía vigente porque el precio, aunque se desplomó,
+# seguía por encima de su MA30 -- la propia media tarda en caer porque es más
+# lenta que el precio. 8% es el stop clásico no negociable de Minervini/O'Neil
+# para roturas momentum (early_stage2/minervini). lynch/berkshire/dividendos
+# son tesis de calidad/valor a más plazo y llevan más margen (15%) para no
+# salir por ruido de corto plazo.
+_HARD_STOP_PCT_MOMENTUM = 0.08
+_HARD_STOP_PCT_FUNDAMENTALS = 0.15
 
 # Filtro de régimen de mercado (Weinstein / O'Neil: solo comprar roturas
 # cuando el índice general también está en tendencia alcista). Sin esto se
@@ -172,6 +198,33 @@ def _exit_signal(recent_opps: list[Opportunity]) -> str | None:
     if latest.weinstein_stage in (1, 4) and prior.weinstein_stage in (1, 4):
         return f"weinstein_stage_{latest.weinstein_stage}"
     return None
+
+
+def _hard_stop_pct(method: str) -> float:
+    return _HARD_STOP_PCT_MOMENTUM if method in _MOMENTUM_METHODS else _HARD_STOP_PCT_FUNDAMENTALS
+
+
+def _hard_stop_signal(db: Session, ticker_id: int, entry_price: float, method: str, as_of: date) -> tuple[date, str] | None:
+    """Stop-loss duro por %: dispara con el último cierre disponible (<=as_of)
+    en cuanto cae `_hard_stop_pct(method)` o más por debajo de `entry_price` --
+    SIN la confirmación de 2 semanas consecutivas que exigen _exit_signal /
+    _fundamentals_exit_signal (esos evitan ruido en rupturas de tendencia
+    ambiguas; aquí el objetivo es justo lo contrario, cortar la pérdida cuanto
+    antes). Corre en paralelo al stop de tendencia; el que dispare primero
+    cierra la posición."""
+    row = (
+        db.query(PriceSnapshot.date, PriceSnapshot.close)
+        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date <= as_of)
+        .order_by(PriceSnapshot.date.desc())
+        .first()
+    )
+    if row is None:
+        return None
+    snap_date, close = row
+    pct = _hard_stop_pct(method)
+    if float(close) > entry_price * (1 - pct):
+        return None
+    return snap_date, f"hard_stop_{int(pct * 100)}pct"
 
 
 _FUNDAMENTALS_MA_WINDOW_WEEKS = 40
@@ -364,7 +417,10 @@ def run(run_date: date | None = None) -> dict:
         #    re-detectar).
         for pos in db.query(PortfolioPosition).filter_by(status="open").all():
             if pos.exit_signal_date is None:
-                if pos.method in _MOMENTUM_METHODS:
+                hard_stop = _hard_stop_signal(db, pos.ticker_id, pos.entry_price, pos.method, target_date)
+                if hard_stop is not None:
+                    exit_signal_date, exit_reason = hard_stop
+                elif pos.method in _MOMENTUM_METHODS:
                     recent_opps = (
                         db.query(Opportunity)
                         .filter(Opportunity.ticker_id == pos.ticker_id, Opportunity.run_date <= target_date)
