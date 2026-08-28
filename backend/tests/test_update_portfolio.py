@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +8,8 @@ from app.jobs.update_portfolio import (
     _exit_signal,
     _is_exceptional,
     _market_regime_stage_ok,
+    _minervini_extension_pct,
+    _minervini_overextended,
     _pick_top_for_method,
     _trailing_stop_pct,
     _trailing_stop_signal,
@@ -216,6 +218,40 @@ def test_trailing_stop_signal_holds_if_pullback_from_high_is_small(db_session):
     assert _trailing_stop_signal(
         db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 2, 9),
     ) is None
+
+
+def test_minervini_extension_pct_computes_pct_above_ma10w(db_session):
+    # MA10w es la media de las 10 últimas velas INCLUIDA la actual (igual que
+    # evaluate_minervini en strategies.py) -- 9 semanas a 100 + la semana
+    # actual a 115 -> MA10w = (9*100 + 115)/10 = 101.5, extensión = 115/101.5-1.
+    for i in range(9):
+        _add_snapshot(db_session, 1, date(2026, 1, 5) + timedelta(weeks=i), 100.0)
+    _add_snapshot(db_session, 1, date(2026, 1, 5) + timedelta(weeks=9), 115.0)
+    ext = _minervini_extension_pct(db_session, ticker_id=1, as_of=date(2026, 1, 5) + timedelta(weeks=9))
+    assert ext == pytest.approx(115 / 101.5 - 1, abs=1e-6)
+
+
+def test_minervini_extension_pct_insufficient_history_returns_none(db_session):
+    _add_snapshot(db_session, 1, date(2026, 1, 5), 100.0)
+    assert _minervini_extension_pct(db_session, ticker_id=1, as_of=date(2026, 1, 5)) is None
+
+
+def test_minervini_overextended_flags_above_10pct(db_session):
+    # Confirmado en producción: las 4 peores operaciones de minervini
+    # entraron 14-30% extendidas sobre su MA10w -- el umbral es 10%.
+    for i in range(9):
+        _add_snapshot(db_session, 1, date(2026, 1, 5) + timedelta(weeks=i), 100.0)
+    _add_snapshot(db_session, 1, date(2026, 1, 5) + timedelta(weeks=9), 115.0)  # ~13.3% extendido
+    assert _minervini_overextended(db_session, ticker_id=1, as_of=date(2026, 1, 5) + timedelta(weeks=9)) is True
+
+    for i in range(9):
+        _add_snapshot(db_session, 2, date(2026, 1, 5) + timedelta(weeks=i), 100.0)
+    _add_snapshot(db_session, 2, date(2026, 1, 5) + timedelta(weeks=9), 105.0)  # ~4.5% extendido
+    assert _minervini_overextended(db_session, ticker_id=2, as_of=date(2026, 1, 5) + timedelta(weeks=9)) is False
+
+
+def test_minervini_overextended_fails_open_without_history(db_session):
+    assert _minervini_overextended(db_session, ticker_id=1, as_of=date(2026, 1, 5)) is False
 
 
 def test_market_regime_only_allows_entries_in_stage_2():

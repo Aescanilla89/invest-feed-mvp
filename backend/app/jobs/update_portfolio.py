@@ -121,6 +121,17 @@ _REENTRY_COOLDOWN_WEEKS = 4
 _HARD_STOP_PCT_MOMENTUM = 0.08
 _HARD_STOP_PCT_FUNDAMENTALS = 0.15
 
+# Extensión máxima sobre la MA10w (~MA50d) para dejar entrar un pick de
+# minervini -- Minervini (Trade Like a Stock Market Wizard) advierte
+# explícitamente contra perseguir una rotura que ya se movió demasiado desde
+# su punto de entrada ideal (cerca del pivote/MA, no lejos). Confirmado en
+# el histórico de la cartera: las 4 peores operaciones de minervini (AMAT
+# -14.1%, GOOG -6.3%, ADI -2.5%, MRX -1.7%) entraron con el precio 14-30%
+# por encima de su MA10w; ninguna entrada con extensión >14% terminó en
+# ganancia. 10% en vez del 5% clásico de Minervini para dar margen a la
+# resolución semanal de los datos (más gruesa que velas diarias).
+_MINERVINI_MAX_EXTENSION_PCT = 0.10
+
 # Filtro de régimen de mercado (Weinstein / O'Neil: solo comprar roturas
 # cuando el índice general también está en tendencia alcista). Sin esto se
 # abren posiciones momentum aunque el S&P 500 esté en techo o en caída, lo
@@ -315,6 +326,33 @@ def _pick_top_for_method(opportunities: list[Opportunity], method: str) -> Oppor
         return None
     scored.sort(key=lambda pair: pair[1]["score"], reverse=True)
     return scored[0][0]
+
+
+def _minervini_extension_pct(db: Session, ticker_id: int, as_of: date) -> float | None:
+    """% del cierre más reciente (<=as_of) sobre su MA10w -- None si no hay al
+    menos 10 semanas de histórico (fail-open: no se puede medir extensión sin
+    datos, no bloquea la entrada por eso)."""
+    rows = (
+        db.query(PriceSnapshot.close)
+        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date <= as_of)
+        .order_by(PriceSnapshot.date.desc())
+        .limit(10)
+        .all()
+    )
+    if len(rows) < 10:
+        return None
+    closes = [float(r[0]) for r in rows]  # más reciente primero
+    ma10 = sum(closes) / 10
+    if ma10 <= 0:
+        return None
+    return closes[0] / ma10 - 1
+
+
+def _minervini_overextended(db: Session, ticker_id: int, as_of: date) -> bool:
+    """Ver _MINERVINI_MAX_EXTENSION_PCT -- solo aplica a minervini, no al resto
+    de métodos (early_stage2 ya exige recencia vía weeks_in_stage<=6)."""
+    ext = _minervini_extension_pct(db, ticker_id, as_of)
+    return ext is not None and ext > _MINERVINI_MAX_EXTENSION_PCT
 
 
 def _tickers_in_cooldown(db: Session, as_of: date) -> set[int]:
@@ -519,6 +557,12 @@ def run(run_date: date | None = None) -> dict:
                     continue
                 top = _pick_top_for_method(signal_opps, method)
                 if top is None or not _is_exceptional(top, method):
+                    continue
+                if method == "minervini" and _minervini_overextended(db, top.ticker_id, signal_date):
+                    logger.info(
+                        "minervini: ticker_id=%s demasiado extendido sobre su MA10w, se omite "
+                        "(evita perseguir roturas ya agotadas)", top.ticker_id,
+                    )
                     continue
                 if top.ticker_id in tickers_with_open:
                     continue
