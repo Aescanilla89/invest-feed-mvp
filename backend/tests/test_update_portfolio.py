@@ -83,15 +83,28 @@ def test_early_stage2_requires_recent_transition():
     assert _is_exceptional(too_old, "early_stage2") is False
 
 
-def test_pick_all_for_method_returns_every_qualifying_candidate():
+def test_pick_all_for_method_returns_every_qualifying_candidate_under_the_cap():
     # Antes solo se abría el top-1 por método/día -- un tope artificial de la
-    # selección, no una decisión de riesgo. Ahora TODOS los que superan el
-    # umbral "excepcional" del método entran en la lista (ordenados por
-    # score descendente para logging determinista), no solo el mejor.
+    # selección, no una decisión de riesgo. Ahora, hasta el tope de
+    # _MAX_NEW_ENTRIES_PER_METHOD_PER_DAY, entran todos los que superan el
+    # umbral "excepcional" (ordenados por score descendente), no solo el mejor.
     low = _opp(ticker_id=1, strategies={"lynch": {"passed": True, "score": 40}})
     high = _opp(ticker_id=2, strategies={"lynch": {"passed": True, "score": 90}})
     result = _pick_all_for_method([low, high], "lynch")
     assert [o.ticker_id for o in result] == [2, 1]
+
+
+def test_pick_all_for_method_caps_at_max_new_entries_per_day():
+    # Probado sin ningún tope: lynch (criterio "passed" simple) disparó a
+    # miles de posiciones simultáneas en medio año de backtest -- no una
+    # cartera operable. Se limita a los mejores 3 por score, aunque más
+    # tickers superen el umbral "excepcional" ese día.
+    opps = [
+        _opp(ticker_id=i, strategies={"lynch": {"passed": True, "score": score}})
+        for i, score in enumerate([10, 90, 50, 80, 30], start=1)
+    ]
+    result = _pick_all_for_method(opps, "lynch")
+    assert [o.ticker_id for o in result] == [2, 4, 3]
 
 
 def test_pick_all_for_method_early_stage2_orders_by_fewer_weeks_first():

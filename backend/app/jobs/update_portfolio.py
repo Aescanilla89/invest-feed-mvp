@@ -2,11 +2,15 @@
 PortfolioPosition en app/models/orm.py. Se ejecuta después de run_screener
 en cada corrida (mismo run_date, misma foto de Opportunity/PriceSnapshot).
 
-Entrada (una vez al día, por método, para TODOS los tickers de ese método que
+Entrada (una vez al día, por método, para hasta 3 tickers de ese método que
 cumplan su umbral "excepcional" en la corrida ANTERIOR, `signal_date` -- ver
-_pick_all_for_method. Antes solo se abría el top-1 por método/día, un tope
-artificial de la selección -- no una decisión de riesgo -- que en 52 semanas
-sobre >1500 tickers dejó la cartera en solo 79 operaciones en todo el año):
+_pick_all_for_method / _MAX_NEW_ENTRIES_PER_METHOD_PER_DAY. Antes solo se
+abría el top-1 por método/día, un tope artificial de la selección -- no una
+decisión de riesgo -- que en 52 semanas sobre >1500 tickers dejó la cartera
+en solo 79 operaciones en todo el año; sin ningún tope, en cambio, lynch
+(criterio "passed" simple, mucho más común que el score==100 de minervini/
+berkshire) disparó a miles de posiciones simultáneas en medio año -- 3 es el
+punto intermedio):
   - early_stage2: método puramente Weinstein -- transición Stage 1->2
     confirmada (weinstein_transition, con su propia validación de volumen
     >=2x y RSI>50 en el cruce, ver weinstein.py) y reciente (<=6 semanas).
@@ -337,23 +341,30 @@ def _fundamentals_exit_signal(db: Session, ticker_id: int, as_of: date) -> tuple
     return dates[-1], "ma40_break"
 
 
+_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 3
+
+
 def _pick_all_for_method(opportunities: list[Opportunity], method: str) -> list[Opportunity]:
-    """TODOS los candidatos que superan el umbral "excepcional" del método ese
-    día (ver _is_exceptional) -- antes solo se abría el mejor (top-1) por
-    método/día, un tope artificial de la selección (no una decisión de
-    gestión de riesgo) que limitaba la cartera a como mucho 5 entradas/día en
-    todo el universo. En 52 semanas sobre >1500 tickers eso dejó la cartera
-    con solo 79 operaciones en todo el año -- muy poco desplegada frente a un
-    benchmark que está invertido el 100% del tiempo. Ahora se abren TODAS las
-    que cumplen el criterio; el resto de guardas (ticker ya abierto,
-    cooldown, extensión/volumen de minervini, régimen de mercado) se siguen
-    aplicando individualmente por candidato en run()."""
+    """Los mejores hasta `_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY` candidatos que
+    superan el umbral "excepcional" del método ese día (ver _is_exceptional)
+    -- antes solo se abría el mejor (top-1) por método/día, un tope
+    artificial de la selección (no una decisión de gestión de riesgo) que en
+    52 semanas sobre >1500 tickers dejó la cartera con solo 79 operaciones en
+    todo el año. Probado sin ningún tope: para minervini/berkshire (score==100,
+    ya raro de por sí) y early_stage2 (transición confirmada, también raro)
+    el volumen de candidatos/día es razonable, pero lynch/dividendos (passed
+    simple, un umbral mucho más común) sin tope disparó a miles de posiciones
+    simultáneas en medio año -- no una cartera operable, ruido estadístico.
+    3 por método/día es el punto intermedio: más diversificación que el
+    límite de 1 original, sin la explosión sin tope. El resto de guardas
+    (ticker ya abierto, cooldown, extensión/volumen de minervini, régimen de
+    mercado) se siguen aplicando individualmente por candidato en run()."""
     candidates = [o for o in opportunities if _is_exceptional(o, method)]
     if method == _EARLY_STAGE2:
         candidates.sort(key=lambda o: (o.weeks_in_stage, -o.combined_score))
     else:
         candidates.sort(key=lambda o: -(_strategy_result(o, method) or {}).get("score", 0))
-    return candidates
+    return candidates[:_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY]
 
 
 def _minervini_extension_pct(db: Session, ticker_id: int, as_of: date) -> float | None:
