@@ -36,15 +36,18 @@ explicación técnicamente cierta pero equivocada para el pick.
 
 Salida: cada posición abierta se evalúa cada corrida contra DOS stops en
 paralelo -- el que dispare primero cierra la posición:
-- Stop-loss duro por % (ver _hard_stop_signal): dispara sin esperar
-  confirmación en cuanto el último cierre cae 8% (early_stage2/minervini,
-  el clásico no negociable de Minervini/O'Neil) o 15% (lynch/berkshire/
-  dividendos, tesis de más plazo) por debajo del precio de entrada. Existe
-  porque el stop de tendencia de abajo, al depender de una media móvil
-  lenta, puede dejar correr una pérdida grande cuando la entrada fue cerca
-  de máximos: en producción AMAT llegó a -25% con Stage 2 todavía vigente
-  porque el precio, pese al desplome, seguía por encima de su MA30 (la
-  media tarda en caer, va más lenta que el precio).
+- Stop-loss por % DINÁMICO / trailing, al estilo Weinstein (ver
+  _trailing_stop_signal): dispara sin esperar confirmación en cuanto el
+  último cierre cae 8% (early_stage2/minervini, el clásico no negociable
+  de Minervini/O'Neil) o 15% (lynch/berkshire/dividendos, tesis de más
+  plazo) por debajo del cierre MÁS ALTO alcanzado desde la entrada -- no
+  del precio de entrada fijo, para que el suelo suba con la acción y
+  proteja ganancias ya conseguidas en vez de solo limitar la pérdida
+  inicial. Existe porque el stop de tendencia de abajo, al depender de una
+  media móvil lenta, puede dejar correr una pérdida grande cuando la
+  entrada fue cerca de máximos: en producción AMAT llegó a -25% con Stage 2
+  todavía vigente porque el precio, pese al desplome, seguía por encima de
+  su MA30 (la media tarda en caer, va más lenta que el precio).
 - Stop de tendencia técnico según el tipo de estrategia --
   - early_stage2 / minervini (momentum puro): ver _exit_signal -- se sale
     cuando el precio cierra por debajo de la media móvil de 30 semanas
@@ -104,16 +107,17 @@ _WEINSTEIN_MAX_WEEKS = 8  # mismo umbral que _compute_signal_type en opportuniti
 # reales en la rentabilidad equiponderada de la cartera.
 _REENTRY_COOLDOWN_WEEKS = 4
 
-# Stop-loss duro por % desde la entrada, independiente del stop de tendencia
-# (MA30/MA40) de arriba -- ver _hard_stop_signal. Sin esto, una rotura brusca
-# desde una entrada cerca de máximos (justo el escenario de los métodos
-# momentum) puede seguir "viva" mucho tiempo: visto en producción, AMAT llegó
-# a -25% con Stage 2 todavía vigente porque el precio, aunque se desplomó,
-# seguía por encima de su MA30 -- la propia media tarda en caer porque es más
-# lenta que el precio. 8% es el stop clásico no negociable de Minervini/O'Neil
-# para roturas momentum (early_stage2/minervini). lynch/berkshire/dividendos
-# son tesis de calidad/valor a más plazo y llevan más margen (15%) para no
-# salir por ruido de corto plazo.
+# Stop-loss por % DINÁMICO (trailing, al estilo Weinstein: el suelo sube con
+# la acción), independiente del stop de tendencia (MA30/MA40) de arriba --
+# ver _trailing_stop_signal. Sin esto, una rotura brusca desde una entrada
+# cerca de máximos (justo el escenario de los métodos momentum) puede seguir
+# "viva" mucho tiempo: visto en producción, AMAT llegó a -25% con Stage 2
+# todavía vigente porque el precio, aunque se desplomó, seguía por encima de
+# su MA30 -- la propia media tarda en caer porque es más lenta que el precio.
+# 8% es el stop clásico no negociable de Minervini/O'Neil para roturas
+# momentum (early_stage2/minervini). lynch/berkshire/dividendos son tesis de
+# calidad/valor a más plazo y llevan más margen (15%) para no salir por ruido
+# de corto plazo.
 _HARD_STOP_PCT_MOMENTUM = 0.08
 _HARD_STOP_PCT_FUNDAMENTALS = 0.15
 
@@ -200,31 +204,48 @@ def _exit_signal(recent_opps: list[Opportunity]) -> str | None:
     return None
 
 
-def _hard_stop_pct(method: str) -> float:
+def _trailing_stop_pct(method: str) -> float:
     return _HARD_STOP_PCT_MOMENTUM if method in _MOMENTUM_METHODS else _HARD_STOP_PCT_FUNDAMENTALS
 
 
-def _hard_stop_signal(db: Session, ticker_id: int, entry_price: float, method: str, as_of: date) -> tuple[date, str] | None:
-    """Stop-loss duro por %: dispara con el último cierre disponible (<=as_of)
-    en cuanto cae `_hard_stop_pct(method)` o más por debajo de `entry_price` --
-    SIN la confirmación de 2 semanas consecutivas que exigen _exit_signal /
+def _trailing_stop_signal(
+    db: Session, ticker_id: int, entry_price: float, entry_date: date, method: str, as_of: date,
+) -> tuple[date, str] | None:
+    """Stop-loss duro por %, pero DINÁMICO al estilo Weinstein: el umbral no
+    se fija en `entry_price` para siempre, sino en el cierre MÁS ALTO
+    alcanzado desde `entry_date` -- así el suelo va subiendo con la acción y
+    protege ganancias ya conseguidas, en vez de solo limitar la pérdida
+    inicial (una acción que sube 50% y luego cae 8% desde el entry_price
+    nunca dispararía el stop fijo original, dejando evaporar toda la
+    ganancia).
+
+    Dispara con el último cierre disponible (<=as_of) en cuanto cae
+    `_trailing_stop_pct(method)` o más por debajo de ese máximo -- SIN la
+    confirmación de 2 semanas consecutivas que exigen _exit_signal /
     _fundamentals_exit_signal (esos evitan ruido en rupturas de tendencia
-    ambiguas; aquí el objetivo es justo lo contrario, cortar la pérdida cuanto
-    antes). Corre en paralelo al stop de tendencia; el que dispare primero
-    cierra la posición."""
-    row = (
+    ambiguas; aquí el objetivo es justo lo contrario, cortar la pérdida/
+    proteger la ganancia cuanto antes). Corre en paralelo al stop de
+    tendencia; el que dispare primero cierra la posición."""
+    rows = (
         db.query(PriceSnapshot.date, PriceSnapshot.close)
-        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date <= as_of)
-        .order_by(PriceSnapshot.date.desc())
-        .first()
+        .filter(
+            PriceSnapshot.ticker_id == ticker_id,
+            PriceSnapshot.date >= entry_date,
+            PriceSnapshot.date <= as_of,
+        )
+        .order_by(PriceSnapshot.date.asc())
+        .all()
     )
-    if row is None:
+    if not rows:
         return None
-    snap_date, close = row
-    pct = _hard_stop_pct(method)
-    if float(close) > entry_price * (1 - pct):
+    highest_close = entry_price
+    for _, close in rows:
+        highest_close = max(highest_close, float(close))
+    latest_date, latest_close = rows[-1]
+    pct = _trailing_stop_pct(method)
+    if float(latest_close) > highest_close * (1 - pct):
         return None
-    return snap_date, f"hard_stop_{int(pct * 100)}pct"
+    return latest_date, f"trailing_stop_{int(pct * 100)}pct"
 
 
 _FUNDAMENTALS_MA_WINDOW_WEEKS = 40
@@ -417,9 +438,9 @@ def run(run_date: date | None = None) -> dict:
         #    re-detectar).
         for pos in db.query(PortfolioPosition).filter_by(status="open").all():
             if pos.exit_signal_date is None:
-                hard_stop = _hard_stop_signal(db, pos.ticker_id, pos.entry_price, pos.method, target_date)
-                if hard_stop is not None:
-                    exit_signal_date, exit_reason = hard_stop
+                trailing_stop = _trailing_stop_signal(db, pos.ticker_id, pos.entry_price, pos.entry_date, pos.method, target_date)
+                if trailing_stop is not None:
+                    exit_signal_date, exit_reason = trailing_stop
                 elif pos.method in _MOMENTUM_METHODS:
                     recent_opps = (
                         db.query(Opportunity)

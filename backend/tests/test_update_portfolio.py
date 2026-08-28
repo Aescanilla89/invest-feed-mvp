@@ -6,11 +6,11 @@ import pytest
 from app.jobs.update_portfolio import (
     _closes_below_ma,
     _exit_signal,
-    _hard_stop_pct,
-    _hard_stop_signal,
     _is_exceptional,
     _market_regime_stage_ok,
     _pick_top_for_method,
+    _trailing_stop_pct,
+    _trailing_stop_signal,
 )
 
 
@@ -121,15 +121,15 @@ def test_closes_below_ma_insufficient_history_returns_none():
     assert _closes_below_ma([100.0, 99.0], window_weeks=40) is None
 
 
-def test_hard_stop_pct_momentum_vs_fundamentals():
+def test_trailing_stop_pct_momentum_vs_fundamentals():
     # 8% para roturas momentum (early_stage2/minervini, el stop clásico no
     # negociable de Minervini/O'Neil) vs 15% para tesis de calidad/valor a
     # más plazo (lynch/berkshire/dividendos).
-    assert _hard_stop_pct("early_stage2") == 0.08
-    assert _hard_stop_pct("minervini") == 0.08
-    assert _hard_stop_pct("lynch") == 0.15
-    assert _hard_stop_pct("berkshire") == 0.15
-    assert _hard_stop_pct("dividendos") == 0.15
+    assert _trailing_stop_pct("early_stage2") == 0.08
+    assert _trailing_stop_pct("minervini") == 0.08
+    assert _trailing_stop_pct("lynch") == 0.15
+    assert _trailing_stop_pct("berkshire") == 0.15
+    assert _trailing_stop_pct("dividendos") == 0.15
 
 
 @pytest.fixture
@@ -155,30 +155,67 @@ def _add_snapshot(db_session, ticker_id, snap_date, close):
     db_session.commit()
 
 
-def test_hard_stop_signal_triggers_at_threshold(db_session):
-    # Entrada a 100, stop momentum al 8% -> dispara con cierre <= 92, sin
-    # esperar confirmación de 2 semanas (a diferencia del stop de tendencia).
+def test_trailing_stop_signal_triggers_at_threshold_from_entry(db_session):
+    # Entrada a 100, stop momentum al 8% -> sin subidas previas, el "máximo
+    # desde la entrada" sigue siendo el propio entry_price, así que dispara
+    # con cierre <= 92, sin esperar confirmación de 2 semanas (a diferencia
+    # del stop de tendencia).
     _add_snapshot(db_session, 1, date(2026, 1, 5), 92.0)
-    result = _hard_stop_signal(db_session, ticker_id=1, entry_price=100.0, method="minervini", as_of=date(2026, 1, 5))
-    assert result == (date(2026, 1, 5), "hard_stop_8pct")
+    result = _trailing_stop_signal(
+        db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 1, 5),
+    )
+    assert result == (date(2026, 1, 5), "trailing_stop_8pct")
 
 
-def test_hard_stop_signal_does_not_trigger_above_threshold(db_session):
+def test_trailing_stop_signal_does_not_trigger_above_threshold(db_session):
     _add_snapshot(db_session, 1, date(2026, 1, 5), 93.0)
-    assert _hard_stop_signal(db_session, ticker_id=1, entry_price=100.0, method="minervini", as_of=date(2026, 1, 5)) is None
+    assert _trailing_stop_signal(
+        db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 1, 5),
+    ) is None
 
 
-def test_hard_stop_signal_uses_wider_threshold_for_fundamentals(db_session):
+def test_trailing_stop_signal_uses_wider_threshold_for_fundamentals(db_session):
     # lynch/berkshire/dividendos: 15% de margen, un cierre a -10% no dispara.
     _add_snapshot(db_session, 1, date(2026, 1, 5), 90.0)
-    assert _hard_stop_signal(db_session, ticker_id=1, entry_price=100.0, method="lynch", as_of=date(2026, 1, 5)) is None
+    assert _trailing_stop_signal(
+        db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="lynch", as_of=date(2026, 1, 5),
+    ) is None
     _add_snapshot(db_session, 1, date(2026, 1, 12), 84.0)
-    result = _hard_stop_signal(db_session, ticker_id=1, entry_price=100.0, method="lynch", as_of=date(2026, 1, 12))
-    assert result == (date(2026, 1, 12), "hard_stop_15pct")
+    result = _trailing_stop_signal(
+        db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="lynch", as_of=date(2026, 1, 12),
+    )
+    assert result == (date(2026, 1, 12), "trailing_stop_15pct")
 
 
-def test_hard_stop_signal_no_history_returns_none(db_session):
-    assert _hard_stop_signal(db_session, ticker_id=1, entry_price=100.0, method="minervini", as_of=date(2026, 1, 5)) is None
+def test_trailing_stop_signal_no_history_returns_none(db_session):
+    assert _trailing_stop_signal(
+        db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 1, 5),
+    ) is None
+
+
+def test_trailing_stop_signal_follows_the_high_not_the_entry(db_session):
+    # El caso que motiva el trailing stop: la acción sube 50% desde la
+    # entrada y luego cae un 8% desde ese máximo (no desde la entrada) --
+    # debe disparar aunque el precio siga muy por encima del entry_price,
+    # para proteger la ganancia ya conseguida en vez de dejarla evaporarse.
+    _add_snapshot(db_session, 1, date(2026, 1, 5), 100.0)   # entrada
+    _add_snapshot(db_session, 1, date(2026, 2, 2), 150.0)   # sube 50%
+    _add_snapshot(db_session, 1, date(2026, 2, 9), 137.0)   # cae 8.7% desde el máximo (150), sigue +37% vs entrada
+    result = _trailing_stop_signal(
+        db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 2, 9),
+    )
+    assert result == (date(2026, 2, 9), "trailing_stop_8pct")
+
+
+def test_trailing_stop_signal_holds_if_pullback_from_high_is_small(db_session):
+    # Misma subida a 150, pero un pullback pequeño (150 -> 140, -6.7%) no
+    # dispara el 8% -- la posición sigue abierta.
+    _add_snapshot(db_session, 1, date(2026, 1, 5), 100.0)
+    _add_snapshot(db_session, 1, date(2026, 2, 2), 150.0)
+    _add_snapshot(db_session, 1, date(2026, 2, 9), 140.0)
+    assert _trailing_stop_signal(
+        db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 2, 9),
+    ) is None
 
 
 def test_market_regime_only_allows_entries_in_stage_2():
