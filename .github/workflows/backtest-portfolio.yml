@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       weeks:
-        description: "Nº de semanas hacia atrás (52 = 1 año)"
+        description: "Nº de semanas hacia atrás (vacío = desde el inicio histórico de la cartera, 1/09/2025)"
         type: string
-        default: "52"
+        default: ""
       tickers:
         description: "Override de tickers separados por coma (vacío = S&P500+Nasdaq100 completo)"
         type: string
@@ -39,6 +39,6 @@ jobs:
       - run: pip install -r requirements.txt
       - run: |
           python -m app.jobs.backtest_portfolio \
-            --weeks "${{ github.event.inputs.weeks }}" \
+            ${{ github.event.inputs.weeks != '' && format('--weeks {0}', github.event.inputs.weeks) || '' }} \
             ${{ github.event.inputs.tickers != '' && format('--tickers {0}', github.event.inputs.tickers) || '' }} \
             ${{ github.event.inputs.institutions != '' && format('--institutions {0}', github.event.inputs.institutions) || '' }}

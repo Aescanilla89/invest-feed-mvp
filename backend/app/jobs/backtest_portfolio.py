@@ -76,7 +76,17 @@ from app.screener.weinstein import InsufficientDataError, analyze
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("backtest_portfolio")
 
-WEEKS_BACK_DEFAULT = 52
+# Fecha de inicio histórico de la cartera pública -- fija, no relativa a
+# "hoy". Cada resimulación (sin --weeks explícito) recalcula cuántas semanas
+# hacen falta para llegar hasta aquí, así que la cartera siempre arranca el
+# mismo día real aunque se vuelva a correr el backtest meses después.
+PORTFOLIO_INCEPTION_DATE = date(2025, 9, 1)
+
+
+def _weeks_since_inception() -> int:
+    return (date.today() - PORTFOLIO_INCEPTION_DATE).days // 7
+
+
 # Margen antes de la semana más antigua del backtest para que Weinstein (36
 # semanas mínimo) y RS/N (52 semanas) tengan histórico suficiente incluso ahí.
 LOOKBACK_BUFFER_WEEKS = 60
@@ -244,10 +254,12 @@ def _week_dates(reference_weekly: pd.DataFrame, weeks_back: int) -> list[date]:
 
 
 def run(
-    weeks_back: int = WEEKS_BACK_DEFAULT,
+    weeks_back: int | None = None,
     tickers_override: list[str] | None = None,
     institutions_override: list[str] | None = None,
 ) -> dict:
+    if weeks_back is None:
+        weeks_back = _weeks_since_inception()
     init_db()
 
     if not (settings.alpaca_api_key and settings.alpaca_secret_key):
@@ -384,7 +396,10 @@ def run(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--weeks", type=int, default=WEEKS_BACK_DEFAULT, help="Nº de semanas hacia atrás")
+    parser.add_argument(
+        "--weeks", type=int, default=None,
+        help=f"Nº de semanas hacia atrás (por defecto, hasta {PORTFOLIO_INCEPTION_DATE.isoformat()})",
+    )
     parser.add_argument("--tickers", type=str, default=None, help="Lista separada por comas, override del universo (debug)")
     parser.add_argument("--institutions", type=str, default=None, help="Lista separada por comas, override de instituciones 13F (debug)")
     args = parser.parse_args()
