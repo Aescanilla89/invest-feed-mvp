@@ -18,13 +18,9 @@ on:
 jobs:
   run-daily-jobs:
     runs-on: ubuntu-latest
-    # Universo ampliado a ~2600 tickers (antes ~600) tras añadir Russell 2000.
-    # 90 min tampoco bastó (visto en producción): el screener solo ya tarda
-    # ~74 min, y la búsqueda de Form 4 (insiders) en EDGAR para ~2400 tickers
-    # necesita otros ~20 min (estaba casi terminada, no colgada, cuando el
-    # timeout de 90 min la cortó) -- total real ≈100 min. 180 min da margen
-    # amplio y sigue muy por debajo del límite duro de 360 min de Actions.
-    timeout-minutes: 180
+    # Universo: S&P500 + Nasdaq100 (~600 tickers). 90 min da margen amplio
+    # sobre lo visto en producción con este tamaño de universo.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: backend

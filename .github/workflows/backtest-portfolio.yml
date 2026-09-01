@@ -8,7 +8,7 @@ on:
         type: string
         default: "52"
       tickers:
-        description: "Override de tickers separados por coma (vacío = S&P500+Nasdaq100+Russell2000 completo)"
+        description: "Override de tickers separados por coma (vacío = S&P500+Nasdaq100 completo)"
         type: string
         default: ""
       institutions:
@@ -19,10 +19,8 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    # Universo ampliado a ~2600 tickers (antes ~600) tras añadir Russell 2000 --
-    # 350 min deja margen bajo el límite duro de GitHub Actions (360 min) para
-    # runners hospedados por GitHub.
-    timeout-minutes: 350
+    # Universo: S&P500 + Nasdaq100 (~600 tickers).
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: backend

@@ -1,28 +1,24 @@
 """Universo de tickers para el screener.
 
-S&P 500 / Nasdaq 100  : scraping Wikipedia (fuente primaria, siempre actualizado).
-Russell 2000           : holdings JSON del ETF Vanguard VTWO (~2000 small caps US).
-                         Todos son tickers US, compatibles con la fuente de datos Alpaca.
-                         (El CSV de holdings de iShares IWM, usado antes, bloquea IPs de
-                         datacenter con una interstitial en vez de servir el CSV -- pasaba en
-                         el 100% de las corridas de GitHub Actions, ver commit que migró a Vanguard).
-Europa (sin microcaps) : FTSE 100, DAX 40, CAC 40, IBEX 35, FTSE MIB, AEX via Wikipedia.
-                         Tickers en formato yfinance con sufijo de bolsa (.L, .DE, .PA…).
-                         NOTA: Solo funcionan localmente con yfinance; Yahoo bloquea Railway,
-                         por lo que en Railway estos tickers se saltan silenciosamente.
+S&P 500 / Nasdaq 100  : scraping Wikipedia / slickcharts (fuente primaria, siempre actualizado).
+                         Universo US puro, compatible con la fuente de datos Alpaca.
 
 Política de errores:
-  - S&P 500 / Russell 2000 → fallo levanta UniverseScrapeError (abortan el job).
+  - S&P 500 → fallo levanta UniverseScrapeError (aborta el job).
   - Nasdaq 100 → fallo (p.ej. bloqueo anti-bot de slickcharts a IPs de datacenter
     de Railway, ya visto con Yahoo/iShares) cae a `_NASDAQ100_FALLBACK`, una lista
     estática congelada en el último scraping exitoso. El índice rebalancea ~1 vez
     al año, así que quedarse unas semanas desactualizado es preferible a que todo
     el job (y por tanto update_portfolio) se quede sin correr días seguidos.
-  - Índices europeos → fallo loguea warning y continúa con el resto de índices.
 
 Si este scraping rompe, el job debe loguearlo claramente y NO fallar en
 silencio con una lista vacía — mejor abortar (o caer a fallback, para Nasdaq100)
 que procesar con datos incompletos.
+
+NOTA: Russell 2000 y los índices europeos se soportaron en su momento, pero se
+retiraron -- el universo Russell (~2000 tickers extra) disparó el volumen de
+datos históricos guardados y agotó el espacio de la BD (Neon free tier). Ver
+histórico de git si hace falta reintroducir alguno.
 """
 from __future__ import annotations
 
@@ -54,35 +50,6 @@ _NASDAQ100_FALLBACK: list[str] = [
     "STX", "TER", "TMUS", "TRI", "TSLA", "TTWO", "TXN", "VRTX", "WBD", "WDAY",
     "WDC", "WMT", "XEL",
 ]
-# La fuente original (CSV de holdings del ETF iShares IWM) bloquea IPs de
-# datacenter con una interstitial de selección de país/idioma en vez de servir
-# el CSV -- confirmado que ocurre en TODAS las corridas de GitHub Actions, no es
-# un fallo puntual. Vanguard sirve el mismo tipo de dato (holdings del ETF VTWO,
-# que también replica el índice Russell 2000) vía un endpoint JSON público sin
-# ese bloqueo -- usado en su lugar.
-RUSSELL2000_VANGUARD_URL = (
-    "https://investor.vanguard.com/investment-products/etfs/profile/api/vtwo/"
-    "portfolio-holding/stock"
-)
-_VANGUARD_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/125.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json",
-}
-
-# (url, lista de posibles nombres de columna ticker, sufijo yfinance, min tickers esperados)
-_EUROPEAN_INDICES: list[tuple[str, list[str], str, int]] = [
-    ("https://en.wikipedia.org/wiki/FTSE_100_Index", ["EPIC", "Ticker", "Symbol"], ".L", 80),
-    ("https://en.wikipedia.org/wiki/DAX", ["Ticker symbol", "Ticker", "Symbol"], ".DE", 30),
-    ("https://en.wikipedia.org/wiki/CAC_40", ["Ticker", "Symbol", "Code"], ".PA", 30),
-    ("https://en.wikipedia.org/wiki/IBEX_35", ["Ticker", "Symbol", "Code"], ".MC", 25),
-    ("https://en.wikipedia.org/wiki/FTSE_MIB", ["Ticker", "Symbol", "Code"], ".MI", 25),
-    ("https://en.wikipedia.org/wiki/AEX_index", ["Ticker", "Symbol", "Code"], ".AS", 15),
-]
-
 _HEADERS = {"User-Agent": "invest-feed-mvp/0.1 (contacto: escanillaalberto@gmail.com)"}
 
 
@@ -124,120 +91,13 @@ def get_nasdaq100_tickers() -> list[str]:
     return sorted(set(tickers))
 
 
-def get_russell2000_tickers() -> list[str]:
-    """Obtiene los componentes del Russell 2000 desde las holdings del ETF Vanguard VTWO.
-
-    Pide primero 1 fila para leer `size` (nº total de holdings) y luego una sola
-    página con count=size+buffer, ya que el endpoint pagina de 500 en 500 por defecto.
-    """
-    # Una sola llamada con count generoso (el Russell 2000 tiene ~2000 posiciones
-    # por definición del índice) en vez de sondear el tamaño primero y pedir
-    # después -- evita depender de dos peticiones de red seguidas. Se reintenta
-    # una vez porque en GitHub Actions esta respuesta (~1-2 MB de JSON) a veces
-    # supera un timeout corto por lentitud de red del runner, no por bloqueo
-    # (visto en producción: "Read timed out (read timeout=20)").
-    last_exc: Exception | None = None
-    data = None
-    for attempt in range(2):
-        try:
-            resp = requests.get(
-                RUSSELL2000_VANGUARD_URL, headers=_VANGUARD_HEADERS,
-                params={"start": 1, "count": 2500}, timeout=60,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            break
-        except Exception as exc:
-            last_exc = exc
-            logger.warning("Vanguard VTWO: intento %d/2 falló (%s)", attempt + 1, exc)
-    if data is None:
-        raise UniverseScrapeError(f"No se pudo descargar holdings de Vanguard VTWO: {last_exc}") from last_exc
-
-    entities = (data.get("fund") or {}).get("entity") or []
-    if not entities:
-        raise UniverseScrapeError("Vanguard VTWO: respuesta sin holdings ('fund.entity' vacío o ausente).")
-
-    tickers: list[str] = []
-    for row in entities:
-        ticker = (row.get("ticker") or "").strip()
-        if not ticker:
-            continue
-        tickers.append(ticker.replace(".", "-"))
-
-    if len(tickers) < 1500:
-        raise UniverseScrapeError(
-            f"Russell 2000 (Vanguard VTWO) devolvió solo {len(tickers)} tickers, esperado ≥1500. "
-            "Comprueba que el endpoint de holdings de Vanguard sigue siendo accesible."
-        )
-
-    return sorted(set(tickers))
-
-
-def _scrape_european_index(url: str, ticker_cols: list[str], suffix: str, min_tickers: int) -> list[str]:
-    """Descarga una página Wikipedia de un índice europeo y extrae tickers en formato yfinance.
-
-    Prueba cada nombre de columna en ticker_cols hasta encontrar una tabla con al menos
-    min_tickers filas válidas. Añade el sufijo de bolsa si el ticker no lo lleva ya.
-    Devuelve lista vacía (con warning) si no puede obtener datos — nunca propaga la excepción
-    para que un índice roto no aborte la corrida completa.
-    """
-    try:
-        tables = _fetch_tables(url)
-    except Exception as exc:
-        logger.warning("Europa | %s: error al descargar página (%s)", url, exc)
-        return []
-
-    cols_to_try = [c.strip().lower() for c in ticker_cols]
-
-    for table in tables:
-        col_map = {str(c).strip().lower(): c for c in table.columns}
-        for col_lower in cols_to_try:
-            if col_lower not in col_map:
-                continue
-            actual_col = col_map[col_lower]
-            raw = table[actual_col].astype(str).str.strip().str.replace(r"\s+", "", regex=True)
-            candidates = [t for t in raw if t and t != "nan" and not t.startswith("nan")]
-            if len(candidates) < min_tickers:
-                continue
-            # Añadir sufijo de bolsa si el ticker no lo tiene ya
-            result = [t if "." in t else f"{t}{suffix}" for t in candidates]
-            logger.info("Europa | %s: %d tickers (col '%s', sufijo '%s')", url, len(result), actual_col, suffix)
-            return sorted(set(result))
-
-    logger.warning(
-        "Europa | %s: no se encontró columna válida (probadas: %s). "
-        "La página de Wikipedia puede haber cambiado de estructura.",
-        url, ticker_cols,
-    )
-    return []
-
-
-def get_european_tickers() -> dict[str, list[str]]:
-    """Devuelve tickers por índice para los principales mercados europeos (sin microcaps).
-
-    Índices incluidos: FTSE 100, DAX 40, CAC 40, IBEX 35, FTSE MIB, AEX (~290 large/mid caps).
-    Los tickers usan el formato yfinance con sufijo de bolsa ({TICKER}.{SUFFIX}).
-
-    NOTA: Estos tickers solo funcionan con yfinance (entorno local). En Railway con Alpaca,
-    los tickers europeos se saltarán silenciosamente con InsufficientDataError.
-    """
-    index_names = ["ftse100", "dax40", "cac40", "ibex35", "ftsemib", "aex"]
-    result: dict[str, list[str]] = {}
-    for name, (url, cols, suffix, min_t) in zip(index_names, _EUROPEAN_INDICES):
-        tickers = _scrape_european_index(url, cols, suffix, min_t)
-        if tickers:
-            result[name] = tickers
-    return result
-
-
 def get_universe() -> dict[str, list[str]]:
     """Devuelve el universo completo de tickers agrupados por índice de origen.
 
-    Estructura: {"sp500": [...], "nasdaq100": [...], "russell2000": [...],
-                 "ftse100": [...], "dax40": [...], ...}
+    Estructura: {"sp500": [...], "nasdaq100": [...]}
 
-    S&P500 y Nasdaq100 son obligatorios (fallo → UniverseScrapeError).
-    Russell 2000 y Europa fallan gracefully (warning + continúa sin ellos).
+    S&P500 es obligatorio (fallo → UniverseScrapeError). Nasdaq100 cae a la
+    lista estática congelada si el scraping en vivo falla.
     """
     universes: dict[str, list[str]] = {
         "sp500": get_sp500_tickers(),
@@ -250,10 +110,4 @@ def get_universe() -> dict[str, list[str]]:
             exc, len(_NASDAQ100_FALLBACK),
         )
         universes["nasdaq100"] = list(_NASDAQ100_FALLBACK)
-    try:
-        universes["russell2000"] = get_russell2000_tickers()
-        logger.info("Russell 2000: %d tickers cargados", len(universes["russell2000"]))
-    except UniverseScrapeError as exc:
-        logger.warning("Russell 2000 no disponible esta corrida: %s", exc)
-    universes.update(get_european_tickers())
     return universes

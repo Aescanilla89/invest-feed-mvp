@@ -84,18 +84,11 @@ QUARTERS_BACK_INSTITUTIONAL = 8  # ~2 años, cubre semanas antiguas + comparaci�
 
 
 def _reduced_universe() -> dict[str, list[str]]:
-    """S&P 500 + Nasdaq 100 + Russell 2000 -- universo US completo servible por
-    Alpaca (se excluye Europa: esos tickers no tienen datos en Alpaca y solo
-    desperdiciarían tiempo de descarga sin aportar nada al backtest)."""
-    universes = {
+    """S&P 500 + Nasdaq 100 -- universo US servible por Alpaca."""
+    return {
         "sp500": universe.get_sp500_tickers(),
         "nasdaq100": universe.get_nasdaq100_tickers(),
     }
-    try:
-        universes["russell2000"] = universe.get_russell2000_tickers()
-    except universe.UniverseScrapeError:
-        logger.warning("Russell 2000 no disponible para este backtest, se omite")
-    return universes
 
 
 def _available_quarter_as_of(as_of: date) -> date:
