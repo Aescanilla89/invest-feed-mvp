@@ -2,8 +2,11 @@ name: Daily jobs
 
 on:
   schedule:
-    # 06:00 UTC — mismo horario que el antiguo scheduler de Railway
-    - cron: "0 6 * * *"
+    # 4:00 hora de España. GitHub Actions cron no sabe de DST, así que
+    # disparamos en las dos horas UTC posibles (CEST y CET) y el primer
+    # step aborta el run si la hora real en Europe/Madrid no es las 4.
+    - cron: "0 2 * * *"  # 4:00 CEST (verano, UTC+2)
+    - cron: "0 3 * * *"  # 4:00 CET (invierno, UTC+1)
   workflow_dispatch:
     inputs:
       force_institutional:
@@ -31,16 +34,37 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
     steps:
+      - name: Comprobar si son las 4am en España
+        # El cron dispara dos veces al día (CEST y CET) porque GitHub Actions no
+        # ajusta por horario de verano -- este step decide cuál de las dos
+        # corridas es la real y pone should_run=false en la que no toca.
+        id: check_hour
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          hour=$(TZ=Europe/Madrid date +%H)
+          if [ "$hour" = "04" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Son las $hour:00 en Madrid, no las 4am -- se omite esta corrida (la otra entrada del cron es la de la estación actual)."
+          fi
       - uses: actions/checkout@v4
+        if: steps.check_hour.outputs.should_run == 'true'
       - uses: actions/setup-python@v5
+        if: steps.check_hour.outputs.should_run == 'true'
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - if: ${{ github.event.inputs.clear_explanations == 'true' }}
+        if: steps.check_hour.outputs.should_run == 'true'
+      - if: ${{ steps.check_hour.outputs.should_run == 'true' && github.event.inputs.clear_explanations == 'true' }}
         run: python scripts/clear_explanations.py
         env:
           PYTHONPATH: .
       - run: python scripts/run_daily_jobs.py
+        if: steps.check_hour.outputs.should_run == 'true'
         env:
           PYTHONPATH: .
           FORCE_INSTITUTIONAL: ${{ github.event.inputs.force_institutional }}
