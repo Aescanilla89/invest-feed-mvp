@@ -41,6 +41,7 @@ export interface Opportunity {
   canslim: Canslim;
   explanation: string | null;
   last_updated: string;
+  first_detected_date?: string | null;
   signal_type?: SignalType;
   strategies: Partial<Record<StrategyName, StrategyResult>>;
 }

@@ -42,6 +42,11 @@ class OpportunitySchema(BaseModel):
     canslim: CanslimSchema
     explanation: str | None
     last_updated: date
+    # Primera vez que este ticker apareció como oportunidad (MIN(run_date) de
+    # todo su histórico en `opportunities`) -- separa "oportunidades de la
+    # semana" (detectadas hace <7 días) de las que llevan más tiempo pero
+    # siguen cumpliendo el criterio hoy. Ver list_opportunities.
+    first_detected_date: date | None = None
     signal_type: str | None = None  # "weinstein" | "canslim" | "both"
     strategies: dict[str, StrategyResultSchema] = {}
 

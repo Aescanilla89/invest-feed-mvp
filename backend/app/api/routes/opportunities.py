@@ -81,7 +81,9 @@ def _has_strategy_signal(opp: Opportunity, strategy: str) -> bool:
     return bool((raw.get(strategy) or {}).get("passed"))
 
 
-def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -> OpportunitySchema:
+def _to_schema(
+    opp: Opportunity, ticker: Ticker, explanation_text: str | None, first_detected_date: date | None = None,
+) -> OpportunitySchema:
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
     raw_strategies = _parse_strategies(opp)
@@ -105,9 +107,26 @@ def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None) -
         ),
         explanation=explanation_text,
         last_updated=opp.run_date,
+        first_detected_date=first_detected_date or opp.run_date,
         signal_type=_compute_signal_type(opp),
         strategies=_strategies_to_schema(raw_strategies),
     )
+
+
+def _first_detected_dates(db: Session, ticker_ids: set[int]) -> dict[int, date]:
+    """Primera vez que cada ticker apareció como oportunidad (MIN(run_date)
+    de todo su histórico), en UNA sola consulta agregada -- nunca una
+    consulta por ticker dentro de un bucle (ver el mismo fallo, ya
+    arreglado, en /api/portfolio)."""
+    if not ticker_ids:
+        return {}
+    rows = (
+        db.query(Opportunity.ticker_id, func.min(Opportunity.run_date))
+        .filter(Opportunity.ticker_id.in_(ticker_ids))
+        .group_by(Opportunity.ticker_id)
+        .all()
+    )
+    return {tid: first_date for tid, first_date in rows}
 
 
 @router.get("", response_model=list[OpportunitySchema])
@@ -173,8 +192,12 @@ def list_opportunities(
         e.ticker_id: e.text
         for e in db.query(Explanation).filter(Explanation.run_date == run_date).all()
     }
+    first_detected = _first_detected_dates(db, {opp.ticker_id for opp, _ in rows})
 
-    return [_to_schema(opp, ticker, explanations.get(opp.ticker_id)) for opp, ticker in rows]
+    return [
+        _to_schema(opp, ticker, explanations.get(opp.ticker_id), first_detected.get(opp.ticker_id))
+        for opp, ticker in rows
+    ]
 
 
 @router.get("/{symbol}", response_model=OpportunityDetailSchema)

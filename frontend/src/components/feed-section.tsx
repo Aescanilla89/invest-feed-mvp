@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Flame, TrendingUp, Search, Award, DollarSign, Rocket } from "lucide-react";
+import { Clock, Flame, TrendingUp, Search, Award, DollarSign, Rocket } from "lucide-react";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
 import { EmptyState, ErrorState } from "@/components/empty-state";
@@ -80,6 +80,27 @@ interface StrategyData {
   byStrategy: Record<FeedTabKey, Opportunity[]>;
 }
 
+const NEW_THRESHOLD_DAYS = 7;
+
+/** Separa "Destacadas" en oportunidades detectadas esta semana (<7 días
+ * desde `first_detected_date`, o `last_updated` si el backend todavía no la
+ * manda) de las que llevan más tiempo pero siguen cumpliendo el criterio
+ * hoy -- no es lo mismo "acabamos de verlo" que "lleva un mes confirmándose". */
+function splitByDetectionAge(opportunities: Opportunity[]): {
+  thisWeek: Opportunity[];
+  longStanding: Opportunity[];
+} {
+  const now = Date.now();
+  const thisWeek: Opportunity[] = [];
+  const longStanding: Opportunity[] = [];
+  for (const o of opportunities) {
+    const detected = new Date(o.first_detected_date ?? o.last_updated).getTime();
+    const daysSince = (now - detected) / 86_400_000;
+    (daysSince < NEW_THRESHOLD_DAYS ? thisWeek : longStanding).push(o);
+  }
+  return { thisWeek, longStanding };
+}
+
 function CardGrid({ opportunities }: { opportunities: Opportunity[] }) {
   if (opportunities.length === 0) return null;
   return (
@@ -100,18 +121,19 @@ function CardGrid({ opportunities }: { opportunities: Opportunity[] }) {
 
 /** Header "hero" para Destacadas -- deliberadamente distinto del resto: barra
  * de acento a la izquierda, icono en círculo relleno (no solo tintado), y
- * jerarquía tipográfica mayor, para marcarla como la sección principal. */
-function FeaturedHeader({ count }: { count: number }) {
+ * jerarquía tipográfica mayor, para marcarla como la sección principal.
+ * Reutilizado para las dos subsecciones (esta semana / de antes). */
+function FeaturedHeader({
+  icon: Icon, title, sublabel, count,
+}: { icon: React.ElementType; title: string; sublabel: string; count: number }) {
   return (
     <div className="flex items-center gap-3 border-l-2 border-(--color-accent) pl-4">
       <div className="rounded-full bg-(--color-accent) p-2.5 text-accent-foreground">
-        <Flame className="size-4" aria-hidden />
+        <Icon className="size-4" aria-hidden />
       </div>
       <div>
-        <h2 className="font-heading text-lg font-semibold leading-none">Destacadas</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Señales activas · Weinstein + CAN SLIM
-        </p>
+        <h2 className="font-heading text-lg font-semibold leading-none">{title}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{sublabel}</p>
       </div>
       <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
         {count}
@@ -195,8 +217,11 @@ export function FeedSection() {
 
     async function load() {
       try {
+        // limit 20, no 4: con la vista partida en "de la semana" / "de antes"
+        // (ver splitByDetectionAge) hace falta traer suficientes para que las
+        // dos subsecciones tengan contenido, no solo la primera.
         const result = await getOpportunities({
-          limit: 4,
+          limit: 20,
           risk: filters.risk === "todos" ? undefined : filters.risk,
           sector: filters.sector === "todos" ? undefined : filters.sector,
         });
@@ -276,23 +301,49 @@ export function FeedSection() {
 
   return (
     <div className="flex flex-col gap-10">
-      {/* Sección 1: Destacadas (Weinstein + CAN SLIM) */}
+      {/* Sección 1: Destacadas (Weinstein + CAN SLIM), partida en "de la
+       * semana" (detectadas hace <7 días) y "de antes" (llevan más tiempo
+       * pero siguen cumpliendo el criterio hoy). */}
       <section>
         <FilterBar filters={filters} sectors={sectors} onChange={setFilters} />
-        <div className="mt-4">
-          <FeaturedHeader count={top.length} />
-        </div>
-        <div className="mt-4">
-          {top.length === 0 ? (
-            <EmptyState
-              icon={Flame}
-              message="Sin señales Weinstein/CAN SLIM activas hoy."
-              detail="Vuelve tras el próximo cierre de sesión."
-            />
-          ) : (
-            <CardGrid opportunities={top} />
-          )}
-        </div>
+        {top.length === 0 ? (
+          <div className="mt-4">
+            <FeaturedHeader icon={Flame} title="Destacadas" sublabel="Señales activas · Weinstein + CAN SLIM" count={0} />
+            <div className="mt-4">
+              <EmptyState
+                icon={Flame}
+                message="Sin señales Weinstein/CAN SLIM activas hoy."
+                detail="Vuelve tras el próximo cierre de sesión."
+              />
+            </div>
+          </div>
+        ) : (
+          (() => {
+            const { thisWeek, longStanding } = splitByDetectionAge(top);
+            return (
+              <div className="mt-4 flex flex-col gap-10">
+                <div>
+                  <FeaturedHeader icon={Flame} title="Oportunidades de la semana" sublabel="Detectadas en los últimos 7 días" count={thisWeek.length} />
+                  <div className="mt-4">
+                    {thisWeek.length === 0 ? (
+                      <EmptyState icon={Flame} message="Nada nuevo detectado esta semana." />
+                    ) : (
+                      <CardGrid opportunities={thisWeek} />
+                    )}
+                  </div>
+                </div>
+                {longStanding.length > 0 && (
+                  <div>
+                    <FeaturedHeader icon={Clock} title="Siguen siendo oportunidad" sublabel="Detectadas hace más de 7 días, todavía activas" count={longStanding.length} />
+                    <div className="mt-4">
+                      <CardGrid opportunities={longStanding} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()
+        )}
       </section>
 
       {/* Sección 2: Estrategias -- vista filtrable en vez de 4 bloques apilados */}
