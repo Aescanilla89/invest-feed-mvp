@@ -68,22 +68,22 @@ function buildTradeStory(p: PortfolioPosition): string {
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
-  let detail;
-  try {
-    detail = await getOpportunityDetail(ticker.toUpperCase());
-  } catch {
-    notFound();
-  }
+  // Las dos peticiones son independientes (ninguna depende del resultado de
+  // la otra) -- en paralelo en vez de en serie, la página tarda lo que
+  // tarde la más lenta de las dos, no la suma de ambas.
+  const [detail, portfolio] = await Promise.all([
+    getOpportunityDetail(ticker.toUpperCase()).catch(() => null),
+    getPortfolio().catch(() => null),
+  ]);
+
+  if (!detail) notFound();
 
   const { name, sector, risk_bucket, weinstein, canslim, explanation, last_updated, price_history, strategies } =
     detail;
 
   // Posiciones reales de la cartera pública para este ticker (puede haber
   // varias si el mismo ticker entró y salió más de una vez) -- se pintan
-  // como marcadores de entrada/salida sobre el mismo gráfico de precio, y
-  // no hace falta manejar el error de conexión aquí porque ya se resolvió
-  // (con notFound) al pedir el detalle de la oportunidad arriba.
-  const portfolio = await getPortfolio().catch(() => null);
+  // como marcadores de entrada/salida sobre el mismo gráfico de precio.
   const tickerPositions = (portfolio?.positions ?? []).filter((p) => p.ticker === detail.ticker);
 
   // Si el ticker tiene una posición abierta ahora mismo, sigue siendo una

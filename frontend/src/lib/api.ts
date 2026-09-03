@@ -68,7 +68,12 @@ export interface OpportunityFilters {
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
+  // Los datos solo cambian una vez al día (cron de las 4am) -- cache: "no-store"
+  // forzaba ida y vuelta al backend (Render free tier, compute limitado) en
+  // CADA carga de página, para todos los visitantes. Con revalidate: 60,
+  // Vercel sirve la respuesta cacheada durante ese minuto y solo un visitante
+  // paga el coste de refrescarla, en vez de todos.
+  const res = await fetch(`${API_BASE_URL}${path}`, { next: { revalidate: 60 } });
   if (!res.ok) {
     throw new Error(`Error ${res.status} consultando ${path}`);
   }
