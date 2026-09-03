@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Radar, CalendarClock } from "lucide-react";
 import { CatalystCard } from "@/components/catalyst-card";
+import { FearGreedGauge } from "@/components/fear-greed-gauge";
 import { EmptyState, ErrorState } from "@/components/empty-state";
-import { getCatalysts, type Catalyst } from "@/lib/api";
+import { getCatalysts, getFearGreed, type Catalyst, type FearGreed } from "@/lib/api";
 
 const container = {
   hidden: { opacity: 0 },
@@ -34,15 +35,40 @@ function CatalystCardSkeleton() {
   );
 }
 
+function FearGreedSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:gap-6">
+      <div className="mx-auto h-[130px] w-full max-w-[240px] animate-pulse rounded-full bg-muted sm:mx-0" />
+      <div className="flex flex-1 flex-col gap-2">
+        <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-full animate-pulse rounded bg-muted" />
+        <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
+      </div>
+    </div>
+  );
+}
+
 export function CatalystsSection() {
   const [catalysts, setCatalysts] = useState<Catalyst[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
+  const [fearGreedFailed, setFearGreedFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     getCatalysts(7)
       .then((data) => { if (!cancelled) setCatalysts(data); })
       .catch(() => { if (!cancelled) setError("No se pudieron cargar los catalizadores."); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getFearGreed()
+      .then((data) => { if (!cancelled) setFearGreed(data); })
+      // El índice es un extra, no crítico -- si CNN falla, se oculta el
+      // widget en silencio en vez de romper toda la sección de catalizadores.
+      .catch(() => { if (!cancelled) setFearGreedFailed(true); });
     return () => { cancelled = true; };
   }, []);
 
@@ -65,6 +91,8 @@ export function CatalystsSection() {
       <p className="-mt-3 border-l-2 border-(--color-catalyst-earnings)/40 pl-4 text-xs text-muted-foreground">
         Earnings · Insider Buys · cruzados con Weinstein + CAN SLIM
       </p>
+
+      {!fearGreedFailed && (fearGreed ? <FearGreedGauge data={fearGreed} /> : <FearGreedSkeleton />)}
 
       {/* Contenido */}
       {error ? (

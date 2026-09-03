@@ -9,7 +9,7 @@
  * producción real, este fichero no se usa -- lib/api.ts solo lo importa
  * si NEXT_PUBLIC_DEMO_MODE está activo.
  */
-import type { Catalyst, Opportunity, OpportunityDetail, Portfolio, PortfolioPosition } from "./api";
+import type { Catalyst, FearGreed, Opportunity, OpportunityDetail, Portfolio, PortfolioPosition } from "./api";
 
 export const DEMO_OPPORTUNITIES: Opportunity[] = [
   {
@@ -414,4 +414,19 @@ export const DEMO_PORTFOLIO: Portfolio = {
     worst: DEMO_PORTFOLIO_POSITIONS.reduce((a, b) => (b.return_pct < a.return_pct ? b : a)),
   },
   positions: DEMO_PORTFOLIO_POSITIONS,
+};
+
+export const DEMO_FEAR_GREED: FearGreed = {
+  score: 36.3,
+  rating: "fear",
+  timestamp: "2026-09-03T13:47:38+00:00",
+  previous_close: 33.2,
+  previous_1_week: 55.4,
+  previous_1_month: 50.7,
+  previous_1_year: 61.3,
+  history: Array.from({ length: 30 }, (_, i) => ({
+    date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+    score: 45 + Math.round(Math.sin(i / 4) * 20),
+    rating: "neutral",
+  })),
 };

@@ -139,6 +139,33 @@ export async function getCatalysts(days = 7): Promise<Catalyst[]> {
   return fetchJson<Catalyst[]>(`/catalysts?days=${days}`);
 }
 
+export type FearGreedRating = "extreme fear" | "fear" | "neutral" | "greed" | "extreme greed";
+
+export interface FearGreedPoint {
+  date: string;
+  score: number;
+  rating: string;
+}
+
+export interface FearGreed {
+  score: number;
+  rating: FearGreedRating;
+  timestamp: string;
+  previous_close: number;
+  previous_1_week: number;
+  previous_1_month: number;
+  previous_1_year: number;
+  history: FearGreedPoint[];
+}
+
+export async function getFearGreed(): Promise<FearGreed> {
+  if (DEMO_MODE) {
+    const { DEMO_FEAR_GREED } = await import("./demo-data");
+    return DEMO_FEAR_GREED;
+  }
+  return fetchJson<FearGreed>("/catalysts/fear-greed");
+}
+
 export type PortfolioMethod = StrategyName | "early_stage2";
 export type PortfolioStatus = "open" | "closed";
 
