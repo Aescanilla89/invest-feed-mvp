@@ -153,20 +153,41 @@ def _get_universe_returns(db: Session, lookback_weeks: int = 52) -> list[float]:
 
 
 def _upsert_price_snapshots(db: Session, ticker: Ticker, weekly: "pd.DataFrame") -> int:
-    """Inserta las filas de OHLCV semanal que no existan todavía. No sobreescribe
-    datos históricos ya persistidos (los precios del pasado no cambian)."""
+    """Inserta las filas de OHLCV semanal que no existan todavía -- EXCEPTO la
+    última fila del DataFrame (la semana en curso), que se ACTUALIZA en cada
+    corrida en vez de solo insertarse una vez.
+
+    `weekly` viene de un resample que SIEMPRE incluye la semana todavía
+    incompleta con los días transcurridos hasta hoy (ver
+    AlpacaDataSource.get_weekly_prices) -- si esa fila solo se insertara la
+    primera vez que aparece (p.ej. el lunes, con un solo día de datos),
+    quedaría congelada con el precio de ese lunes durante el resto de la
+    semana, sin reflejar nunca una caída real de martes a jueves. El stop-loss
+    y la ruptura de tendencia (que leen exclusivamente PriceSnapshot, ver
+    update_portfolio._trailing_stop_signal/_fundamentals_exit_signal) no verían
+    esa caída hasta la semana SIGUIENTE -- un desplome de miércoles quedaría
+    invisible varios días, no el "día siguiente" que sugiere el resto del
+    sistema anti-look-ahead.
+
+    Las semanas ANTERIORES (ya cerradas, no son la última fila del batch)
+    nunca se tocan -- esas sí son historia inmutable, el precio del pasado no
+    cambia. En cuanto una semana deja de ser "la última" (llega la semana
+    siguiente), se congela para siempre con su cierre final real."""
     if weekly.empty:
         return 0
 
-    existing_dates = {
-        row[0]
-        for row in db.query(PriceSnapshot.date).filter(PriceSnapshot.ticker_id == ticker.id).all()
+    existing_by_date = {
+        row.date: row
+        for row in db.query(PriceSnapshot).filter(PriceSnapshot.ticker_id == ticker.id).all()
     }
+    current_week_date = weekly.index[-1].date() if hasattr(weekly.index[-1], "date") else weekly.index[-1]
 
     new_rows = []
+    updated = 0
     for dt, row in weekly.iterrows():
         snapshot_date = dt.date() if hasattr(dt, "date") else dt
-        if snapshot_date not in existing_dates:
+        existing = existing_by_date.get(snapshot_date)
+        if existing is None:
             new_rows.append(
                 PriceSnapshot(
                     ticker_id=ticker.id,
@@ -178,11 +199,18 @@ def _upsert_price_snapshots(db: Session, ticker: Ticker, weekly: "pd.DataFrame")
                     volume=float(row["Volume"]),
                 )
             )
+        elif snapshot_date == current_week_date:
+            existing.open = float(row["Open"])
+            existing.high = float(row["High"])
+            existing.low = float(row["Low"])
+            existing.close = float(row["Close"])
+            existing.volume = float(row["Volume"])
+            updated += 1
 
     if new_rows:
         db.add_all(new_rows)
 
-    return len(new_rows)
+    return len(new_rows) + updated
 
 
 def _update_latest_daily_price(ticker: Ticker, weekly: "pd.DataFrame") -> None:
