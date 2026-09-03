@@ -23,8 +23,12 @@ punto intermedio):
     y no estar demasiado extendido sobre su MA10w (ver
     _minervini_overextended) -- el Trend Template en sí no evalúa volumen ni
     distancia al pivote.
-  - lynch / dividendos: passed == True (son pasa/no-pasa único; no hay
-    umbral más estricto posible que ese).
+  - lynch: passed == True, y además la acción no puede estar en Stage 1/4
+    de Weinstein (ver _LYNCH_BLOCKED_ENTRY_STAGES) -- GARP es valoración
+    pura (PEG), sin filtro de tendencia propio, así que sin este gate deja
+    entrar "gangas" en caída libre.
+  - dividendos: passed == True (pasa/no-pasa único; no hay umbral más
+    estricto posible que ese).
 
 La señal solo se confirma con el cierre de `signal_date`, así que la
 compra se ejecuta a la apertura del día hábil siguiente (`entry_date`,
@@ -113,6 +117,19 @@ _EARLY_STAGE2 = "early_stage2"
 _MOMENTUM_METHODS = (_EARLY_STAGE2, "minervini")
 _EARLY_STAGE2_MAX_WEEKS = 6
 _WEINSTEIN_MAX_WEEKS = 8  # mismo umbral que _compute_signal_type en opportunities.py
+
+# Lynch (GARP) es puramente valoración -- PEG a partir de precio/EPS, sin
+# ningún filtro de tendencia (a diferencia de minervini/early_stage2, que
+# exigen Stage 2 confirmado). Eso deja entrar "gangas" que están en caída
+# libre, justo lo que Lynch llama evitar en la práctica (no confundir barato
+# con "cuchillo cayendo"): en el histórico de la cartera, los peores picks de
+# lynch (EIX -17.6%, CCL -14.5%, COIN -14.4%, todos con el S&P plano o
+# subiendo en la misma ventana) entraron con la acción ya en Stage 1/4. Se
+# bloquea la entrada en esos dos stages -- simétrico con _exit_signal, que ya
+# sale de CUALQUIER método en cuanto confirma 2 semanas en Stage 1/4; no
+# tiene sentido dejar entrar lo que la propia lógica de salida sacaría poco
+# después.
+_LYNCH_BLOCKED_ENTRY_STAGES = (1, 4)
 
 # Semanas de "enfriamiento" tras un stop-loss antes de permitir que el mismo
 # ticker vuelva a entrar (por cualquier método). Sin esto, un ticker que
@@ -241,6 +258,8 @@ def _is_exceptional(opp: Opportunity, method: str) -> bool:
         return result.get("score") == 100 and opp.weinstein_relative_volume >= _MINERVINI_MIN_RELATIVE_VOLUME
     if method == "berkshire":
         return result.get("score") == 100
+    if method == "lynch":
+        return result.get("passed") is True and opp.weinstein_stage not in _LYNCH_BLOCKED_ENTRY_STAGES
     return result.get("passed") is True
 
 

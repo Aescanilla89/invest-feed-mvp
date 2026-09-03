@@ -61,6 +61,24 @@ def test_lynch_and_dividendos_use_plain_passed():
     assert _is_exceptional(failing, "lynch") is False
 
 
+def test_lynch_blocks_entry_in_stage_1_or_4():
+    # Lynch (GARP) es valoración pura -- PEG a partir de precio/EPS, sin
+    # filtro de tendencia propio. Sin este gate deja entrar "gangas" en
+    # caída libre (Stage 1/4), justo el value trap que Lynch evita en la
+    # práctica. dividendos NO lleva este gate (sigue siendo passed simple).
+    falling = _opp(weinstein_stage=4, strategies={"lynch": {"passed": True, "score": 55}})
+    basing = _opp(weinstein_stage=1, strategies={"lynch": {"passed": True, "score": 55}})
+    uptrend = _opp(weinstein_stage=2, strategies={"lynch": {"passed": True, "score": 55}})
+    decelerating = _opp(weinstein_stage=3, strategies={"lynch": {"passed": True, "score": 55}})
+    assert _is_exceptional(falling, "lynch") is False
+    assert _is_exceptional(basing, "lynch") is False
+    assert _is_exceptional(uptrend, "lynch") is True
+    assert _is_exceptional(decelerating, "lynch") is True
+
+    same_stage_dividendos = _opp(weinstein_stage=4, strategies={"dividendos": {"passed": True, "score": 55}})
+    assert _is_exceptional(same_stage_dividendos, "dividendos") is True
+
+
 def test_early_stage2_is_pure_weinstein_no_canslim_required():
     # Método puramente Weinstein -- exigir CAN SLIM completo además (versión
     # anterior) era una intersección tan rara que nunca disparó en 52
