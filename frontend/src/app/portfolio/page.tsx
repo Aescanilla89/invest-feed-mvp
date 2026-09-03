@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Award, DollarSign, Rocket, Search, TrendingDown, TrendingUp, Trophy } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { ArrowLeft, Award, DollarSign, Rocket, Search, TrendingUp, Trophy } from "lucide-react";
 import { EmptyState, ErrorState } from "@/components/empty-state";
 import { getPortfolio } from "@/lib/api";
 import type { PortfolioMethod, PortfolioPosition } from "@/lib/api";
@@ -46,16 +45,6 @@ function curateClosedPositions(closed: PortfolioPosition[]): PortfolioPosition[]
     .filter((p) => p.return_pct > 0)
     .sort((a, b) => b.return_pct - a.return_pct)
     .slice(0, MAX_TOP_TRADES);
-}
-
-function StatCard({ label, value, sublabel }: { label: string; value: React.ReactNode; sublabel?: string }) {
-  return (
-    <Card className="px-4 py-3.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 font-heading text-2xl font-semibold leading-none">{value}</p>
-      {sublabel && <p className="mt-1 text-[11px] text-muted-foreground/80">{sublabel}</p>}
-    </Card>
-  );
 }
 
 function PositionRow({ position }: { position: PortfolioPosition }) {
@@ -126,7 +115,7 @@ export default async function PortfolioPage() {
     );
   }
 
-  const { stats, positions } = portfolio;
+  const { positions } = portfolio;
   const open = positions.filter((p) => p.status === "open");
   const closed = curateClosedPositions(positions.filter((p) => p.status === "closed"));
 
@@ -135,20 +124,6 @@ export default async function PortfolioPage() {
       <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <ArrowLeft className="size-4" aria-hidden /> Volver al feed
       </Link>
-
-      <div className="mt-6 flex items-center gap-3 border-l-2 border-(--color-accent) pl-4">
-        <div className="rounded-full bg-(--color-accent) p-2.5 text-accent-foreground">
-          <Trophy className="size-4" aria-hidden />
-        </div>
-        <div>
-          <h1 className="font-heading text-xl font-semibold leading-none">Cartera Pública</h1>
-          <p className="mt-1 max-w-lg text-xs text-muted-foreground">
-            El track record real, en abierto: la oportunidad excepcional de cada método entra sola
-            cuando lo dispara el screener, y sale sola cuando Weinstein confirma que la tendencia
-            se rompió. Sin retoques a posteriori.
-          </p>
-        </div>
-      </div>
 
       {positions.length === 0 ? (
         <div className="mt-8">
@@ -160,32 +135,7 @@ export default async function PortfolioPage() {
         </div>
       ) : (
         <>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <StatCard label="Posiciones" value={stats.total_positions} sublabel={`${stats.open_positions} abiertas · ${stats.closed_positions} cerradas`} />
-            <StatCard
-              label="Rentabilidad YTD"
-              value={stats.ytd_return_pct !== null ? <ReturnValue pct={stats.ytd_return_pct} /> : "—"}
-            />
-            <StatCard
-              label="Mejor / peor pick"
-              value={
-                <span className="flex items-center gap-2 text-base">
-                  {stats.best && (
-                    <span className="inline-flex items-center gap-1 text-(--color-stage-advance)">
-                      <TrendingUp className="size-3.5" aria-hidden /> {stats.best.ticker}
-                    </span>
-                  )}
-                  {stats.worst && (
-                    <span className="inline-flex items-center gap-1 text-(--color-risk-high)">
-                      <TrendingDown className="size-3.5" aria-hidden /> {stats.worst.ticker}
-                    </span>
-                  )}
-                </span>
-              }
-            />
-          </div>
-
-          <div className="mt-8 flex flex-col gap-3">
+          <div className="mt-6 flex flex-col gap-3">
             <h2 className="text-sm font-semibold text-foreground">Abiertas ({open.length})</h2>
             {open.length === 0 ? (
               <p className="text-sm text-muted-foreground">Sin posiciones abiertas ahora mismo.</p>
