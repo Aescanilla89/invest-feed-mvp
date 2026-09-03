@@ -9,10 +9,17 @@ import {
 } from "lightweight-charts";
 import type { PriceBar } from "@/lib/api";
 
+export interface ChartPosition {
+  entry_date: string;
+  exit_date: string | null;
+  status: "open" | "closed";
+}
+
 interface WeinsteinChartProps {
   bars: PriceBar[];
   weeksInStage: number;
   isTransition: boolean;
+  positions?: ChartPosition[];
 }
 
 function computeMA30(bars: PriceBar[]): { time: string; value: number }[] {
@@ -25,7 +32,7 @@ function computeMA30(bars: PriceBar[]): { time: string; value: number }[] {
   return result;
 }
 
-export function WeinsteinChart({ bars, weeksInStage, isTransition }: WeinsteinChartProps) {
+export function WeinsteinChart({ bars, weeksInStage, isTransition, positions = [] }: WeinsteinChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -105,21 +112,47 @@ export function WeinsteinChart({ bars, weeksInStage, isTransition }: WeinsteinCh
       }))
     );
 
-    // Marcador Stage 1→2
+    // Marcadores: transición Stage 1→2 (Weinstein) + entradas/salidas reales
+    // de la cartera pública para este ticker, todos en un único setMarkers
+    // (llamadas sucesivas se pisan entre sí, no se acumulan).
+    const markers: Parameters<typeof candleSeries.setMarkers>[0] = [];
+
     if (isTransition && weeksInStage >= 1 && weeksInStage <= bars.length) {
       const idx = bars.length - weeksInStage;
       const markerBar = bars[idx];
       if (markerBar) {
-        candleSeries.setMarkers([
-          {
-            time: markerBar.date,
-            position: "belowBar",
-            color: "#22c55e",
-            shape: "arrowUp",
-            text: "Stage 1→2",
-          },
-        ]);
+        markers.push({
+          time: markerBar.date,
+          position: "belowBar",
+          color: "#22c55e",
+          shape: "arrowUp",
+          text: "Stage 1→2",
+        });
       }
+    }
+
+    for (const pos of positions) {
+      markers.push({
+        time: pos.entry_date,
+        position: "belowBar",
+        color: "#3b82f6",
+        shape: "arrowUp",
+        text: "Entrada",
+      });
+      if (pos.exit_date) {
+        markers.push({
+          time: pos.exit_date,
+          position: "aboveBar",
+          color: pos.status === "closed" ? "#ef4444" : "#94a3b8",
+          shape: "arrowDown",
+          text: "Salida",
+        });
+      }
+    }
+
+    if (markers.length > 0) {
+      markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+      candleSeries.setMarkers(markers);
     }
 
     chart.timeScale().fitContent();
@@ -133,7 +166,7 @@ export function WeinsteinChart({ bars, weeksInStage, isTransition }: WeinsteinCh
       ro.disconnect();
       chart.remove();
     };
-  }, [bars, weeksInStage, isTransition]);
+  }, [bars, weeksInStage, isTransition, positions]);
 
   if (bars.length < 2) {
     return (

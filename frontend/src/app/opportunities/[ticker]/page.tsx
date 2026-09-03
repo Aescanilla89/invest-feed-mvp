@@ -10,7 +10,7 @@ import { WeinsteinCycleDiagram } from "@/components/weinstein-cycle-diagram";
 import { ExplanationBullets } from "@/components/explanation-bullets";
 import { STRATEGY_META } from "@/components/strategy-badges";
 import { TimeHorizonBadge } from "@/components/time-horizon-badge";
-import { getOpportunityDetail } from "@/lib/api";
+import { getOpportunityDetail, getPortfolio } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
@@ -25,6 +25,14 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
 
   const { name, sector, risk_bucket, weinstein, canslim, explanation, last_updated, price_history, strategies } =
     detail;
+
+  // Posiciones reales de la cartera pública para este ticker (puede haber
+  // varias si el mismo ticker entró y salió más de una vez) -- se pintan
+  // como marcadores de entrada/salida sobre el mismo gráfico de precio, y
+  // no hace falta manejar el error de conexión aquí porque ya se resolvió
+  // (con notFound) al pedir el detalle de la oportunidad arriba.
+  const portfolio = await getPortfolio().catch(() => null);
+  const tickerPositions = (portfolio?.positions ?? []).filter((p) => p.ticker === detail.ticker);
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
@@ -90,8 +98,28 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
             bars={price_history}
             weeksInStage={weinstein.weeks_in_stage}
             isTransition={weinstein.is_transition}
+            positions={tickerPositions}
           />
         </div>
+        {tickerPositions.length > 0 && (
+          <ul className="mt-3 flex flex-col gap-1.5">
+            {tickerPositions.map((p) => (
+              <li key={`${p.entry_date}-${p.method}`} className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-muted-foreground">
+                <span className="font-medium text-(--color-stage-advance)">Entrada {p.entry_date}</span>
+                <span>(${p.entry_price.toFixed(2)})</span>
+                {p.exit_date ? (
+                  <>
+                    <span>→</span>
+                    <span className="font-medium text-(--color-risk-high)">Salida {p.exit_date}</span>
+                    {p.exit_reason && <span>({p.exit_reason})</span>}
+                  </>
+                ) : (
+                  <span className="italic">— posición abierta</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="mt-6 border-t border-border/60 pt-5">
           <h3 className="text-sm font-semibold text-muted-foreground">Ciclo de Weinstein</h3>
           <div className="mt-4">
