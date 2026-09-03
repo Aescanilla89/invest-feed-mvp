@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Award, DollarSign, Rocket, Search, TrendingUp, Trophy } from "lucide-react";
+import { ArrowLeft, Award, DollarSign, Rocket, Search, TrendingUp, Trophy, Zap } from "lucide-react";
 import { EmptyState, ErrorState } from "@/components/empty-state";
 import { getPortfolio } from "@/lib/api";
 import type { PortfolioMethod, PortfolioPosition } from "@/lib/api";
@@ -11,6 +11,7 @@ const METHOD_META: Record<PortfolioMethod, { label: string; icon: React.ElementT
   lynch: { label: "Lynch GARP", icon: Search, color: "text-(--color-strategy-lynch)" },
   berkshire: { label: "Berkshire Quality", icon: Award, color: "text-(--color-strategy-berkshire)" },
   dividendos: { label: "Dividendos", icon: DollarSign, color: "text-(--color-strategy-dividendos)" },
+  mean_reversion: { label: "Reversión a la Media", icon: Zap, color: "text-(--color-strategy-mean-reversion)" },
 };
 
 function ReturnValue({ pct }: { pct: number }) {

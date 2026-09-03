@@ -15,6 +15,11 @@ from app.models.schemas import PortfolioPositionSchema, PortfolioSchema, Portfol
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 _EARLY_STAGE2 = "early_stage2"
+_MEAN_REVERSION = "mean_reversion"
+# early_stage2 y mean_reversion se explican con el narrador AI (ver
+# update_portfolio._ensure_explanation) -- ninguno de los dos tiene un
+# "details" factual propio en Opportunity.strategies.
+_AI_EXPLAINED_METHODS = (_EARLY_STAGE2, _MEAN_REVERSION)
 
 # Position sizing por volatilidad: cada posición pesa según el inverso de su
 # ATR%(14 semanas) en el momento de la entrada (más volátil = menos peso,
@@ -213,7 +218,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         return_pct = (current_price / pos.entry_price - 1) * 100
         spy_return_pct = (spy_price_now / pos.entry_spy_price - 1) * 100
         signal_key = (pos.ticker_id, pos.signal_date or pos.entry_date)
-        if pos.method == _EARLY_STAGE2:
+        if pos.method in _AI_EXPLAINED_METHODS:
             explanation = explanations.get(signal_key)
         else:
             opp = opportunities.get(signal_key)

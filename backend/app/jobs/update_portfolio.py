@@ -29,6 +29,14 @@ punto intermedio):
     entrar "gangas" en caída libre.
   - dividendos: passed == True (pasa/no-pasa único; no hay umbral más
     estricto posible que ese).
+  - mean_reversion: señal CAN SLIM completa (signal_type "canslim" o "both")
+    + RSI semanal < 30 (sobrevendido) + Fear & Greed Index de CNN en
+    "extreme fear" en el momento de la señal (ver
+    app/screener/fear_greed.py, _fear_greed_rating_on). Los tres a la vez:
+    calidad real, caída real del propio título, y pánico real del mercado
+    general -- comprar cuando el resto vende, apostando a que una empresa
+    que ya cumple CAN SLIM revierte a la media. Sin dato de Fear & Greed
+    (CNN caído) no abre nada ese día, nunca asume el régimen.
 
 La señal solo se confirma con el cierre de `signal_date`, así que la
 compra se ejecuta a la apertura del día hábil siguiente (`entry_date`,
@@ -104,12 +112,29 @@ from app.core.db import SessionLocal, init_db
 from app.jobs.run_screener import BENCHMARK_SYMBOL
 from app.models.orm import Opportunity, PortfolioPosition, PriceSnapshot, Ticker
 from app.screener.canslim import CriterionResult
+from app.screener.fear_greed import get_fear_greed_index
 from app.screener.weinstein import InsufficientDataError, WeinsteinResult, analyze
 
 logger = logging.getLogger("update_portfolio")
 
 _STRATEGY_METHODS = ("minervini", "lynch", "berkshire", "dividendos")
 _EARLY_STAGE2 = "early_stage2"
+
+# Método "pícaro": compra calidad (CAN SLIM) cuando el mercado general entra
+# en pánico (Fear & Greed Index en "extreme fear") Y el propio título está
+# sobrevendido (RSI<30) -- no basta con que el mercado tenga miedo, hace
+# falta que ESE título en concreto haya caído, o si no es solo comprar
+# calidad porque sí, no una reversión real. La tesis es la contraria a
+# early_stage2/minervini (que persiguen fuerza, no debilidad): mientras el
+# resto vende con pánico, esto entra a propósito en la caída apostando a que
+# una empresa que ya cumple CAN SLIM revierte a la media. Igual que lynch/
+# berkshire, no depende del régimen de mercado (Stage 2 del S&P) -- de
+# hecho lo contrario, esta tesis solo tiene sentido cuando el mercado ESTÁ
+# revuelto, así que bloquear por régimen sería contradecir la propia lógica
+# del método (ver _market_regime_ok más abajo, que ya excluye a
+# lynch/berkshire/dividendos del filtro por la misma razón).
+_MEAN_REVERSION = "mean_reversion"
+_MEAN_REVERSION_RSI_MAX = 30.0
 # Stop de momentum (MA30, ver _exit_signal) vs stop de tesis larga (MA40,
 # ver _fundamentals_exit_signal) -- early_stage2/minervini son señales de
 # rotura de corto plazo, lynch/berkshire/dividendos son tesis de calidad/
@@ -239,8 +264,18 @@ def _strategy_result(opp: Opportunity, method: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _is_exceptional(opp: Opportunity, method: str) -> bool:
+def _is_exceptional(opp: Opportunity, method: str, fear_greed_rating: str | None = None) -> bool:
     """Umbral "excepcional" por método -- ver docstring del módulo."""
+    if method == _MEAN_REVERSION:
+        # Sin dato de Fear & Greed (CNN caído, ver run()) no se abre nada
+        # este método hoy -- fail-safe, nunca asumir "está en pánico" sin
+        # confirmarlo. Tampoco basta con CAN SLIM + pánico general: hace
+        # falta que ESE título esté sobrevendido (RSI<30), o si no es solo
+        # comprar calidad sin que haya una caída real que revertir.
+        if fear_greed_rating != "extreme fear":
+            return False
+        is_canslim = _compute_signal_type(opp) in ("canslim", "both")
+        return is_canslim and opp.weinstein_rsi < _MEAN_REVERSION_RSI_MAX
     if method == _EARLY_STAGE2:
         # Método puramente Weinstein -- exigir además CAN SLIM completo (como
         # antes, ver commit que introdujo signal_type=="both") mezclaba dos
@@ -386,7 +421,9 @@ def _fundamentals_exit_signal(db: Session, ticker_id: int, as_of: date) -> tuple
 _MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 3
 
 
-def _pick_all_for_method(opportunities: list[Opportunity], method: str) -> list[Opportunity]:
+def _pick_all_for_method(
+    opportunities: list[Opportunity], method: str, fear_greed_rating: str | None = None,
+) -> list[Opportunity]:
     """Los mejores hasta `_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY` candidatos que
     superan el umbral "excepcional" del método ese día (ver _is_exceptional)
     -- antes solo se abría el mejor (top-1) por método/día, un tope
@@ -401,9 +438,13 @@ def _pick_all_for_method(opportunities: list[Opportunity], method: str) -> list[
     límite de 1 original, sin la explosión sin tope. El resto de guardas
     (ticker ya abierto, cooldown, extensión/volumen de minervini, régimen de
     mercado) se siguen aplicando individualmente por candidato en run()."""
-    candidates = [o for o in opportunities if _is_exceptional(o, method)]
+    candidates = [o for o in opportunities if _is_exceptional(o, method, fear_greed_rating)]
     if method == _EARLY_STAGE2:
         candidates.sort(key=lambda o: (o.weeks_in_stage, -o.combined_score))
+    elif method == _MEAN_REVERSION:
+        # Más sobrevendido primero (RSI más bajo) -- es la señal de "cuánto
+        # ha caído", el propio corazón de la tesis de reversión.
+        candidates.sort(key=lambda o: o.weinstein_rsi)
     else:
         candidates.sort(key=lambda o: -(_strategy_result(o, method) or {}).get("score", 0))
     return candidates[:_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY]
@@ -531,6 +572,17 @@ def _ensure_explanation(db: Session, explainer: ClaudeExplainer | None, opp: Opp
     db.commit()
 
 
+def _fear_greed_rating_on(history: dict[date, str], target: date) -> str | None:
+    """Rating de Fear & Greed vigente en `target` -- el de esa fecha exacta
+    si está en `history`, o si no el del día disponible más reciente ANTES
+    de esa fecha (nunca uno posterior, para no usar sentimiento "futuro" en
+    el backtest). None si no hay ningún dato en o antes de `target`."""
+    if target in history:
+        return history[target]
+    candidates = [d for d in history if d < target]
+    return history[max(candidates)] if candidates else None
+
+
 def _prior_run_date(db: Session, before: date) -> date | None:
     return (
         db.query(Opportunity.run_date)
@@ -541,7 +593,12 @@ def _prior_run_date(db: Session, before: date) -> date | None:
     )
 
 
-def run(run_date: date | None = None) -> dict:
+def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None = None) -> dict:
+    """`fear_greed_history`: {fecha: rating} ya resuelto, para el backtest
+    (que llama a run() una vez por semana histórica y necesita el Fear &
+    Greed DE ESA fecha, no el de hoy -- se pasa una sola vez desde fuera en
+    vez de pedirlo a CNN en cada llamada). Si es None (uso normal, una
+    corrida real al día), se pide el dato en vivo aquí mismo."""
     init_db()
     db = SessionLocal()
     try:
@@ -633,10 +690,20 @@ def run(run_date: date | None = None) -> dict:
                 logger.warning("Generación de explicaciones desactivada: %s", exc)
                 explainer = None
 
-            for method in (_EARLY_STAGE2, *_STRATEGY_METHODS):
+            if fear_greed_history is not None:
+                fear_greed_rating = _fear_greed_rating_on(fear_greed_history, signal_date)
+            else:
+                try:
+                    fear_greed_rating = get_fear_greed_index(history_days=1).rating
+                except Exception:
+                    logger.warning("No se pudo obtener el Fear & Greed Index -- mean_reversion no evalúa hoy", exc_info=True)
+                    fear_greed_rating = None
+            logger.info("Fear & Greed Index en %s: %s", signal_date, fear_greed_rating)
+
+            for method in (_EARLY_STAGE2, _MEAN_REVERSION, *_STRATEGY_METHODS):
                 if method in _MOMENTUM_METHODS and not market_regime_ok:
                     continue
-                for top in _pick_all_for_method(signal_opps, method):
+                for top in _pick_all_for_method(signal_opps, method, fear_greed_rating):
                     if method == "minervini" and _minervini_overextended(db, top.ticker_id, signal_date):
                         logger.info(
                             "minervini: ticker_id=%s demasiado extendido sobre su MA10w, se omite "
@@ -673,12 +740,14 @@ def run(run_date: date | None = None) -> dict:
                         "Nueva posición %s: ticker_id=%s señal %s, entrada %.2f (apertura %s)",
                         method, top.ticker_id, signal_date, entry_price, target_date,
                     )
-                    # Solo early_stage2 se explica con el narrador AI de Weinstein+CAN
-                    # SLIM -- es literalmente su criterio. Los otros 4 métodos ya
-                    # tienen su propio "details" factual (ROE, PEG, payout...) en
-                    # Opportunity.strategies[method], que es el "porqué" correcto
-                    # y no requiere ninguna llamada a la API de Claude.
-                    if method == _EARLY_STAGE2:
+                    # early_stage2 y mean_reversion se explican con el narrador AI de
+                    # Weinstein+CAN SLIM -- ninguno de los dos tiene un "details"
+                    # factual propio en Opportunity.strategies (no son de los 4
+                    # evaluados en strategies.py), así que sin esto la cartera
+                    # mostraría el pick sin ningún porqué. Los otros 4 métodos ya
+                    # tienen su propio "details" factual (ROE, PEG, payout...) y
+                    # no requieren ninguna llamada a la API de Claude.
+                    if method in (_EARLY_STAGE2, _MEAN_REVERSION):
                         _ensure_explanation(db, explainer, top, top.ticker)
 
         db.commit()

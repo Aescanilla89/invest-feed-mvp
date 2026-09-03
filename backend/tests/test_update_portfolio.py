@@ -6,6 +6,7 @@ import pytest
 from app.jobs.update_portfolio import (
     _closes_below_ma,
     _exit_signal,
+    _fear_greed_rating_on,
     _is_exceptional,
     _market_regime_stage_ok,
     _minervini_extension_pct,
@@ -15,6 +16,9 @@ from app.jobs.update_portfolio import (
     _trailing_stop_signal,
 )
 
+# Todas las letras verificables en verde (incluida N) -- is_canslim==True.
+_CANSLIM_ALL_PASS = {letter: {"value": True} for letter in "CANSLI"}
+
 
 def _opp(**kwargs):
     defaults = dict(
@@ -23,6 +27,7 @@ def _opp(**kwargs):
         weinstein_transition=False,
         weeks_in_stage=10,
         weinstein_relative_volume=1.0,  # neutro: pasa el gate de volumen de minervini por defecto
+        weinstein_rsi=50.0,  # neutro: ni sobrevendido ni sobrecomprado por defecto
         combined_score=50,
         canslim_criteria={},
         strategies={},
@@ -77,6 +82,51 @@ def test_lynch_blocks_entry_in_stage_1_or_4():
 
     same_stage_dividendos = _opp(weinstein_stage=4, strategies={"dividendos": {"passed": True, "score": 55}})
     assert _is_exceptional(same_stage_dividendos, "dividendos") is True
+
+
+def test_mean_reversion_requires_extreme_fear_canslim_and_oversold():
+    # Los tres a la vez: pánico de mercado (Fear & Greed), calidad real
+    # (CAN SLIM completo) y caída real del propio título (RSI<30) -- si
+    # falta cualquiera de los tres, no dispara.
+    canslim_oversold = _opp(canslim_criteria=_CANSLIM_ALL_PASS, weinstein_rsi=25.0)
+    assert _is_exceptional(canslim_oversold, "mean_reversion", fear_greed_rating="extreme fear") is True
+
+    # Sin pánico de mercado (aunque sea CAN SLIM + sobrevendido) no dispara.
+    assert _is_exceptional(canslim_oversold, "mean_reversion", fear_greed_rating="fear") is False
+    assert _is_exceptional(canslim_oversold, "mean_reversion", fear_greed_rating=None) is False
+
+    # Pánico + sobrevendido pero SIN CAN SLIM completo (un criterio
+    # verificable en rojo) no dispara -- comprar cualquier caída en pánico
+    # no es la tesis, comprar CALIDAD que cayó sí.
+    no_canslim = _opp(canslim_criteria={"N": {"value": True}, "C": {"value": False}}, weinstein_rsi=25.0)
+    assert _is_exceptional(no_canslim, "mean_reversion", fear_greed_rating="extreme fear") is False
+
+    # Pánico + CAN SLIM pero SIN sobreventa del propio título no dispara --
+    # sin la caída real de ESE título, es solo comprar calidad porque sí.
+    not_oversold = _opp(canslim_criteria=_CANSLIM_ALL_PASS, weinstein_rsi=45.0)
+    assert _is_exceptional(not_oversold, "mean_reversion", fear_greed_rating="extreme fear") is False
+
+
+def test_pick_all_for_method_mean_reversion_sorts_most_oversold_first():
+    less_oversold = _opp(ticker_id=1, canslim_criteria=_CANSLIM_ALL_PASS, weinstein_rsi=28.0)
+    most_oversold = _opp(ticker_id=2, canslim_criteria=_CANSLIM_ALL_PASS, weinstein_rsi=12.0)
+    result = _pick_all_for_method([less_oversold, most_oversold], "mean_reversion", fear_greed_rating="extreme fear")
+    assert [o.ticker_id for o in result] == [2, 1]
+
+
+def test_fear_greed_rating_on_uses_most_recent_date_not_after_target():
+    history = {
+        date(2026, 1, 5): "neutral",
+        date(2026, 1, 6): "extreme fear",
+        date(2026, 1, 10): "greed",  # posterior al target -- nunca debe usarse
+    }
+    # Fecha exacta presente en el histórico.
+    assert _fear_greed_rating_on(history, date(2026, 1, 6)) == "extreme fear"
+    # Fecha sin dato exacto (fin de semana) -- usa el día disponible más
+    # reciente ANTES, nunca uno posterior.
+    assert _fear_greed_rating_on(history, date(2026, 1, 8)) == "extreme fear"
+    # Sin ningún dato en o antes del target.
+    assert _fear_greed_rating_on(history, date(2026, 1, 1)) is None
 
 
 def test_early_stage2_is_pure_weinstein_no_canslim_required():

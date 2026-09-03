@@ -60,6 +60,7 @@ from app.models.orm import PortfolioPosition, Ticker
 from app.screener import canslim, scoring, universe
 from app.screener.canslim import InstitutionalData
 from app.screener.data_source import AlpacaDataSource, DividendData, FundamentalData, _yoy_growth
+from app.screener.fear_greed import get_fear_greed_index
 from app.screener.sec_13f import (
     MULTI_CIK_OVERRIDES,
     TOP_INSTITUTION_NAMES,
@@ -380,10 +381,23 @@ def run(
     finally:
         db.close()
 
+    # Histórico de Fear & Greed Index (mean_reversion) UNA sola vez para todo
+    # el backtest, no una petición a CNN por semana -- CNN da ~1-2 años de
+    # histórico diario, de sobra para cubrir el rango del backtest (inicio
+    # fijo en PORTFOLIO_INCEPTION_DATE). Si CNN falla, {} vacío: mean_reversion
+    # simplemente no dispara en ninguna semana del backtest (fail-safe, igual
+    # que en producción cuando CNN está caído).
+    try:
+        fear_greed_data = get_fear_greed_index(history_days=730)
+        fear_greed_history = {date.fromisoformat(p.date): p.rating for p in fear_greed_data.history}
+    except Exception:
+        logger.exception("No se pudo obtener el histórico de Fear & Greed Index -- mean_reversion no disparará en este backtest")
+        fear_greed_history = {}
+
     portfolio_stats = {"opened": 0, "closed": 0}
     for week_date in week_dates:
         try:
-            r = update_portfolio.run(run_date=week_date)
+            r = update_portfolio.run(run_date=week_date, fear_greed_history=fear_greed_history)
             portfolio_stats["opened"] += r.get("opened", 0)
             portfolio_stats["closed"] += r.get("closed", 0)
         except Exception:

@@ -22,6 +22,7 @@ const METHOD_HOOKS: Record<string, string> = {
   lynch: "cotizaba barata para lo que estaba creciendo",
   berkshire: "tenía la pinta de negocio de calidad que aguanta ciclos",
   dividendos: "pagaba un dividendo sólido y sostenible",
+  mean_reversion: "era calidad de verdad cayendo en pleno pánico del mercado -- entramos contra la corriente",
 };
 
 const EXIT_REASON_LABELS: Record<string, string> = {

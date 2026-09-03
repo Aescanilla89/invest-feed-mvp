@@ -58,6 +58,7 @@
   --color-strategy-lynch: var(--strategy-lynch);
   --color-strategy-berkshire: var(--strategy-berkshire);
   --color-strategy-dividendos: var(--strategy-dividendos);
+  --color-strategy-mean-reversion: var(--strategy-mean-reversion);
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: calc(var(--radius) * 0.75);
   --radius-lg: var(--radius);
@@ -125,6 +126,7 @@ negro/blanco puro. Dark mode es el modo por defecto del producto. */
   --strategy-lynch: oklch(45% 0.1 152);
   --strategy-berkshire: oklch(48% 0.02 200);
   --strategy-dividendos: oklch(48% 0.11 110);
+  --strategy-mean-reversion: oklch(48% 0.16 310);
 }
 
 .dark {
@@ -180,6 +182,7 @@ negro/blanco puro. Dark mode es el modo por defecto del producto. */
   --strategy-lynch: oklch(68% 0.13 152);
   --strategy-berkshire: oklch(68% 0.015 200);
   --strategy-dividendos: oklch(72% 0.13 110);
+  --strategy-mean-reversion: oklch(72% 0.14 310);
 }
 
 @layer base {
