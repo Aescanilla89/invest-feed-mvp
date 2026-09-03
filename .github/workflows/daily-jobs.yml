@@ -38,7 +38,12 @@ jobs:
         # El cron dispara dos veces al día (CEST y CET) porque GitHub Actions no
         # ajusta por horario de verano -- este step decide cuál de las dos
         # corridas es la real y pone should_run=false en la que no toca.
+        # Va ANTES del checkout pero usa working-directory "." explícito: el
+        # default working-directory: backend de este job no existe todavía
+        # (el repo aún no se ha clonado) -- correrlo ahí revienta con "No
+        # such file or directory" antes incluso de llegar al checkout.
         id: check_hour
+        working-directory: .
         run: |
           if [ "${{ github.event_name }}" != "schedule" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
