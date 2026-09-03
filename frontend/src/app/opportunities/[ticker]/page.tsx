@@ -13,49 +13,54 @@ import { TimeHorizonBadge } from "@/components/time-horizon-badge";
 import { getOpportunityDetail, getPortfolio, type PortfolioPosition } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const METHOD_LABELS: Record<string, string> = {
-  early_stage2: "Entrada Temprana",
-  minervini: "Minervini SEPA",
-  lynch: "Lynch GARP",
-  berkshire: "Berkshire Quality",
-  dividendos: "Dividendos",
+// Gancho en una frase por método, en lenguaje llano -- lo que vio el sistema,
+// no el desglose técnico de criterios (ese ya está en "Metodologías" más
+// abajo, no hace falta repetirlo aquí en la narrativa).
+const METHOD_HOOKS: Record<string, string> = {
+  early_stage2: "acababa de salir de suelo con volumen fuerte detrás",
+  minervini: "rompía en tendencia con una estructura de libro",
+  lynch: "cotizaba barata para lo que estaba creciendo",
+  berkshire: "tenía la pinta de negocio de calidad que aguanta ciclos",
+  dividendos: "pagaba un dividendo sólido y sostenible",
 };
 
 const EXIT_REASON_LABELS: Record<string, string> = {
-  ma40_break: "ruptura de la media móvil de 40 semanas",
-  weinstein_stage_1: "ruptura de tendencia (Stage 1 de Weinstein)",
-  weinstein_stage_4: "ruptura de tendencia (Stage 4 de Weinstein)",
+  ma40_break: "se le rompió la tendencia de fondo",
+  weinstein_stage_1: "se le rompió la tendencia",
+  weinstein_stage_4: "se le rompió la tendencia",
 };
 
 function describeExitReason(reason: string | null): string {
-  if (!reason) return "motivo no registrado";
+  if (!reason) return "cerramos sin motivo registrado";
   if (reason in EXIT_REASON_LABELS) return EXIT_REASON_LABELS[reason];
   const stopMatch = reason.match(/^trailing_stop_(\d+)pct$/);
-  if (stopMatch) return `stop dinámico del ${stopMatch[1]}%`;
+  if (stopMatch) return `saltó el stop`;
   return reason;
 }
 
 /** Storytelling de una operación ya cerrada: sustituye a "por qué es una
  * oportunidad ahora" (que no tiene sentido para algo que ya no está
- * abierto) por el relato factual de cómo fue -- señal, entrada, y cómo y
- * por qué salió, con el mismo `explanation` que ya se generó/calculó en el
- * momento de la entrada (nunca el de la corrida más reciente del screener,
- * que puede no tener nada que ver con esta operación ya cerrada). */
+ * abierto) por el relato de cómo fue, en tono directo y sin la jerga de
+ * criterios técnicos (esa ya vive en "Metodologías" más abajo). */
 function buildTradeStory(p: PortfolioPosition): string {
-  const methodLabel = METHOD_LABELS[p.method] ?? p.method;
+  const hook = METHOD_HOOKS[p.method] ?? "encajaba con la señal del sistema";
   const weeksOpen = p.exit_date
     ? Math.max(1, Math.round((new Date(p.exit_date).getTime() - new Date(p.entry_date).getTime()) / (7 * 86400000)))
     : null;
-  const resultWord = p.return_pct >= 0 ? "ganó" : "perdió";
+  const isWin = p.return_pct >= 0;
+  const pct = Math.abs(p.return_pct).toFixed(1);
 
-  let story = `${methodLabel} detectó la señal el ${p.signal_date ?? p.entry_date}`;
-  story += p.explanation ? `: ${p.explanation} ` : ". ";
-  story += `Entró el ${p.entry_date} a $${p.entry_price.toFixed(2)}.`;
+  let story = `El ${p.entry_date}, ${p.ticker} entró en el radar: ${hook}. Compramos a $${p.entry_price.toFixed(2)}.`;
 
-  if (p.exit_date) {
-    story += ` ${weeksOpen} semana${weeksOpen === 1 ? "" : "s"} después, el ${p.exit_date}, cerró a `
-      + `$${p.current_price.toFixed(2)} por ${describeExitReason(p.exit_reason)} — ${resultWord} un `
-      + `${Math.abs(p.return_pct).toFixed(1)}%.`;
+  if (p.exit_date && weeksOpen !== null) {
+    if (isWin) {
+      story += ` ${weeksOpen} semana${weeksOpen === 1 ? "" : "s"} después tocaba recoger: vendimos a `
+        + `$${p.current_price.toFixed(2)}, un +${pct}% de subida.`;
+    } else {
+      story += ` No salió como esperábamos: ${weeksOpen} semana${weeksOpen === 1 ? "" : "s"} después `
+        + `${describeExitReason(p.exit_reason)}, así que cerramos a $${p.current_price.toFixed(2)}, -${pct}%. `
+        + `El método corta rápido lo que deja de funcionar.`;
+    }
   }
   return story;
 }
