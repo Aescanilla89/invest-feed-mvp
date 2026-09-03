@@ -27,21 +27,40 @@ _WEIGHT_CAP_MIN = 0.5
 _WEIGHT_CAP_MAX = 2.0
 
 
-def _atr_pct(db: Session, ticker_id: int, as_of: date) -> float | None:
-    """ATR%(14 semanas) = ATR / Close, con velas <= as_of -- nunca posteriores,
-    para no usar volatilidad "futura" que un trader real no habría visto al
-    abrir la posición. None si no hay histórico suficiente."""
+def _load_price_history(db: Session, ticker_ids: set[int]) -> dict[int, list[tuple[date, float, float, float]]]:
+    """Trae TODO el histórico de precio (date, high, low, close) de todos los
+    `ticker_ids` en UNA sola consulta, agrupado en memoria -- antes _atr_pct y
+    _price_on_or_after hacían una consulta por ticker dentro de un bucle
+    (visto en producción: ~90 tickers distintos en la cartera == ~90
+    round-trips de red a Supabase == /api/portfolio tardando >10s). La
+    cadencia es semanal, así que el volumen total por ticker es pequeño --
+    cabe de sobra en memoria, y una sola consulta grande es muchísimo más
+    barata en latencia de red que N consultas pequeñas."""
+    if not ticker_ids:
+        return {}
     rows = (
-        db.query(PriceSnapshot.high, PriceSnapshot.low, PriceSnapshot.close)
-        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date <= as_of)
-        .order_by(PriceSnapshot.date.asc())
+        db.query(PriceSnapshot.ticker_id, PriceSnapshot.date, PriceSnapshot.high, PriceSnapshot.low, PriceSnapshot.close)
+        .filter(PriceSnapshot.ticker_id.in_(ticker_ids))
+        .order_by(PriceSnapshot.ticker_id, PriceSnapshot.date.asc())
         .all()
     )
+    result: dict[int, list[tuple[date, float, float, float]]] = {}
+    for tid, d, h, l, c in rows:
+        result.setdefault(tid, []).append((d, float(h), float(l), float(c)))
+    return result
+
+
+def _atr_pct(history_by_ticker: dict[int, list[tuple[date, float, float, float]]], ticker_id: int, as_of: date) -> float | None:
+    """ATR%(14 semanas) = ATR / Close, con velas <= as_of -- nunca posteriores,
+    para no usar volatilidad "futura" que un trader real no habría visto al
+    abrir la posición. None si no hay histórico suficiente. Opera sobre el
+    histórico ya cargado en memoria (ver _load_price_history), no consulta la BD."""
+    rows = [r for r in history_by_ticker.get(ticker_id, []) if r[0] <= as_of]
     if len(rows) < _ATR_WINDOW_WEEKS + 1:
         return None
-    highs = [float(r[0]) for r in rows]
-    lows = [float(r[1]) for r in rows]
-    closes = [float(r[2]) for r in rows]
+    highs = [r[1] for r in rows]
+    lows = [r[2] for r in rows]
+    closes = [r[3] for r in rows]
     true_ranges = [
         max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
         for i in range(1, len(rows))
@@ -68,33 +87,29 @@ def _position_weights(raw_weights: dict[int, float | None]) -> dict[int, float]:
     }
 
 
-def _price_on_or_after(db: Session, ticker_id: int, on_or_after: date) -> float | None:
+def _price_on_or_after(history_by_ticker: dict[int, list[tuple[date, float, float, float]]], ticker_id: int, on_or_after: date) -> float | None:
     """Primer cierre disponible a partir de `on_or_after` (inclusive) -- se
     usa como precio base para calcular la rentabilidad YTD sin necesitar que
-    exista un snapshot exacto del 1 de enero."""
-    row = (
-        db.query(PriceSnapshot.close)
-        .filter(PriceSnapshot.ticker_id == ticker_id, PriceSnapshot.date >= on_or_after)
-        .order_by(PriceSnapshot.date.asc())
-        .first()
-    )
-    return float(row[0]) if row else None
+    exista un snapshot exacto del 1 de enero. Opera sobre el histórico ya
+    cargado en memoria (ver _load_price_history), no consulta la BD."""
+    for d, _h, _l, c in history_by_ticker.get(ticker_id, []):  # ya viene ordenado ascendente
+        if d >= on_or_after:
+            return c
+    return None
 
 
-def _latest_price(db: Session, ticker_id: int, ticker: Ticker | None = None) -> float | None:
+def _latest_price(
+    history_by_ticker: dict[int, list[tuple[date, float, float, float]]], ticker_id: int, ticker: Ticker | None = None,
+) -> float | None:
     """Precio "actual" para la cartera pública: prioriza el último cierre DIARIO
     (Ticker.last_daily_close, ver app/jobs/run_screener.py) sobre el cierre
     semanal de PriceSnapshot -- así el retorno se refleja día a día y no solo
-    cada viernes, que es la cadencia que usa el análisis Weinstein/CAN SLIM."""
+    cada viernes, que es la cadencia que usa el análisis Weinstein/CAN SLIM.
+    El fallback semanal usa el histórico ya cargado en memoria, no consulta la BD."""
     if ticker is not None and ticker.last_daily_close is not None:
         return float(ticker.last_daily_close)
-    row = (
-        db.query(PriceSnapshot.close)
-        .filter(PriceSnapshot.ticker_id == ticker_id)
-        .order_by(PriceSnapshot.date.desc())
-        .first()
-    )
-    return float(row[0]) if row else None
+    history = history_by_ticker.get(ticker_id)
+    return history[-1][3] if history else None
 
 
 def _strategy_details(opp: Opportunity, method: str) -> str | None:
@@ -120,7 +135,6 @@ def _strategy_details(opp: Opportunity, method: str) -> str | None:
 @router.get("", response_model=PortfolioSchema)
 def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     spy_ticker = db.query(Ticker).filter_by(symbol=BENCHMARK_SYMBOL).one_or_none()
-    current_spy_price = _latest_price(db, spy_ticker.id, spy_ticker) if spy_ticker else None
 
     rows = (
         db.query(PortfolioPosition, Ticker)
@@ -146,6 +160,15 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         for o in db.query(Opportunity).filter(Opportunity.ticker_id.in_(ticker_ids)).all()
     } if ticker_ids else {}
 
+    # Histórico de precio de todos los tickers implicados (posiciones + SPY)
+    # en una sola consulta -- ver _load_price_history.
+    price_history_ticker_ids = set(ticker_ids)
+    if spy_ticker:
+        price_history_ticker_ids.add(spy_ticker.id)
+    history_by_ticker = _load_price_history(db, price_history_ticker_ids)
+
+    current_spy_price = _latest_price(history_by_ticker, spy_ticker.id, spy_ticker) if spy_ticker else None
+
     # Rentabilidad YTD: solo tiene sentido para posiciones que estuvieron
     # vigentes en algún momento del año en curso (abiertas ahora, o cerradas
     # dentro de este año). El precio base es el de entrada si la posición se
@@ -157,7 +180,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
 
     def _year_start_price(ticker_id: int) -> float | None:
         if ticker_id not in _year_start_price_cache:
-            _year_start_price_cache[ticker_id] = _price_on_or_after(db, ticker_id, year_start)
+            _year_start_price_cache[ticker_id] = _price_on_or_after(history_by_ticker, ticker_id, year_start)
         return _year_start_price_cache[ticker_id]
 
     spy_year_start_price = _year_start_price(spy_ticker.id) if spy_ticker else None
@@ -184,7 +207,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             current_price = pos.exit_price or pos.entry_price
             spy_price_now = pos.exit_spy_price or pos.entry_spy_price
         else:
-            current_price = _latest_price(db, pos.ticker_id, ticker) or pos.entry_price
+            current_price = _latest_price(history_by_ticker, pos.ticker_id, ticker) or pos.entry_price
             spy_price_now = current_spy_price or pos.entry_spy_price
 
         return_pct = (current_price / pos.entry_price - 1) * 100
@@ -241,7 +264,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         # Peso por la volatilidad en la PRIMERA entrada del año para este
         # ticker -- el riesgo que un trader real habría visto al abrir la
         # posición, no el actual (evita look-ahead).
-        raw_weights[ticker_id] = _atr_pct(db, ticker_id, trades[0][0])
+        raw_weights[ticker_id] = _atr_pct(history_by_ticker, ticker_id, trades[0][0])
         raw_weights[ticker_id] = 1 / raw_weights[ticker_id] if raw_weights[ticker_id] else None
 
     weights = _position_weights(raw_weights)
