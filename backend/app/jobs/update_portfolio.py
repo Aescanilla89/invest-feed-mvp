@@ -50,16 +50,19 @@ Salida: cada posición abierta se evalúa cada corrida contra DOS stops en
 paralelo -- el que dispare primero cierra la posición:
 - Stop-loss por % DINÁMICO / trailing, al estilo Weinstein (ver
   _trailing_stop_signal): dispara sin esperar confirmación en cuanto el
-  último cierre cae 8% (early_stage2/minervini, el clásico no negociable
-  de Minervini/O'Neil) o 15% (lynch/berkshire/dividendos, tesis de más
-  plazo) por debajo del cierre MÁS ALTO alcanzado desde la entrada -- no
-  del precio de entrada fijo, para que el suelo suba con la acción y
-  proteja ganancias ya conseguidas en vez de solo limitar la pérdida
-  inicial. Existe porque el stop de tendencia de abajo, al depender de una
-  media móvil lenta, puede dejar correr una pérdida grande cuando la
-  entrada fue cerca de máximos: en producción AMAT llegó a -25% con Stage 2
-  todavía vigente porque el precio, pese al desplome, seguía por encima de
-  su MA30 (la media tarda en caer, va más lenta que el precio).
+  último cierre cae el margen vigente por debajo del cierre MÁS ALTO
+  alcanzado desde la entrada -- no del precio de entrada fijo, para que el
+  suelo suba con la acción y proteja ganancias ya conseguidas en vez de solo
+  limitar la pérdida inicial. El margen base es 8% (early_stage2/minervini)
+  o 15% (lynch/berkshire/dividendos, tesis de más plazo), pero se ENSANCHA
+  con la ganancia ya acumulada (ver _TRAILING_STOP_GAIN_BONUS_RATIO, tope
+  +8pp) -- un ganador que ya subió mucho necesita más aire para respirar una
+  corrección normal, o se corta un ganador real por ruido de corto plazo.
+  Existe porque el stop de tendencia de abajo, al depender de una media
+  móvil lenta, puede dejar correr una pérdida grande cuando la entrada fue
+  cerca de máximos: en producción AMAT llegó a -25% con Stage 2 todavía
+  vigente porque el precio, pese al desplome, seguía por encima de su MA30
+  (la media tarda en caer, va más lenta que el precio).
 - Stop de tendencia técnico según el tipo de estrategia --
   - early_stage2 / minervini (momentum puro): ver _exit_signal -- se sale
     cuando el precio cierra por debajo de la media móvil de 30 semanas
@@ -126,12 +129,23 @@ _REENTRY_COOLDOWN_WEEKS = 4
 # "viva" mucho tiempo: visto en producción, AMAT llegó a -25% con Stage 2
 # todavía vigente porque el precio, aunque se desplomó, seguía por encima de
 # su MA30 -- la propia media tarda en caer porque es más lenta que el precio.
-# 8% es el stop clásico no negociable de Minervini/O'Neil para roturas
-# momentum (early_stage2/minervini). lynch/berkshire/dividendos son tesis de
-# calidad/valor a más plazo y llevan más margen (15%) para no salir por ruido
-# de corto plazo.
+# 8% es el stop base de Minervini/O'Neil para roturas momentum
+# (early_stage2/minervini). lynch/berkshire/dividendos son tesis de
+# calidad/valor a más plazo y llevan más margen base (15%) para no salir por
+# ruido de corto plazo.
 _HARD_STOP_PCT_MOMENTUM = 0.08
 _HARD_STOP_PCT_FUNDAMENTALS = 0.15
+
+# Margen adicional que el stop va ganando a medida que la posición acumula
+# ganancia desde la entrada -- un ganador que ya subió mucho (BNY +50%, AMAT
+# +48%) necesita más aire para respirar una corrección normal que uno recién
+# abierto, o se corta un ganador real por ruido de corto plazo (justo lo
+# contrario de "dejar correr las ganancias"). 0.15 = cada 10pp de ganancia
+# acumulada añade 1.5pp de margen al stop; tope en 8pp adicionales (a partir
+# de ~53% de ganancia ya no se ensancha más) para no dejar que un ganador
+# devuelva toda la ganancia antes de saltar el stop.
+_TRAILING_STOP_GAIN_BONUS_RATIO = 0.15
+_TRAILING_STOP_MAX_GAIN_BONUS_PCT = 0.08
 
 # Extensión máxima sobre la MA10w (~MA50d) para dejar entrar un pick de
 # minervini -- Minervini (Trade Like a Stock Market Wizard) advierte
@@ -257,8 +271,16 @@ def _exit_signal(recent_opps: list[Opportunity]) -> str | None:
     return None
 
 
-def _trailing_stop_pct(method: str) -> float:
-    return _HARD_STOP_PCT_MOMENTUM if method in _MOMENTUM_METHODS else _HARD_STOP_PCT_FUNDAMENTALS
+def _trailing_stop_pct(method: str, gain_pct: float) -> float:
+    """Margen del trailing stop, ensanchado según la ganancia ya acumulada
+    desde la entrada (ver _TRAILING_STOP_GAIN_BONUS_RATIO) -- un ganador que
+    ya subió mucho tiene más margen antes de saltar el stop que uno recién
+    abierto. `gain_pct` es la ganancia desde `entry_price` hasta el cierre
+    más alto alcanzado, nunca negativa (una posición en pérdida no gana
+    margen extra, solo aplica el base)."""
+    base = _HARD_STOP_PCT_MOMENTUM if method in _MOMENTUM_METHODS else _HARD_STOP_PCT_FUNDAMENTALS
+    bonus = min(max(gain_pct, 0.0) * _TRAILING_STOP_GAIN_BONUS_RATIO, _TRAILING_STOP_MAX_GAIN_BONUS_PCT)
+    return base + bonus
 
 
 def _trailing_stop_signal(
@@ -295,10 +317,11 @@ def _trailing_stop_signal(
     for _, close in rows:
         highest_close = max(highest_close, float(close))
     latest_date, latest_close = rows[-1]
-    pct = _trailing_stop_pct(method)
+    gain_pct = highest_close / entry_price - 1
+    pct = _trailing_stop_pct(method, gain_pct)
     if float(latest_close) > highest_close * (1 - pct):
         return None
-    return latest_date, f"trailing_stop_{int(pct * 100)}pct"
+    return latest_date, f"trailing_stop_{int(round(pct * 100))}pct"
 
 
 _FUNDAMENTALS_MA_WINDOW_WEEKS = 40

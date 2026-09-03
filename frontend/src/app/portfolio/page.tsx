@@ -32,10 +32,9 @@ function ReturnValue({ pct }: { pct: number }) {
 
 /** Cerradas: en vez de listar las ~20+ operaciones cerradas (muchas del
  * mismo ticker reabriéndose tras el stop-loss), se muestra solo lo
- * representativo: la mejor operación de cada ticker que cerró en positivo, y
- * un puñado de ejemplos reales donde el stop-loss cortó una pérdida -- prueba
- * de que la salida funciona, sin enterrar la lista en ruido repetido. */
-const MAX_LOSS_EXAMPLES = 4;
+ * representativo -- los mejores trades, la mejor operación de cada ticker
+ * que cerró en positivo, ordenados de mayor a menor rentabilidad. */
+const MAX_TOP_TRADES = 10;
 
 function curateClosedPositions(closed: PortfolioPosition[]): PortfolioPosition[] {
   const bestPerTicker = new Map<string, PortfolioPosition>();
@@ -43,16 +42,10 @@ function curateClosedPositions(closed: PortfolioPosition[]): PortfolioPosition[]
     const current = bestPerTicker.get(p.ticker);
     if (!current || p.return_pct > current.return_pct) bestPerTicker.set(p.ticker, p);
   }
-  const winners = [...bestPerTicker.values()]
+  return [...bestPerTicker.values()]
     .filter((p) => p.return_pct > 0)
-    .sort((a, b) => b.return_pct - a.return_pct);
-
-  const losses = closed
-    .filter((p) => p.return_pct <= 0)
-    .sort((a, b) => a.return_pct - b.return_pct)
-    .slice(0, MAX_LOSS_EXAMPLES);
-
-  return [...winners, ...losses].sort((a, b) => b.entry_date.localeCompare(a.entry_date));
+    .sort((a, b) => b.return_pct - a.return_pct)
+    .slice(0, MAX_TOP_TRADES);
 }
 
 function StatCard({ label, value, sublabel }: { label: string; value: React.ReactNode; sublabel?: string }) {
@@ -214,9 +207,9 @@ export default async function PortfolioPage() {
           {closed.length > 0 && (
             <div className="mt-8 flex flex-col gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-foreground">Cerradas destacadas ({closed.length})</h2>
+                <h2 className="text-sm font-semibold text-foreground">Top trades ({closed.length})</h2>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  La mejor operación de cada ticker que cerró en positivo, y ejemplos reales donde el stop-loss cortó una pérdida.
+                  La mejor operación de cada ticker que cerró en positivo, ordenadas de mayor a menor rentabilidad.
                 </p>
               </div>
               <div className="flex flex-col gap-2">

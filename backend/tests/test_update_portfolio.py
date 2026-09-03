@@ -169,14 +169,24 @@ def test_closes_below_ma_insufficient_history_returns_none():
 
 
 def test_trailing_stop_pct_momentum_vs_fundamentals():
-    # 8% para roturas momentum (early_stage2/minervini, el stop clásico no
-    # negociable de Minervini/O'Neil) vs 15% para tesis de calidad/valor a
-    # más plazo (lynch/berkshire/dividendos).
-    assert _trailing_stop_pct("early_stage2") == 0.08
-    assert _trailing_stop_pct("minervini") == 0.08
-    assert _trailing_stop_pct("lynch") == 0.15
-    assert _trailing_stop_pct("berkshire") == 0.15
-    assert _trailing_stop_pct("dividendos") == 0.15
+    # 8% base para roturas momentum (early_stage2/minervini) vs 15% base
+    # para tesis de calidad/valor a más plazo (lynch/berkshire/dividendos).
+    # gain_pct=0 (sin ganancia acumulada) -> sin bonus, solo el margen base.
+    assert _trailing_stop_pct("early_stage2", 0.0) == 0.08
+    assert _trailing_stop_pct("minervini", 0.0) == 0.08
+    assert _trailing_stop_pct("lynch", 0.0) == 0.15
+    assert _trailing_stop_pct("berkshire", 0.0) == 0.15
+    assert _trailing_stop_pct("dividendos", 0.0) == 0.15
+
+
+def test_trailing_stop_pct_widens_with_accumulated_gain():
+    # Un ganador que ya subió mucho necesita más aire para respirar una
+    # corrección normal -- 0.15pp de margen extra por cada punto de ganancia
+    # acumulada, tope en +8pp (ver _TRAILING_STOP_GAIN_BONUS_RATIO/_MAX).
+    assert _trailing_stop_pct("minervini", 0.5) == pytest.approx(0.08 + 0.075)  # +50% -> +7.5pp
+    assert _trailing_stop_pct("minervini", 10.0) == pytest.approx(0.08 + 0.08)  # ganancia enorme -> tope en +8pp
+    # Una posición en pérdida (gain_pct negativo) no gana margen extra.
+    assert _trailing_stop_pct("minervini", -0.2) == 0.08
 
 
 @pytest.fixture
@@ -241,25 +251,28 @@ def test_trailing_stop_signal_no_history_returns_none(db_session):
 
 
 def test_trailing_stop_signal_follows_the_high_not_the_entry(db_session):
-    # El caso que motiva el trailing stop: la acción sube 50% desde la
-    # entrada y luego cae un 8% desde ese máximo (no desde la entrada) --
-    # debe disparar aunque el precio siga muy por encima del entry_price,
-    # para proteger la ganancia ya conseguida en vez de dejarla evaporarse.
+    # El caso que motiva el trailing stop: la acción se duplica desde la
+    # entrada (+100%, margen ensanchado ya en su tope de +8pp -> 16%) y
+    # luego cae un 20% desde ese máximo (no desde la entrada) -- debe
+    # disparar aunque el precio siga muy por encima del entry_price, para
+    # proteger la ganancia ya conseguida en vez de dejarla evaporarse.
     _add_snapshot(db_session, 1, date(2026, 1, 5), 100.0)   # entrada
-    _add_snapshot(db_session, 1, date(2026, 2, 2), 150.0)   # sube 50%
-    _add_snapshot(db_session, 1, date(2026, 2, 9), 137.0)   # cae 8.7% desde el máximo (150), sigue +37% vs entrada
+    _add_snapshot(db_session, 1, date(2026, 2, 2), 200.0)   # sube 100%
+    _add_snapshot(db_session, 1, date(2026, 2, 9), 160.0)   # cae 20% desde el máximo (200), sigue +60% vs entrada
     result = _trailing_stop_signal(
         db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 2, 9),
     )
-    assert result == (date(2026, 2, 9), "trailing_stop_8pct")
+    assert result == (date(2026, 2, 9), "trailing_stop_16pct")
 
 
 def test_trailing_stop_signal_holds_if_pullback_from_high_is_small(db_session):
-    # Misma subida a 150, pero un pullback pequeño (150 -> 140, -6.7%) no
-    # dispara el 8% -- la posición sigue abierta.
+    # Misma subida a 200 (margen ensanchado al tope, 16%), pero un pullback
+    # menor al margen ensanchado (200 -> 175, -12.5%) no dispara -- justo el
+    # caso que antes (margen fijo al 8%) sí habría cortado: un ganador que ya
+    # dobló necesita más aire para respirar una corrección normal.
     _add_snapshot(db_session, 1, date(2026, 1, 5), 100.0)
-    _add_snapshot(db_session, 1, date(2026, 2, 2), 150.0)
-    _add_snapshot(db_session, 1, date(2026, 2, 9), 140.0)
+    _add_snapshot(db_session, 1, date(2026, 2, 2), 200.0)
+    _add_snapshot(db_session, 1, date(2026, 2, 9), 175.0)
     assert _trailing_stop_signal(
         db_session, ticker_id=1, entry_price=100.0, entry_date=date(2026, 1, 5), method="minervini", as_of=date(2026, 2, 9),
     ) is None
