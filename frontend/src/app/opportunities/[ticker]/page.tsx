@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Lightbulb, LineChart, ListChecks } from "lucide-react";
+import { ArrowLeft, Clock, Lightbulb, LineChart, ListChecks } from "lucide-react";
 import { CanslimPatternDiagram } from "@/components/canslim-pattern-diagram";
 import { CriteriaChips } from "@/components/criteria-chips";
 import { WeinsteinChart } from "@/components/weinstein-chart";
@@ -10,8 +10,55 @@ import { WeinsteinCycleDiagram } from "@/components/weinstein-cycle-diagram";
 import { ExplanationBullets } from "@/components/explanation-bullets";
 import { STRATEGY_META } from "@/components/strategy-badges";
 import { TimeHorizonBadge } from "@/components/time-horizon-badge";
-import { getOpportunityDetail, getPortfolio } from "@/lib/api";
+import { getOpportunityDetail, getPortfolio, type PortfolioPosition } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+const METHOD_LABELS: Record<string, string> = {
+  early_stage2: "Entrada Temprana",
+  minervini: "Minervini SEPA",
+  lynch: "Lynch GARP",
+  berkshire: "Berkshire Quality",
+  dividendos: "Dividendos",
+};
+
+const EXIT_REASON_LABELS: Record<string, string> = {
+  ma40_break: "ruptura de la media móvil de 40 semanas",
+  weinstein_stage_1: "ruptura de tendencia (Stage 1 de Weinstein)",
+  weinstein_stage_4: "ruptura de tendencia (Stage 4 de Weinstein)",
+};
+
+function describeExitReason(reason: string | null): string {
+  if (!reason) return "motivo no registrado";
+  if (reason in EXIT_REASON_LABELS) return EXIT_REASON_LABELS[reason];
+  const stopMatch = reason.match(/^trailing_stop_(\d+)pct$/);
+  if (stopMatch) return `stop dinámico del ${stopMatch[1]}%`;
+  return reason;
+}
+
+/** Storytelling de una operación ya cerrada: sustituye a "por qué es una
+ * oportunidad ahora" (que no tiene sentido para algo que ya no está
+ * abierto) por el relato factual de cómo fue -- señal, entrada, y cómo y
+ * por qué salió, con el mismo `explanation` que ya se generó/calculó en el
+ * momento de la entrada (nunca el de la corrida más reciente del screener,
+ * que puede no tener nada que ver con esta operación ya cerrada). */
+function buildTradeStory(p: PortfolioPosition): string {
+  const methodLabel = METHOD_LABELS[p.method] ?? p.method;
+  const weeksOpen = p.exit_date
+    ? Math.max(1, Math.round((new Date(p.exit_date).getTime() - new Date(p.entry_date).getTime()) / (7 * 86400000)))
+    : null;
+  const resultWord = p.return_pct >= 0 ? "ganó" : "perdió";
+
+  let story = `${methodLabel} detectó la señal el ${p.signal_date ?? p.entry_date}`;
+  story += p.explanation ? `: ${p.explanation} ` : ". ";
+  story += `Entró el ${p.entry_date} a $${p.entry_price.toFixed(2)}.`;
+
+  if (p.exit_date) {
+    story += ` ${weeksOpen} semana${weeksOpen === 1 ? "" : "s"} después, el ${p.exit_date}, cerró a `
+      + `$${p.current_price.toFixed(2)} por ${describeExitReason(p.exit_reason)} — ${resultWord} un `
+      + `${Math.abs(p.return_pct).toFixed(1)}%.`;
+  }
+  return story;
+}
 
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
@@ -34,6 +81,16 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
   const portfolio = await getPortfolio().catch(() => null);
   const tickerPositions = (portfolio?.positions ?? []).filter((p) => p.ticker === detail.ticker);
 
+  // Si el ticker tiene una posición abierta ahora mismo, sigue siendo una
+  // oportunidad activa -- se muestra el "por qué ahora" de siempre. Si solo
+  // tiene historial cerrado (sin ninguna abierta), no tiene sentido esa
+  // pregunta: se cuenta cómo fue la operación en su lugar.
+  const openPosition = tickerPositions.find((p) => p.status === "open");
+  const closedPositions = [...tickerPositions]
+    .filter((p) => p.status === "closed")
+    .sort((a, b) => b.entry_date.localeCompare(a.entry_date));
+  const showTradeStory = !openPosition && closedPositions.length > 0;
+
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
       <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
@@ -55,26 +112,49 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
         </div>
       </div>
 
-      {/* Explicación IA -- la sección con más peso de la página: regla de
-       * acento a la izquierda + icono en círculo relleno + tinte de fondo,
-       * sin chrome de card, para que destaque sobre las secciones de
-       * referencia que le siguen. */}
-      <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4">
-        <div className="flex items-center gap-2.5">
-          <div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground">
-            <Lightbulb className="size-3.5" aria-hidden />
+      {/* Explicación IA / storytelling -- la sección con más peso de la
+       * página: regla de acento a la izquierda + icono en círculo relleno +
+       * tinte de fondo, sin chrome de card, para que destaque sobre las
+       * secciones de referencia que le siguen. Si el ticker ya no tiene
+       * posición abierta, "por qué es una oportunidad ahora" no aplica --
+       * se cuenta cómo fue la operación (o las operaciones, si entró y
+       * salió más de una vez) en su lugar. */}
+      {showTradeStory ? (
+        <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground">
+              <Clock className="size-3.5" aria-hidden />
+            </div>
+            <h2 className="font-heading text-lg font-semibold leading-none">
+              {closedPositions.length > 1 ? "Cómo fueron estas inversiones" : "Cómo fue esta inversión"}
+            </h2>
           </div>
-          <h2 className="font-heading text-lg font-semibold leading-none">Por qué es una oportunidad ahora</h2>
-        </div>
-        {explanation ? (
-          <ExplanationBullets explanation={explanation} className="mt-4 flex flex-col gap-2" />
-        ) : (
-          <p className="mt-4 text-sm italic text-muted-foreground">
-            Sin explicación generada todavía para esta corrida.
-          </p>
-        )}
-        <p className="mt-4 text-[11px] text-muted-foreground/70">Actualizado {last_updated}</p>
-      </section>
+          <div className="mt-4 flex flex-col gap-3">
+            {closedPositions.map((p) => (
+              <p key={`${p.entry_date}-${p.method}`} className="text-sm leading-relaxed text-foreground/90">
+                {buildTradeStory(p)}
+              </p>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground">
+              <Lightbulb className="size-3.5" aria-hidden />
+            </div>
+            <h2 className="font-heading text-lg font-semibold leading-none">Por qué es una oportunidad ahora</h2>
+          </div>
+          {explanation ? (
+            <ExplanationBullets explanation={explanation} className="mt-4 flex flex-col gap-2" />
+          ) : (
+            <p className="mt-4 text-sm italic text-muted-foreground">
+              Sin explicación generada todavía para esta corrida.
+            </p>
+          )}
+          <p className="mt-4 text-[11px] text-muted-foreground/70">Actualizado {last_updated}</p>
+        </section>
+      )}
 
       {/* Precio + Stage Analysis -- combinados en una sola card (ambos son
        * lectura del mismo Weinstein) en vez de dos bloques idénticos
@@ -111,7 +191,7 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
                   <>
                     <span>→</span>
                     <span className="font-medium text-(--color-risk-high)">Salida {p.exit_date}</span>
-                    {p.exit_reason && <span>({p.exit_reason})</span>}
+                    {p.exit_reason && <span>({describeExitReason(p.exit_reason)})</span>}
                   </>
                 ) : (
                   <span className="italic">— posición abierta</span>
