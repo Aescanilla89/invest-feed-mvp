@@ -1,0 +1,44 @@
+name: Actualizar tenencia institucional
+
+on:
+  workflow_dispatch:
+    inputs:
+      quarter:
+        description: "Trimestre YYYY-MM-DD (vacío = último disponible)"
+        type: string
+        default: ""
+      institutions:
+        description: "Instituciones separadas por coma (vacío = las 30 de producción)"
+        type: string
+        default: ""
+      force:
+        description: "Re-procesar aunque el trimestre ya esté en BD"
+        type: boolean
+        default: false
+
+jobs:
+  update-institutional:
+    runs-on: ubuntu-latest
+    # Job trimestral, se corre manualmente -- 30 instituciones a 0.15s entre
+    # peticiones no deberían tardar mucho, pero se da margen amplio por si
+    # el matching contra miles de holdings por institución es más lento de
+    # lo esperado (visto: el intento vía endpoint HTTP en Render tardó más
+    # de 60 min sin terminar, con la instancia posiblemente reiniciándose).
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: |
+          python -m app.jobs.update_institutional \
+            ${{ github.event.inputs.quarter != '' && format('--quarter {0}', github.event.inputs.quarter) || '' }} \
+            ${{ github.event.inputs.institutions != '' && format('--institutions "{0}"', github.event.inputs.institutions) || '' }} \
+            ${{ github.event.inputs.force == 'true' && '--force' || '' }}
