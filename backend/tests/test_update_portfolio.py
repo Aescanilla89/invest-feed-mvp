@@ -175,6 +175,20 @@ def test_pick_all_for_method_caps_at_max_new_entries_per_day():
     assert [o.ticker_id for o in result] == [2, 4, 3]
 
 
+def test_pick_all_for_method_raises_cap_on_extreme_fear():
+    # En pánico extremo el sistema debe operar más -- el tope normal (3)
+    # sube a 6, mismo umbral de calidad (todos estos 7 candidatos ya
+    # califican para lynch, el tope es lo único que cambia).
+    opps = [
+        _opp(ticker_id=i, strategies={"lynch": {"passed": True, "score": score}})
+        for i, score in enumerate([10, 90, 50, 80, 30, 70, 60], start=1)
+    ]
+    normal = _pick_all_for_method(opps, "lynch", fear_greed_rating="fear")
+    extreme = _pick_all_for_method(opps, "lynch", fear_greed_rating="extreme fear")
+    assert len(normal) == 3
+    assert len(extreme) == 6
+
+
 def test_pick_all_for_method_early_stage2_orders_by_fewer_weeks_first():
     older = _opp(ticker_id=1, weeks_in_stage=5, combined_score=90, weinstein_transition=True)
     newer = _opp(ticker_id=2, weeks_in_stage=1, combined_score=40, weinstein_transition=True)

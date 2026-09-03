@@ -225,6 +225,15 @@ _MINERVINI_MIN_RELATIVE_VOLUME = 1.0
 # tienen miedo"), y Lynch/dividendos tampoco basan su selección en el ciclo
 # del índice. Bloquearlas por el stage de Weinstein del S&P 500 contradice
 # la filosofía de esos propios métodos, no la respeta.
+#
+# Excepción: en "extreme fear" (Fear & Greed Index de CNN) el filtro se
+# desactiva también para momentum -- ver `momentum_unblocked` en run().
+# Pánico de mercado general no significa que ESTE título en concreto haya
+# dejado de estar fuerte; early_stage2/minervini ya exigen su propia
+# confirmación de fuerza a nivel de ticker (transición Stage 1->2 con
+# volumen, o Trend Template completo), así que el filtro de índice deja de
+# aportar información nueva justo cuando "el mercado en pánico, este título
+# no" es la señal más valiosa.
 _MARKET_REGIME_OK_STAGES = (2,)
 
 
@@ -419,6 +428,13 @@ def _fundamentals_exit_signal(db: Session, ticker_id: int, as_of: date) -> tuple
 
 
 _MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 3
+# En pánico extremo el sistema debe operar más, no igual -- hay más calidad
+# real cotizando barata de lo habitual (más candidatos que superan el umbral
+# "excepcional" de cada método el mismo día), y el tope normal de 3 se queda
+# corto para aprovecharlo. El umbral de calidad de cada método NO cambia
+# (sigue siendo el mismo "excepcional" de siempre) -- solo se dejan entrar
+# más de los que YA califican.
+_EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 6
 
 
 def _pick_all_for_method(
@@ -435,9 +451,12 @@ def _pick_all_for_method(
     simple, un umbral mucho más común) sin tope disparó a miles de posiciones
     simultáneas en medio año -- no una cartera operable, ruido estadístico.
     3 por método/día es el punto intermedio: más diversificación que el
-    límite de 1 original, sin la explosión sin tope. El resto de guardas
-    (ticker ya abierto, cooldown, extensión/volumen de minervini, régimen de
-    mercado) se siguen aplicando individualmente por candidato en run()."""
+    límite de 1 original, sin la explosión sin tope. En "extreme fear" el
+    tope sube a `_EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY` (ver
+    constante) -- más operaciones, mismo umbral de calidad. El resto de
+    guardas (ticker ya abierto, cooldown, extensión/volumen de minervini,
+    régimen de mercado) se siguen aplicando individualmente por candidato en
+    run()."""
     candidates = [o for o in opportunities if _is_exceptional(o, method, fear_greed_rating)]
     if method == _EARLY_STAGE2:
         candidates.sort(key=lambda o: (o.weeks_in_stage, -o.combined_score))
@@ -447,7 +466,12 @@ def _pick_all_for_method(
         candidates.sort(key=lambda o: o.weinstein_rsi)
     else:
         candidates.sort(key=lambda o: -(_strategy_result(o, method) or {}).get("score", 0))
-    return candidates[:_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY]
+    cap = (
+        _EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY
+        if fear_greed_rating == "extreme fear"
+        else _MAX_NEW_ENTRIES_PER_METHOD_PER_DAY
+    )
+    return candidates[:cap]
 
 
 def _minervini_extension_pct(db: Session, ticker_id: int, as_of: date) -> float | None:
@@ -672,12 +696,6 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
             logger.info("Sin corrida previa a %s todavía, no hay señales que promocionar", target_date)
         else:
             market_regime_ok = _market_regime_ok(db, spy_ticker.id, signal_date)
-            if not market_regime_ok:
-                logger.info(
-                    "S&P 500 fuera de Stage 2 en %s, se omiten entradas momentum (early_stage2/"
-                    "minervini) esta corrida -- lynch/berkshire/dividendos no dependen del ciclo "
-                    "del índice y siguen evaluándose (filtro de régimen de mercado)", signal_date,
-                )
             signal_opps = db.query(Opportunity).filter_by(run_date=signal_date).all()
             tickers_with_open = {
                 row[0] for row in db.query(PortfolioPosition.ticker_id).filter_by(status="open").all()
@@ -700,8 +718,23 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
                     fear_greed_rating = None
             logger.info("Fear & Greed Index en %s: %s", signal_date, fear_greed_rating)
 
+            # "extreme fear" desbloquea momentum aunque el S&P no esté en
+            # Stage 2 -- pánico de mercado general no significa que ESTE
+            # título en concreto haya dejado de estar fuerte (early_stage2/
+            # minervini ya exigen su propia confirmación de fuerza a nivel de
+            # ticker: transición Stage 1->2 con volumen, o Trend Template
+            # completo). Fuera de "extreme fear", el filtro de régimen sigue
+            # aplicando normal -- lynch/berkshire/dividendos/mean_reversion
+            # nunca dependen de él (ver _market_regime_ok).
+            momentum_unblocked = market_regime_ok or fear_greed_rating == "extreme fear"
+            if not market_regime_ok:
+                logger.info(
+                    "S&P 500 fuera de Stage 2 en %s -- entradas momentum (early_stage2/minervini) %s",
+                    signal_date, "SÍ evalúan (extreme fear desbloquea)" if momentum_unblocked else "se omiten",
+                )
+
             for method in (_EARLY_STAGE2, _MEAN_REVERSION, *_STRATEGY_METHODS):
-                if method in _MOMENTUM_METHODS and not market_regime_ok:
+                if method in _MOMENTUM_METHODS and not momentum_unblocked:
                     continue
                 for top in _pick_all_for_method(signal_opps, method, fear_greed_rating):
                     if method == "minervini" and _minervini_overextended(db, top.ticker_id, signal_date):
