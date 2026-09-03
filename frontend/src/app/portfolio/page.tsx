@@ -61,7 +61,6 @@ function StatCard({ label, value, sublabel }: { label: string; value: React.Reac
 function PositionRow({ position }: { position: PortfolioPosition }) {
   const meta = METHOD_META[position.method];
   const Icon = meta.icon;
-  const beatSpy = position.return_pct - position.spy_return_pct;
 
   return (
     <Link
@@ -88,10 +87,6 @@ function PositionRow({ position }: { position: PortfolioPosition }) {
 
       <div className="text-right sm:col-start-4">
         <ReturnValue pct={position.return_pct} />
-        <p className="text-[11px] text-muted-foreground">
-          {beatSpy >= 0 ? "+" : ""}
-          {beatSpy.toFixed(1)}pp vs S&amp;P
-        </p>
       </div>
 
       <span
@@ -170,7 +165,6 @@ export default async function PortfolioPage() {
             <StatCard
               label="Rentabilidad YTD"
               value={stats.ytd_return_pct !== null ? <ReturnValue pct={stats.ytd_return_pct} /> : "—"}
-              sublabel={stats.ytd_spy_return_pct !== null ? `S&P 500: ${stats.ytd_spy_return_pct >= 0 ? "+" : ""}${stats.ytd_spy_return_pct}%` : undefined}
             />
             <StatCard
               label="Mejor / peor pick"
