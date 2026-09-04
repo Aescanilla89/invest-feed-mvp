@@ -29,14 +29,16 @@ punto intermedio):
     entrar "gangas" en caída libre.
   - dividendos: passed == True (pasa/no-pasa único; no hay umbral más
     estricto posible que ese).
-  - mean_reversion: señal CAN SLIM completa (signal_type "canslim" o "both")
-    + RSI semanal < 30 (sobrevendido) + Fear & Greed Index de CNN en
-    "extreme fear" en el momento de la señal (ver
-    app/screener/fear_greed.py, _fear_greed_rating_on). Los tres a la vez:
-    calidad real, caída real del propio título, y pánico real del mercado
-    general -- comprar cuando el resto vende, apostando a que una empresa
-    que ya cumple CAN SLIM revierte a la media. Sin dato de Fear & Greed
-    (CNN caído) no abre nada ese día, nunca asume el régimen.
+  - mean_reversion: crecimiento de beneficios real (C trimestral + A anual
+    en verde, ver _mean_reversion_quality_ok -- NO el CAN SLIM completo, que
+    exige N/L y ambos son incompatibles con estar sobrevendido) + RSI
+    semanal < 30 (sobrevendido) + Fear & Greed Index de CNN en "extreme
+    fear" en el momento de la señal (ver app/screener/fear_greed.py,
+    _fear_greed_rating_on). Los tres a la vez: calidad real, caída real del
+    propio título, y pánico real del mercado general -- comprar cuando el
+    resto vende, apostando a que una empresa con beneficios reales revierte
+    a la media. Sin dato de Fear & Greed (CNN caído) no abre nada ese día,
+    nunca asume el régimen.
 
 La señal solo se confirma con el cierre de `signal_date`, así que la
 compra se ejecuta a la apertura del día hábil siguiente (`entry_date`,
@@ -273,18 +275,37 @@ def _strategy_result(opp: Opportunity, method: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _mean_reversion_quality_ok(opp: Opportunity) -> bool:
+    """Calidad CAN SLIM para una reversión -- SIN los criterios N (rotura a
+    máximos de 52 semanas con volumen) ni L (RS Rating, fuerza relativa):
+    ambos son, casi por construcción, incompatibles con un título
+    sobrevendido (RSI<30, ver _MEAN_REVERSION_RSI_MAX) -- una acción que
+    acaba de caer con fuerza no está ni cerca de máximos ni tiene fuerza
+    relativa alta. Exigir el CAN SLIM completo (como is_canslim en
+    _compute_signal_type) hacía que mean_reversion NUNCA disparara -- se
+    detectó en la primera resimulación tras añadirlo: 0 operaciones en todo
+    el backtest, pese a varias semanas seguidas de "extreme fear".
+
+    En su lugar: crecimiento de beneficios real y demostrado (C trimestral
+    + A anual, ambos en verde) -- la parte de CAN SLIM que sí tiene sentido
+    pedirle a una empresa que cayó de precio pero sigue siendo buena."""
+    criteria = opp.canslim_criteria or {}
+    c_ok = criteria.get("C", {}).get("value") is True
+    a_ok = criteria.get("A", {}).get("value") is True
+    return c_ok and a_ok
+
+
 def _is_exceptional(opp: Opportunity, method: str, fear_greed_rating: str | None = None) -> bool:
     """Umbral "excepcional" por método -- ver docstring del módulo."""
     if method == _MEAN_REVERSION:
         # Sin dato de Fear & Greed (CNN caído, ver run()) no se abre nada
         # este método hoy -- fail-safe, nunca asumir "está en pánico" sin
-        # confirmarlo. Tampoco basta con CAN SLIM + pánico general: hace
+        # confirmarlo. Tampoco basta con calidad + pánico general: hace
         # falta que ESE título esté sobrevendido (RSI<30), o si no es solo
         # comprar calidad sin que haya una caída real que revertir.
         if fear_greed_rating != "extreme fear":
             return False
-        is_canslim = _compute_signal_type(opp) in ("canslim", "both")
-        return is_canslim and opp.weinstein_rsi < _MEAN_REVERSION_RSI_MAX
+        return _mean_reversion_quality_ok(opp) and opp.weinstein_rsi < _MEAN_REVERSION_RSI_MAX
     if method == _EARLY_STAGE2:
         # Método puramente Weinstein -- exigir además CAN SLIM completo (como
         # antes, ver commit que introdujo signal_type=="both") mezclaba dos

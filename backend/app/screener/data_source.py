@@ -180,11 +180,22 @@ class AlpacaDataSource:
     def get_weekly_prices(self, symbol: str, lookback_weeks: int = 104) -> pd.DataFrame:
         from datetime import datetime, timedelta, timezone
 
+        from alpaca.data.enums import Adjustment
         from alpaca.data.requests import StockBarsRequest
         from alpaca.data.timeframe import TimeFrame
 
+        # adjustment="split": sin esto Alpaca devuelve precios "raw" -- el
+        # nivel de precio real en cada fecha histórica, SIN reescalar por
+        # splits posteriores. Si un ticker hace un split (ej. 2x1), la
+        # semana del split aparece con el precio ya dividido mientras que
+        # todas las semanas anteriores (ya congeladas en BD, ver
+        # _upsert_price_snapshots) siguen al nivel pre-split -- un "crash"
+        # del 50% en el gráfico que nunca ocurrió en la realidad. Pedir la
+        # serie ajustada por split evita que esto vuelva a pasar.
         start = datetime.now(tz=timezone.utc) - timedelta(weeks=lookback_weeks + 4)
-        request = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start)
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, adjustment=Adjustment.SPLIT
+        )
 
         try:
             bars = self._client.get_stock_bars(request)

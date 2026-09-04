@@ -84,27 +84,43 @@ def test_lynch_blocks_entry_in_stage_1_or_4():
     assert _is_exceptional(same_stage_dividendos, "dividendos") is True
 
 
-def test_mean_reversion_requires_extreme_fear_canslim_and_oversold():
-    # Los tres a la vez: pánico de mercado (Fear & Greed), calidad real
-    # (CAN SLIM completo) y caída real del propio título (RSI<30) -- si
-    # falta cualquiera de los tres, no dispara.
+def test_mean_reversion_requires_extreme_fear_earnings_growth_and_oversold():
+    # Los tres a la vez: pánico de mercado (Fear & Greed), crecimiento de
+    # beneficios real (C trimestral + A anual, ver _mean_reversion_quality_ok
+    # -- NO el CAN SLIM completo, que exige N/L, incompatibles con estar
+    # sobrevendido) y caída real del propio título (RSI<30) -- si falta
+    # cualquiera de los tres, no dispara.
     canslim_oversold = _opp(canslim_criteria=_CANSLIM_ALL_PASS, weinstein_rsi=25.0)
     assert _is_exceptional(canslim_oversold, "mean_reversion", fear_greed_rating="extreme fear") is True
 
-    # Sin pánico de mercado (aunque sea CAN SLIM + sobrevendido) no dispara.
+    # Sin pánico de mercado (aunque haya crecimiento de beneficios +
+    # sobrevendido) no dispara.
     assert _is_exceptional(canslim_oversold, "mean_reversion", fear_greed_rating="fear") is False
     assert _is_exceptional(canslim_oversold, "mean_reversion", fear_greed_rating=None) is False
 
-    # Pánico + sobrevendido pero SIN CAN SLIM completo (un criterio
-    # verificable en rojo) no dispara -- comprar cualquier caída en pánico
-    # no es la tesis, comprar CALIDAD que cayó sí.
-    no_canslim = _opp(canslim_criteria={"N": {"value": True}, "C": {"value": False}}, weinstein_rsi=25.0)
-    assert _is_exceptional(no_canslim, "mean_reversion", fear_greed_rating="extreme fear") is False
+    # Pánico + sobrevendido pero SIN crecimiento de beneficios real (C en
+    # rojo) no dispara -- comprar cualquier caída en pánico no es la tesis,
+    # comprar CALIDAD (beneficios reales) que cayó sí. Nótese que N puede
+    # estar en verde (no se exige ni se penaliza) -- lo que importa es C/A.
+    no_earnings_growth = _opp(canslim_criteria={"N": {"value": True}, "C": {"value": False}}, weinstein_rsi=25.0)
+    assert _is_exceptional(no_earnings_growth, "mean_reversion", fear_greed_rating="extreme fear") is False
 
-    # Pánico + CAN SLIM pero SIN sobreventa del propio título no dispara --
-    # sin la caída real de ESE título, es solo comprar calidad porque sí.
+    # Pánico + crecimiento de beneficios pero SIN sobreventa del propio
+    # título no dispara -- sin la caída real de ESE título, es solo comprar
+    # calidad porque sí.
     not_oversold = _opp(canslim_criteria=_CANSLIM_ALL_PASS, weinstein_rsi=45.0)
     assert _is_exceptional(not_oversold, "mean_reversion", fear_greed_rating="extreme fear") is False
+
+
+def test_mean_reversion_does_not_require_criterion_n():
+    # Un título sobrevendido (RSI<30) nunca puede tener N (cerca de máximos
+    # de 52 semanas) en verde por construcción -- por eso solo se exige C+A,
+    # y esto debe seguir disparando aunque N esté en rojo.
+    c_and_a_only = _opp(
+        canslim_criteria={"C": {"value": True}, "A": {"value": True}, "N": {"value": False}, "L": {"value": False}},
+        weinstein_rsi=25.0,
+    )
+    assert _is_exceptional(c_and_a_only, "mean_reversion", fear_greed_rating="extreme fear") is True
 
 
 def test_pick_all_for_method_mean_reversion_sorts_most_oversold_first():
