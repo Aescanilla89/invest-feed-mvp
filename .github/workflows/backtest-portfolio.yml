@@ -19,8 +19,12 @@ on:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    # Universo: S&P500 + Nasdaq100 (~600 tickers).
-    timeout-minutes: 180
+    # Universo: S&P500 + Nasdaq100 (~600 tickers). Antes 180 min bastaba
+    # (última corrida completa: 2h43m) -- tras reparar el histórico de 50
+    # tickers con más semanas de datos (ver scripts/repair_split_prices.py),
+    # la corrida de 2026-09-04 se quedó a 46/52 semanas al llegar al límite
+    # de 3h, así que se amplía el margen.
+    timeout-minutes: 300
     defaults:
       run:
         working-directory: backend
