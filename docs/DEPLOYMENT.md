@@ -28,6 +28,7 @@ Health checks:
 
 Required environment variables:
 
+- `APP_ENV=production`
 - `DATABASE_URL`
 - `CORS_ALLOW_ORIGINS`
 - `ALPACA_API_KEY`

@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import field_validator
@@ -8,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", enable_decoding=False)
 
+    app_env: Literal["development", "test", "production"] = "development"
     database_url: str = "sqlite:///./invest_feed.db"
 
     @field_validator("cors_allow_origins", mode="before")

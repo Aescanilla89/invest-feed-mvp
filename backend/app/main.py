@@ -16,6 +16,8 @@ logger = logging.getLogger("invest_feed")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.app_env == "production" and not settings.database_url.startswith(("postgresql://", "postgres://")):
+        raise RuntimeError("APP_ENV=production requires a PostgreSQL DATABASE_URL")
     # Los jobs diarios (screener, cartera, catalizadores, institucional) corren
     # vía GitHub Actions (.github/workflows/daily-jobs.yml), no en proceso: un
     # BackgroundScheduler no sobrevive entre invocaciones de una función serverless.
