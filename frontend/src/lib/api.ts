@@ -1,6 +1,6 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
-  "https://invest-feed-mvp-production.up.railway.app/api";
+  "https://invest-feed-mvp.onrender.com/api";
 
 export type RiskBucket = "bajo" | "medio" | "alto" | "desconocido";
 

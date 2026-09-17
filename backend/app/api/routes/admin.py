@@ -1,5 +1,7 @@
 """Endpoints de administración para operaciones manuales.
 Protegidos por ADMIN_SECRET — no exponer públicamente sin token."""
+from hmac import compare_digest
+
 import threading
 import traceback
 from datetime import date
@@ -14,7 +16,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def _verify_token(x_admin_secret: str | None = Header(default=None)) -> None:
-    if not settings.admin_secret or x_admin_secret != settings.admin_secret:
+    if not settings.admin_secret or not x_admin_secret or not compare_digest(x_admin_secret, settings.admin_secret):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
