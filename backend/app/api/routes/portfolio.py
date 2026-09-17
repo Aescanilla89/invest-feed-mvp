@@ -231,7 +231,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             trade_benchmark_returns.append(trade_benchmark_return)
             returns_by_method.setdefault(pos.method, []).append(trade_return)
             benchmark_by_method.setdefault(pos.method, []).append(trade_benchmark_return)
-            trade_records.append({"entry_date": pos.entry_date, "exit_date": pos.exit_date, "return_fraction": trade_return, "benchmark_fraction": trade_benchmark_return})
+        trade_records.append({"entry_date": pos.entry_date, "exit_date": pos.exit_date or date.today(), "return_fraction": trade_return, "benchmark_fraction": trade_benchmark_return})
         signal_key = (pos.ticker_id, pos.signal_date or pos.entry_date)
         if pos.method in _AI_EXPLAINED_METHODS:
             explanation = explanations.get(signal_key)
@@ -295,6 +295,15 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         else None
     )
 
+    slot_performance = slot_performance_metrics(trade_records, settings.portfolio_max_open_positions, settings.portfolio_cost_bps)
+    portfolio_start = min((pos.entry_date for pos, _ticker in rows), default=None)
+    benchmark_start = _price_on_or_after(history_by_ticker, spy_ticker.id, portfolio_start) if spy_ticker and portfolio_start else None
+    buy_hold_benchmark = ((current_spy_price / benchmark_start) - 1) * 100 if current_spy_price and benchmark_start else None
+    if buy_hold_benchmark is not None:
+        slot_performance["benchmark_return_pct"] = round(buy_hold_benchmark, 2)
+        slot_performance["alpha_pct"] = round(slot_performance["total_return_pct"] - buy_hold_benchmark, 2)
+    trade_quality = performance_metrics(trade_returns, trade_benchmark_returns, settings.portfolio_cost_bps)
+    performance = {**slot_performance, **{k: v for k, v in trade_quality.items() if k not in {"total_return_pct", "benchmark_return_pct", "alpha_pct", "observations"}}}
     stats = PortfolioStatsSchema(
         total_positions=total,
         open_positions=open_count,
@@ -303,7 +312,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         ytd_spy_return_pct=ytd_spy_return_pct,
         best=best,
         worst=worst,
-        performance={**slot_performance_metrics(trade_records, settings.portfolio_max_open_positions, settings.portfolio_cost_bps), **{k: v for k, v in performance_metrics(trade_returns, trade_benchmark_returns, settings.portfolio_cost_bps).items() if k not in {"total_return_pct", "benchmark_return_pct", "alpha_pct", "observations"}}},
+        performance=performance,
         by_method={method: performance_metrics(values, benchmark_by_method[method], settings.portfolio_cost_bps) for method, values in returns_by_method.items()},
     )
     return PortfolioSchema(stats=stats, positions=positions)
