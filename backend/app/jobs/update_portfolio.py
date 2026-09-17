@@ -113,6 +113,7 @@ from app.ai.explainer import ClaudeExplainer, ExplanationError
 from app.core.db import SessionLocal, init_db
 from app.core.config import settings
 from app.relative_strength import passes_relative_strength
+from app.stock_selection import stock_selection_score
 from app.jobs.run_screener import BENCHMARK_SYMBOL
 from app.models.orm import Opportunity, PortfolioPosition, PriceSnapshot, Ticker
 from app.screener.canslim import CriterionResult
@@ -494,7 +495,7 @@ def _pick_all_for_method(
         # ha caído", el propio corazón de la tesis de reversión.
         candidates.sort(key=lambda o: o.weinstein_rsi)
     else:
-        candidates.sort(key=lambda o: -(_strategy_result(o, method) or {}).get("score", 0))
+        candidates.sort(key=lambda o: -stock_selection_score(o, method))
     cap = (
         _EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY
         if fear_greed_rating == "extreme fear"
