@@ -112,6 +112,7 @@ from app.ai import cache as ai_cache
 from app.ai.explainer import ClaudeExplainer, ExplanationError
 from app.core.db import SessionLocal, init_db
 from app.core.config import settings
+from app.relative_strength import passes_relative_strength
 from app.jobs.run_screener import BENCHMARK_SYMBOL
 from app.models.orm import Opportunity, PortfolioPosition, PriceSnapshot, Ticker
 from app.screener.canslim import CriterionResult
@@ -502,6 +503,16 @@ def _pick_all_for_method(
     return candidates[:cap]
 
 
+def _relative_strength_ok(db: Session, ticker_id: int, spy_ticker_id: int, as_of: date) -> bool:
+    def closes(tid: int) -> dict[date, float]:
+        rows = (db.query(PriceSnapshot.date, PriceSnapshot.close).filter(PriceSnapshot.ticker_id == tid, PriceSnapshot.date <= as_of).order_by(PriceSnapshot.date.asc()).all())
+        return {day: float(close) for day, close in rows}
+    ticker = closes(ticker_id)
+    benchmark = closes(spy_ticker_id)
+    dates = sorted(set(ticker) & set(benchmark))
+    return passes_relative_strength([ticker[day] for day in dates], [benchmark[day] for day in dates])
+
+
 def _minervini_extension_pct(db: Session, ticker_id: int, as_of: date) -> float | None:
     """% del cierre más reciente (<=as_of) sobre su MA10w -- None si no hay al
     menos 10 semanas de histórico (fail-open: no se puede medir extensión sin
@@ -779,6 +790,13 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
                             method, top.ticker_id,
                         )
                         continue
+                    if settings.portfolio_require_relative_strength and not _relative_strength_ok(db, top.ticker_id, spy_ticker.id, signal_date):
+                        logger.info("%s: ticker_id=%s no supera a SPY en 3/6/12m, se omite", method, top.ticker_id)
+                        continue
+
+                    if len(tickers_with_open) >= settings.portfolio_max_open_positions:
+                        logger.info("Límite de posiciones activas alcanzado (%s), no se abren más", settings.portfolio_max_open_positions)
+                        break
                     entry_price = _open_price_on(db, top.ticker_id, target_date)
                     if entry_price is None or spy_entry_price is None:
                         logger.warning(

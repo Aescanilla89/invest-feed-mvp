@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from math import sqrt
 from statistics import mean, pstdev
 from typing import Iterable
@@ -25,6 +26,30 @@ def max_drawdown(returns: Iterable[float]) -> float:
         worst = min(worst, equity / peak - 1.0)
     return worst
 
+
+def slot_performance_metrics(trades: list[dict], max_slots: int = 15, cost_bps: float = 0.0) -> dict[str, float | int | None]:
+    """Compound sequential trades in reusable capital slots.
+
+    Overlapping trades consume different slots; a later trade can reuse a
+    slot only after the previous trade exits. This avoids compounding the
+    same benchmark period multiple times.
+    """
+    if max_slots <= 0:
+        raise ValueError("max_slots debe ser positivo")
+    slots = [{"available": date.min, "equity": 1.0 / max_slots, "benchmark": 1.0 / max_slots} for _ in range(max_slots)]
+    ordered = sorted(trades, key=lambda t: (t["entry_date"], t["exit_date"]))
+    used = 0
+    for trade in ordered:
+        available = next((slot for slot in slots if slot["available"] <= trade["entry_date"]), None)
+        if available is None:
+            continue
+        available["equity"] *= 1 + net_return(trade["return_fraction"], cost_bps)
+        available["benchmark"] *= 1 + trade["benchmark_fraction"]
+        available["available"] = trade["exit_date"]
+        used += 1
+    equity = sum(slot["equity"] for slot in slots)
+    benchmark = sum(slot["benchmark"] for slot in slots)
+    return {"observations": used, "total_return_pct": (equity - 1) * 100, "benchmark_return_pct": (benchmark - 1) * 100, "alpha_pct": (equity - benchmark) * 100}
 
 def performance_metrics(returns: Iterable[float], benchmark: Iterable[float] = (), cost_bps: float = 0.0) -> dict[str, float | int | None]:
     gross = list(returns)

@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     explanation_max_per_run: int = 10
     portfolio_cost_bps: float = 0.0
     portfolio_enable_mean_reversion: bool = False
+    portfolio_max_open_positions: int = 15
+    portfolio_require_relative_strength: bool = True
 
     cors_allow_origins: list[str] = [
         "http://localhost:3000",
