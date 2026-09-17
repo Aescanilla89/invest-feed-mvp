@@ -2,7 +2,7 @@
 
 Fuentes:
 - Earnings: yfinance ticker.earnings_dates (Q2 season ~11 julio)
-- Insider buying: SEC EDGAR Form 4 por ticker (Railway-compatible; Yahoo Finance no)
+- Insider buying: SEC EDGAR Form 4 por ticker (Render-compatible; Yahoo Finance no)
 - Datos macro EEUU: FRED releases/dates (CPI, NFP, PIB) — requiere FRED_API_KEY
 
 Estrategia insider:
@@ -116,7 +116,7 @@ def detect_earnings(symbols: list[str], lookback_days: int = 3) -> list[Catalyst
 
 
 # ---------------------------------------------------------------------------
-# Insider buying — SEC EDGAR submissions por ticker (Railway-compatible)
+# Insider buying — SEC EDGAR submissions por ticker (Render-compatible)
 # ---------------------------------------------------------------------------
 
 def detect_insider_buys(symbols: list[str], lookback_days: int = 21) -> list[CatalystData]:

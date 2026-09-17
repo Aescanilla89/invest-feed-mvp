@@ -27,7 +27,7 @@ function Test-Command([string]$Name) {
 }
 
 function Normalize-Url([string]$Url) {
-    # Railway/Neon a veces entregan postgres:// (legacy); psql acepta ambos,
+    # Render/Neon a veces entregan postgres:// (legacy); psql acepta ambos,
     # pero normalizamos a postgresql:// para consistencia con config.py.
     return $Url -replace '^postgres://', 'postgresql://'
 }
@@ -55,4 +55,4 @@ Write-Host "2/2 Importando en Supabase..."
 & psql -v ON_ERROR_STOP=1 $SupabaseUrl -f $Backup
 if ($LASTEXITCODE -ne 0) { Write-Host "psql falló (código $LASTEXITCODE)." -ForegroundColor Red; exit $LASTEXITCODE }
 
-Write-Host "Migración completa. Actualiza DATABASE_URL en Railway y en los secrets de GitHub Actions." -ForegroundColor Green
+Write-Host "Migración completa. Actualiza DATABASE_URL en Render y en los secrets de GitHub Actions." -ForegroundColor Green

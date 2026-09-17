@@ -1,9 +1,9 @@
 """Fuentes de datos para el screener.
 
 YFinanceDataSource  -- wrapper yfinance (scraping Yahoo Finance). Solo fiable en
-                       entornos locales; Yahoo bloquea IPs de datacenter (Railway).
+                       entornos locales; Yahoo bloquea IPs de datacenter (Render).
 AlpacaDataSource    -- Alpaca Markets API oficial (free tier: IEX feed, US stocks).
-                       Sin bloqueo en Railway. Fundamentales EPS via SEC EDGAR XBRL.
+                       Sin bloqueo en Render. Fundamentales EPS via SEC EDGAR XBRL.
 
 Para cambiar de proveedor: reimplementa la misma interfaz de tres métodos sin
 tocar weinstein.py / canslim.py.
@@ -150,7 +150,7 @@ class YFinanceDataSource:
 
 
 # ---------------------------------------------------------------------------
-# Alpaca (Railway-compatible)
+# Alpaca (Render-compatible)
 # ---------------------------------------------------------------------------
 
 _ALPACA_PAPER_URL = "https://paper-api.alpaca.markets"
@@ -158,7 +158,7 @@ _ALPACA_PAPER_URL = "https://paper-api.alpaca.markets"
 
 class AlpacaDataSource:
     """Alpaca Markets API oficial (free tier: IEX feed para US stocks).
-    No bloqueado en Railway → permite que el cron diario corra en el servidor.
+    No bloqueado en Render → permite que el cron diario corra en el servidor.
 
     OHLCV        : Alpaca Bars API (alpaca-py).
     EPS (C y A)  : SEC EDGAR XBRL companyfacts — misma infra que el criterio S.

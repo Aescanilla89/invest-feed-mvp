@@ -6,7 +6,7 @@ S&P 500 / Nasdaq 100  : scraping Wikipedia / slickcharts (fuente primaria, siemp
 Política de errores:
   - S&P 500 → fallo levanta UniverseScrapeError (aborta el job).
   - Nasdaq 100 → fallo (p.ej. bloqueo anti-bot de slickcharts a IPs de datacenter
-    de Railway, ya visto con Yahoo/iShares) cae a `_NASDAQ100_FALLBACK`, una lista
+    de Render, ya visto con Yahoo/iShares) cae a `_NASDAQ100_FALLBACK`, una lista
     estática congelada en el último scraping exitoso. El índice rebalancea ~1 vez
     al año, así que quedarse unas semanas desactualizado es preferible a que todo
     el job (y por tanto update_portfolio) se quede sin correr días seguidos.

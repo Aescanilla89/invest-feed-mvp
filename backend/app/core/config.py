@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     def __init__(self, **data):
         super().__init__(**data)
-        # Railway entrega postgres:// (legacy); SQLAlchemy 2.0 requiere postgresql://
+        # Render entrega postgres:// (legacy); SQLAlchemy 2.0 requiere postgresql://
         if self.database_url.startswith("postgres://"):
             self.database_url = self.database_url.replace("postgres://", "postgresql://", 1)
 
