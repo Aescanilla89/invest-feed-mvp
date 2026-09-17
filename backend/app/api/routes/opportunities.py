@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.models.orm import Explanation, Opportunity, PriceSnapshot, Ticker
 from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunitySchema, StrategyResultSchema, WeinsteinSchema
+from app.stock_selection import stock_selection_score
 
 _STRATEGY_NAMES = {"minervini", "lynch", "berkshire", "dividendos"}
 _EARLY_STAGE2 = "early_stage2"
@@ -87,6 +88,12 @@ def _to_schema(
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
     raw_strategies = _parse_strategies(opp)
+    selection_scores = {
+        method: round(stock_selection_score(opp, method), 2)
+        for method, result in raw_strategies.items()
+        if isinstance(result, dict) and result.get("passed") is True
+    }
+    selection_method = max(selection_scores, key=selection_scores.get) if selection_scores else None
     return OpportunitySchema(
         ticker=ticker.symbol,
         name=ticker.name,
@@ -110,6 +117,8 @@ def _to_schema(
         first_detected_date=first_detected_date or opp.run_date,
         signal_type=_compute_signal_type(opp),
         strategies=_strategies_to_schema(raw_strategies),
+        selection_score=selection_scores.get(selection_method) if selection_method else None,
+        selection_method=selection_method,
     )
 
 

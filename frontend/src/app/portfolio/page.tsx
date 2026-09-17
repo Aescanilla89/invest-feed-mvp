@@ -69,6 +69,9 @@ function PositionRow({ position }: { position: PortfolioPosition }) {
       <div className="flex items-center gap-2 sm:w-40">
         <Icon className={cn("size-3.5 shrink-0", meta.color)} aria-hidden />
         <span className={cn("text-xs font-medium", meta.color)}>{meta.label}</span>
+        {position.selection_score != null && (
+          <span className="rounded-full bg-(--color-stage-advance)/10 px-1.5 py-0.5 text-[10px] font-semibold text-(--color-stage-advance)">Rank {position.selection_score.toFixed(1)}</span>
+        )}
       </div>
 
       <div className="min-w-0 sm:col-start-2">

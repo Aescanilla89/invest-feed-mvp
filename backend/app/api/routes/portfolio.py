@@ -13,6 +13,7 @@ from app.models.orm import Explanation, Opportunity, PortfolioPosition, PriceSna
 from app.models.schemas import PortfolioPositionSchema, PortfolioSchema, PortfolioStatsSchema
 from app.core.config import settings
 from app.portfolio_metrics import performance_metrics, slot_performance_metrics
+from app.stock_selection import stock_selection_score
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -239,11 +240,18 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
             opp = opportunities.get(signal_key)
             explanation = _strategy_details(opp, pos.method) if opp else None
 
+        position_opp = opportunities.get((pos.ticker_id, pos.signal_date or pos.entry_date))
+        position_selection_score = (
+            round(stock_selection_score(position_opp, pos.method), 2)
+            if position_opp is not None and pos.method not in _AI_EXPLAINED_METHODS
+            else None
+        )
         positions.append(PortfolioPositionSchema(
             ticker=ticker.symbol,
             name=ticker.name,
             sector=ticker.sector,
             method=pos.method,
+            selection_score=position_selection_score,
             status=pos.status,
             explanation=explanation,
             signal_date=pos.signal_date,

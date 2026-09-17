@@ -46,6 +46,8 @@ export interface Opportunity {
   first_detected_date?: string | null;
   signal_type?: SignalType;
   strategies: Partial<Record<StrategyName, StrategyResult>>;
+  selection_score?: number | null;
+  selection_method?: string | null;
 }
 
 export interface PriceBar {
@@ -178,6 +180,7 @@ export interface PortfolioPosition {
   name: string | null;
   sector: string | null;
   method: PortfolioMethod;
+  selection_score?: number | null;
   status: PortfolioStatus;
   explanation: string | null;
   signal_date: string | null;

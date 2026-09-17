@@ -49,6 +49,8 @@ class OpportunitySchema(BaseModel):
     first_detected_date: date | None = None
     signal_type: str | None = None  # "weinstein" | "canslim" | "both"
     strategies: dict[str, StrategyResultSchema] = {}
+    selection_score: float | None = None
+    selection_method: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -73,6 +75,7 @@ class PortfolioPositionSchema(BaseModel):
     name: str | None
     sector: str | None
     method: str
+    selection_score: float | None = None
     status: str  # "open" | "closed"
     explanation: str | None = None  # por qué se eligió, misma explicación AI del feed para ese ticker/día
     signal_date: date | None = None  # día en que se detectó la señal (cierre); entry_date es el día siguiente

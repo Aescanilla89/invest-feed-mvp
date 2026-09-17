@@ -40,6 +40,13 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
         <RiskBadge risk={risk_bucket} />
       </div>
 
+      {opportunity.selection_score != null && (
+        <div className="relative z-10 flex items-center justify-between gap-2 pointer-events-none">
+          <span className="text-xs font-medium text-(--color-stage-advance)">Ranking de selección</span>
+          <span className="rounded-full bg-(--color-stage-advance)/10 px-2 py-0.5 text-xs font-semibold text-(--color-stage-advance)">Rank {opportunity.selection_score.toFixed(1)}</span>
+        </div>
+      )}
+
       {/* Fila 4: gráfica TradingView — overlay transparente encima para que el Link capture los clicks */}
       <div className="relative z-10 mt-auto overflow-hidden rounded-lg">
         <TradingViewMiniChart symbol={ticker} />
