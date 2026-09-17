@@ -36,6 +36,8 @@ async def request_context(request: Request, call_next):
         raise
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
+    if request.method == "GET" and request.url.path in {"/api/opportunities", "/api/portfolio", "/api/catalysts"}:
+        response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
     logger.info("request_complete", extra={"request_id": request_id, "method": request.method, "path": request.url.path, "status_code": response.status_code, "elapsed_ms": elapsed_ms})
     return response
 
