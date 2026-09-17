@@ -66,6 +66,7 @@ export interface OpportunityFilters {
   sector?: string;
   strategy?: StrategyName | "weinstein" | "canslim" | "early_stage2";
   limit?: number;
+  offset?: number;
 }
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -101,6 +102,7 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
   if (filters.sector) params.set("sector", filters.sector);
   if (filters.strategy) params.set("strategy", filters.strategy);
   if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.offset) params.set("offset", String(filters.offset));
   const query = params.toString();
   return fetchJson<Opportunity[]>(`/opportunities${query ? `?${query}` : ""}`);
 }

@@ -132,6 +132,7 @@ def _first_detected_dates(db: Session, ticker_ids: set[int]) -> dict[int, date]:
 @router.get("", response_model=list[OpportunitySchema])
 def list_opportunities(
     limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10000),
     min_score: int = Query(0, ge=0, le=100),
     risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"),
     sector: str | None = None,
@@ -186,7 +187,7 @@ def list_opportunities(
             or any(_has_strategy_signal(opp, s) for s in _STRATEGY_NAMES)
         ]
 
-    rows = rows[:limit]
+    rows = rows[offset : offset + limit]
 
     explanations = {
         e.ticker_id: e.text
