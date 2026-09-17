@@ -103,6 +103,8 @@ class PortfolioStatsSchema(BaseModel):
     ytd_spy_return_pct: float | None
     best: PortfolioPositionSchema | None
     worst: PortfolioPositionSchema | None
+    performance: dict[str, float | int | None] = {}
+    by_method: dict[str, dict[str, float | int | None]] = {}
 
 
 class PortfolioSchema(BaseModel):

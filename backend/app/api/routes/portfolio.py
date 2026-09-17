@@ -11,6 +11,8 @@ from app.core.db import get_db
 from app.jobs.run_screener import BENCHMARK_SYMBOL
 from app.models.orm import Explanation, Opportunity, PortfolioPosition, PriceSnapshot, Ticker
 from app.models.schemas import PortfolioPositionSchema, PortfolioSchema, PortfolioStatsSchema
+from app.core.config import settings
+from app.portfolio_metrics import performance_metrics
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -196,6 +198,10 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     )
 
     positions: list[PortfolioPositionSchema] = []
+    trade_returns: list[float] = []
+    trade_benchmark_returns: list[float] = []
+    returns_by_method: dict[str, list[float]] = {}
+    benchmark_by_method: dict[str, list[float]] = {}
     # (ticker_id -> [(entry_date, return_fraction), ...]) -- se agrupa por
     # ticker porque un mismo nombre puede entrar y salir varias veces en el
     # año (p.ej. IMMR o CLMB, que "chopean" cada 2-4 semanas): contar cada
@@ -217,6 +223,13 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
 
         return_pct = (current_price / pos.entry_price - 1) * 100
         spy_return_pct = (spy_price_now / pos.entry_spy_price - 1) * 100
+        trade_return = current_price / pos.entry_price - 1
+        trade_benchmark_return = spy_price_now / pos.entry_spy_price - 1
+        if pos.status == "closed":
+            trade_returns.append(trade_return)
+            trade_benchmark_returns.append(trade_benchmark_return)
+            returns_by_method.setdefault(pos.method, []).append(trade_return)
+            benchmark_by_method.setdefault(pos.method, []).append(trade_benchmark_return)
         signal_key = (pos.ticker_id, pos.signal_date or pos.entry_date)
         if pos.method in _AI_EXPLAINED_METHODS:
             explanation = explanations.get(signal_key)
@@ -288,5 +301,7 @@ def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
         ytd_spy_return_pct=ytd_spy_return_pct,
         best=best,
         worst=worst,
+        performance=performance_metrics(trade_returns, trade_benchmark_returns, settings.portfolio_cost_bps),
+        by_method={method: performance_metrics(values, benchmark_by_method[method], settings.portfolio_cost_bps) for method, values in returns_by_method.items()},
     )
     return PortfolioSchema(stats=stats, positions=positions)

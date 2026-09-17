@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # oportunidades de la corrida, no para todo el universo escaneado.
     explanation_min_score: int = 40
     explanation_max_per_run: int = 10
+    portfolio_cost_bps: float = 0.0
 
     cors_allow_origins: list[str] = [
         "http://localhost:3000",

@@ -191,6 +191,24 @@ export interface PortfolioPosition {
   exit_reason: string | null;
 }
 
+export interface PortfolioPerformance {
+  observations: number;
+  total_return_pct: number;
+  benchmark_return_pct: number | null;
+  alpha_pct: number | null;
+  win_rate_pct: number | null;
+  average_return_pct: number | null;
+  average_win_pct: number | null;
+  average_loss_pct: number | null;
+  profit_factor: number | null;
+  expectancy_pct: number | null;
+  volatility_pct: number | null;
+  sharpe: number | null;
+  sortino: number | null;
+  max_drawdown_pct: number;
+  beta: number | null;
+}
+
 export interface PortfolioStats {
   total_positions: number;
   open_positions: number;
@@ -199,6 +217,8 @@ export interface PortfolioStats {
   ytd_spy_return_pct: number | null;
   best: PortfolioPosition | null;
   worst: PortfolioPosition | null;
+  performance?: PortfolioPerformance;
+  by_method?: Record<string, PortfolioPerformance>;
 }
 
 export interface Portfolio {
