@@ -21,6 +21,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pytest -q
       - run: python -c "import app.main; print('FastAPI import OK')"
+      - run: DATABASE_URL=sqlite:///./ci_migrations.db alembic upgrade head
 
   frontend:
     runs-on: ubuntu-latest
