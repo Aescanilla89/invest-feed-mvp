@@ -111,6 +111,7 @@ from sqlalchemy.orm import Session
 from app.ai import cache as ai_cache
 from app.ai.explainer import ClaudeExplainer, ExplanationError
 from app.core.db import SessionLocal, init_db
+from app.core.config import settings
 from app.jobs.run_screener import BENCHMARK_SYMBOL
 from app.models.orm import Opportunity, PortfolioPosition, PriceSnapshot, Ticker
 from app.screener.canslim import CriterionResult
@@ -458,6 +459,12 @@ _MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 3
 _EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 6
 
 
+def _enabled_portfolio_methods() -> tuple[str, ...]:
+    methods = (_EARLY_STAGE2, *_STRATEGY_METHODS)
+    if settings.portfolio_enable_mean_reversion:
+        return (_EARLY_STAGE2, _MEAN_REVERSION, *_STRATEGY_METHODS)
+    return methods
+
 def _pick_all_for_method(
     opportunities: list[Opportunity], method: str, fear_greed_rating: str | None = None,
 ) -> list[Opportunity]:
@@ -754,7 +761,7 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
                     signal_date, "SÍ evalúan (extreme fear desbloquea)" if momentum_unblocked else "se omiten",
                 )
 
-            for method in (_EARLY_STAGE2, _MEAN_REVERSION, *_STRATEGY_METHODS):
+            for method in _enabled_portfolio_methods():
                 if method in _MOMENTUM_METHODS and not momentum_unblocked:
                     continue
                 for top in _pick_all_for_method(signal_opps, method, fear_greed_rating):

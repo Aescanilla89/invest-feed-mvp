@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     explanation_min_score: int = 40
     explanation_max_per_run: int = 10
     portfolio_cost_bps: float = 0.0
+    portfolio_enable_mean_reversion: bool = False
 
     cors_allow_origins: list[str] = [
         "http://localhost:3000",
