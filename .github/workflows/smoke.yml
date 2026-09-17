@@ -1,0 +1,22 @@
+name: Production smoke test
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check public API
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://invest-feed-mvp.onrender.com/api"
+          curl --fail --silent --show-error "$base/health" | grep -q '"status":"ok"'
+          curl --fail --silent --show-error "$base/health/ready" | grep -q '"database":"ok"'
+          curl --fail --silent --show-error "$base/opportunities" | grep -q '"ticker"'
+          curl --fail --silent --show-error "$base/portfolio" | grep -q '"positions"'
+      - name: Check frontend
+        run: curl --fail --silent --show-error https://frontend-inky-nine-48.vercel.app/ >/dev/null

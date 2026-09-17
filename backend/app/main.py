@@ -1,8 +1,11 @@
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 
 from app.api.routes import admin, catalysts, health, meta, opportunities, portfolio
 from app.core.config import settings
@@ -21,6 +24,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Invest Feed MVP", version="0.1.0", lifespan=lifespan)
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("request_failed", extra={"request_id": request_id, "path": request.url.path})
+        raise
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info("request_complete", extra={"request_id": request_id, "method": request.method, "path": request.url.path, "status_code": response.status_code, "elapsed_ms": elapsed_ms})
+    return response
 
 app.add_middleware(
     CORSMiddleware,
