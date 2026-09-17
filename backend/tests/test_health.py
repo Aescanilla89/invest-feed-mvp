@@ -42,3 +42,8 @@ def test_health_readiness_returns_503_when_database_fails(monkeypatch):
 def test_cors_accepts_comma_separated_environment_value():
     settings = Settings(cors_allow_origins="https://one.example, https://two.example")
     assert settings.cors_allow_origins == ["https://one.example", "https://two.example"]
+
+
+def test_cors_rejects_wildcard():
+    with pytest.raises(ValueError):
+        Settings(cors_allow_origins="*")

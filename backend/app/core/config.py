@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlparse
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +17,15 @@ class Settings(BaseSettings):
             value = value.strip()
             if value.startswith("["): return json.loads(value)
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("cors_allow_origins")
+    @classmethod
+    def validate_cors_origins(cls, value):
+        for origin in value:
+            parsed = urlparse(origin)
+            if origin == "*" or parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("CORS origins must be explicit http(s) URLs")
         return value
 
     def __init__(self, **data):
