@@ -269,7 +269,7 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
     except InsufficientDataError as exc:
         logger.error("No se pudo analizar el benchmark %s: %s. Abortando corrida.", BENCHMARK_SYMBOL, exc)
         db.close()
-        return
+        raise RuntimeError(f"Benchmark {BENCHMARK_SYMBOL} inválido: {exc}") from exc
 
     # Se persiste el histórico del benchmark igual que el de cualquier ticker del
     # universo (mismo PriceSnapshot) para poder comparar la cartera pública
