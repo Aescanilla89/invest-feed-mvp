@@ -37,7 +37,7 @@ jobs:
         id: check_schedule
         working-directory: .
         run: |
-          if "${{ github.event_name }}" != "schedule"; then
+          if [ "${{ github.event_name }}" != "schedule" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
