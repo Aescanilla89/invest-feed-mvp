@@ -180,7 +180,7 @@ class AlpacaDataSource:
     def get_weekly_prices(self, symbol: str, lookback_weeks: int = 104) -> pd.DataFrame:
         from datetime import datetime, timedelta, timezone
 
-        from alpaca.data.enums import Adjustment
+        from alpaca.data.enums import Adjustment, DataFeed
         from alpaca.data.requests import StockBarsRequest
         from alpaca.data.timeframe import TimeFrame
 
@@ -194,13 +194,13 @@ class AlpacaDataSource:
         # serie ajustada por split evita que esto vuelva a pasar.
         start = datetime.now(tz=timezone.utc) - timedelta(weeks=lookback_weeks + 4)
         request = StockBarsRequest(
-            symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, adjustment=Adjustment.SPLIT
+            symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, adjustment=Adjustment.SPLIT, feed=DataFeed.IEX
         )
 
         try:
             bars = self._client.get_stock_bars(request)
-        except Exception:
-            return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+        except Exception as exc:
+            raise RuntimeError(f"Alpaca no pudo descargar barras para {symbol}: {exc}") from exc
         finally:
             if self._delay:
                 time.sleep(self._delay)
