@@ -14,15 +14,6 @@ const METHOD_META: Record<PortfolioMethod, { label: string; icon: React.ElementT
   mean_reversion: { label: "Reversión a la Media", icon: Zap, color: "text-(--color-strategy-mean-reversion)" },
 };
 
-function Metric({ label, value, suffix = "%" }: { label: string; value: number | null | undefined; suffix?: string }) {
-  return (
-    <div className="rounded-lg border border-border/60 bg-card/50 p-3">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="mt-1 font-heading text-lg font-semibold tabular-nums">{value == null ? "—" : value.toFixed(2) + suffix}</p>
-    </div>
-  );
-}
-
 function ReturnValue({ pct }: { pct: number }) {
   const positive = pct > 0;
   const flat = pct === 0;
@@ -138,12 +129,7 @@ export default async function PortfolioPage() {
         <ArrowLeft className="size-4" aria-hidden /> Volver al feed
       </Link>
 
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Rentabilidad" value={stats.performance?.total_return_pct ?? stats.ytd_return_pct} />
-        <Metric label="Alfa vs SPY" value={stats.performance?.alpha_pct ?? (stats.ytd_return_pct != null && stats.ytd_spy_return_pct != null ? stats.ytd_return_pct - stats.ytd_spy_return_pct : null)} />
-        <Metric label="Win rate" value={stats.performance?.win_rate_pct} suffix="%" />
-        <Metric label="Drawdown" value={stats.performance?.max_drawdown_pct} suffix="%" />
-      </section>
+
 
       {positions.length === 0 ? (
         <div className="mt-8">
