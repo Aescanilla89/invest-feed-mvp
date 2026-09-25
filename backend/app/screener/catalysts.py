@@ -24,7 +24,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 logger = logging.getLogger("catalysts")
 
@@ -46,77 +46,142 @@ class CatalystData:
 # Earnings — yfinance (Q2 season starts ~July 11, blank before that)
 # ---------------------------------------------------------------------------
 
-def detect_earnings(symbols: list[str], lookback_days: int = 3) -> list[CatalystData]:
-    """Detecta earnings publicados en los últimos `lookback_days` días via yfinance."""
+def detect_earnings(
+    symbols: list[str], lookback_days: int = 7, lookahead_days: int = 45
+) -> list[CatalystData]:
+    """Detecta resultados recientes y próximas fechas de resultados via yfinance.
+
+    Devuelve ambos lados de la historia: qué ocurrió en el último resultado
+    disponible (EPS real frente a estimado) y qué evento puede mover la
+    atención próximamente (fecha prevista y EPS estimado si existe).
+    """
     try:
         import yfinance as yf
     except ImportError:
         logger.warning("yfinance no disponible, skipping earnings")
         return []
 
-    cutoff = date.today() - timedelta(days=lookback_days)
+    today = date.today()
+    cutoff = today - timedelta(days=lookback_days)
+    horizon = today + timedelta(days=lookahead_days)
     results: list[CatalystData] = []
 
     for symbol in symbols:
         try:
-            t = yf.Ticker(symbol)
-            dates_df = t.earnings_dates
+            dates_df = yf.Ticker(symbol).earnings_dates
             if dates_df is None or dates_df.empty:
                 continue
 
+            latest_reported = None
+            earliest_upcoming = None
             for dt_idx in dates_df.index:
                 d = _to_date(dt_idx)
-                if d is None or d < cutoff or d > date.today():
+                if d is None or d < cutoff or d > horizon:
                     continue
-
                 row = dates_df.loc[dt_idx]
                 eps_est = _safe_float(row.get("EPS Estimate"))
                 eps_act = _safe_float(row.get("Reported EPS"))
                 surprise = _safe_float(row.get("Surprise(%)"))
 
-                if eps_act is None:
-                    continue  # sin EPS real publicado, no es un earnings ya ocurrido
+                if d <= today and eps_act is not None and latest_reported is None:
+                    if eps_est is not None and eps_act > eps_est:
+                        pct = round(((eps_act - eps_est) / abs(eps_est)) * 100, 1) if eps_est != 0 else None
+                        title = "Resultados publicados: sorpresa positiva" + (f" (+{pct}%)" if pct is not None else "")
+                    elif eps_est is not None and eps_act < eps_est:
+                        title = "Resultados publicados: sorpresa negativa"
+                    else:
+                        title = "Resultados publicados"
+                    parts = [f"EPS estimado: {eps_est:.2f}" if eps_est is not None else None,
+                             f"EPS real: {eps_act:.2f}",
+                             f"Sorpresa: {surprise:+.1f}%" if surprise is not None else None]
+                    latest_reported = CatalystData(
+                        catalyst_type="earnings", symbol=symbol, title=title,
+                        source_id=f"earnings_reported_{symbol}_{d.isoformat()}",
+                        description=", ".join(x for x in parts if x),
+                        extra={"status": "reported", "earnings_date": d.isoformat(),
+                               "eps_estimated": eps_est, "eps_actual": eps_act, "surprise_pct": surprise},
+                    )
+                elif d > today and earliest_upcoming is None:
+                    parts = [f"Fecha prevista: {d.isoformat()}",
+                             f"EPS estimado: {eps_est:.2f}" if eps_est is not None else None]
+                    earliest_upcoming = CatalystData(
+                        catalyst_type="earnings", symbol=symbol,
+                        title="Próximos resultados",
+                        source_id=f"earnings_upcoming_{symbol}_{d.isoformat()}",
+                        description=", ".join(x for x in parts if x),
+                        extra={"status": "upcoming", "earnings_date": d.isoformat(),
+                               "eps_estimated": eps_est},
+                    )
 
-                if eps_est is not None and eps_act > eps_est:
-                    pct = round(((eps_act - eps_est) / abs(eps_est)) * 100, 1) if eps_est != 0 else None
-                    title = "Earnings beat" + (f" +{pct}%" if pct is not None else "")
-                elif eps_est is not None and eps_act < eps_est:
-                    title = "Earnings miss"
-                else:
-                    title = "Resultados publicados"
-
-                desc_parts = []
-                if eps_est is not None:
-                    desc_parts.append(f"EPS estimado: {eps_est:.2f}")
-                if eps_act is not None:
-                    desc_parts.append(f"EPS real: {eps_act:.2f}")
-                if surprise is not None:
-                    desc_parts.append(f"Sorpresa: {surprise:+.1f}%")
-
-                results.append(CatalystData(
-                    catalyst_type="earnings",
-                    symbol=symbol,
-                    title=title,
-                    source_id=f"earnings_{symbol}_{d.isoformat()}",
-                    description=", ".join(desc_parts) if desc_parts else None,
-                    extra={
-                        "earnings_date": d.isoformat(),
-                        "eps_estimated": eps_est,
-                        "eps_actual": eps_act,
-                        "surprise_pct": surprise,
-                    },
-                ))
-                break  # solo el más reciente por ticker
+            if latest_reported is not None:
+                results.append(latest_reported)
+            if earliest_upcoming is not None:
+                results.append(earliest_upcoming)
 
         except Exception:
             logger.debug("Error obteniendo earnings de %s", symbol, exc_info=True)
 
-    logger.info("Earnings detectados: %d de %d tickers", len(results), len(symbols))
+    logger.info("Earnings detectados: %d eventos de %d tickers", len(results), len(symbols))
     return results
 
 
 # ---------------------------------------------------------------------------
-# Insider buying — SEC EDGAR submissions por ticker (Render-compatible)
+# Noticias públicas recientes — yfinance
+# ---------------------------------------------------------------------------
+
+def detect_news(symbols: list[str], lookback_days: int = 7, max_per_ticker: int = 3) -> list[CatalystData]:
+    """Recoge titulares públicos recientes asociados a cada ticker.
+
+    El texto se trata como contexto, no como confirmación de una tesis:
+    el modelo recibe titular, editor y enlace cuando el proveedor los
+    proporciona, y debe separar hecho de interpretación.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.warning("yfinance no disponible, skipping news")
+        return []
+
+    cutoff = date.today() - timedelta(days=lookback_days)
+    results: list[CatalystData] = []
+    for symbol in symbols:
+        try:
+            items = yf.Ticker(symbol).news or []
+            count = 0
+            for item in items:
+                payload = item.get("content", item) if isinstance(item, dict) else {}
+                title = payload.get("title") or item.get("title") if isinstance(item, dict) else None
+                if not title:
+                    continue
+                raw_date = payload.get("pubDate") or payload.get("providerPublishTime") or item.get("providerPublishTime")
+                published = _to_date(raw_date)
+                if published is None or published < cutoff or published > date.today():
+                    continue
+                provider = payload.get("provider", {})
+                publisher = provider.get("displayName") if isinstance(provider, dict) else (item.get("publisher") if isinstance(item, dict) else None)
+                url = payload.get("canonicalUrl", {})
+                if isinstance(url, dict):
+                    url = url.get("url")
+                url = url or (item.get("link") if isinstance(item, dict) else None)
+                source_key = url or f"{symbol}_{published.isoformat()}_{title}"
+                results.append(CatalystData(
+                    catalyst_type="news", symbol=symbol, title=str(title)[:255],
+                    source_id=f"news_{symbol}_{abs(hash(source_key))}",
+                    description=f"Publicado por {publisher}" if publisher else None,
+                    extra={"published": published.isoformat(), "publisher": publisher, "url": url},
+                ))
+                count += 1
+                if count >= max_per_ticker:
+                    break
+        except Exception:
+            logger.debug("Error obteniendo noticias de %s", symbol, exc_info=True)
+    logger.info("Noticias detectadas: %d de %d tickers", len(results), len(symbols))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Insider buying — SEC EDGAR por ticker
+ — SEC EDGAR submissions por ticker (Render-compatible)
 # ---------------------------------------------------------------------------
 
 def detect_insider_buys(symbols: list[str], lookback_days: int = 21) -> list[CatalystData]:
