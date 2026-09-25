@@ -35,9 +35,14 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
         <TimeHorizonBadge opportunity={opportunity} />
       </div>
 
-      {/* Fila 3: riesgo */}
+      {/* Fila 3: riesgo + comprobación visible de la N */}
       <div className="relative z-10 flex items-center justify-between gap-2 pointer-events-none">
         <RiskBadge risk={risk_bucket} />
+        <span className={opportunity.canslim.criteria["N"]?.value === true
+          ? "rounded-full bg-(--color-risk-low)/15 px-2 py-0.5 text-[10px] font-semibold text-(--color-risk-low)"
+          : "rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"}>
+          N {opportunity.canslim.criteria["N"]?.value === true ? "cumple" : "no cumple"}
+        </span>
       </div>
 
       {opportunity.selection_score != null && (
