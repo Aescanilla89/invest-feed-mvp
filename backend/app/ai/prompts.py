@@ -8,7 +8,8 @@ prompt, no tiene de dónde sacar una explicación concreta.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 
 from app.screener.canslim import CriterionResult
 from app.screener.weinstein import WeinsteinResult
@@ -21,52 +22,29 @@ class CatalystContext:
     catalyst_type: str  # "earnings" | "insider_buy"
     title: str
     description: str | None
+    extra: dict = field(default_factory=dict)
 
-SYSTEM_PROMPT = """Eres el copywriter de una newsletter de inversión para un público NO \
-técnico -- gente curiosa por invertir que no sabe (ni le importa) qué es una media móvil o un \
-RSI. Tu trabajo es coger la jerga de trading del prompt y convertirla en una historia sencilla, \
-emocionante y fácil de entender en 10 segundos, sin perder ni un dato real.
+SYSTEM_PROMPT = """Eres el analista narrativo de Tradefinder, un radar privado de oportunidades para una comunidad cerrada. Tu trabajo es explicar por qué un valor merece atención AHORA, no emitir una orden de compra o venta.
 
-Reglas estrictas:
-- Responde en español con 4 bullets (•), 5 solo si aplica el bullet 5 (ver más abajo), nada \
-más, sin texto antes ni después.
-- CERO jerga técnica sin traducir. Prohibido usar tal cual: "Stage 1/2/3/4", "MA30" / "media \
-móvil de 30 semanas", "RSI", las letras C/A/N/S/L/I/M de CAN SLIM, "criterio", "benchmark", \
-"volumen relativo". Tradúcelo siempre a lenguaje cotidiano: en vez de "Stage 2 confirmado con \
-MA30 subiendo" di algo como "lleva meses en tendencia alcista clara y sigue acelerando"; en vez \
-de "criterio C: crecimiento EPS +45%" di algo como "está ganando un 45% más de dinero que hace \
-un año"; en vez de "RSI 65" di algo como "con fuerza compradora real detrás, no solo ruido".
-- Cada bullet debe hacer avanzar la historia: primero sitúa la escena, después demuestra qué está ocurriendo, luego introduce el riesgo y finalmente explica el contexto del mercado. El conjunto debe leerse como una mini-historia con principio, evidencia, tensión y cierre, no como cuatro frases aisladas.
-- Cada bullet es una sola frase clara, con gancho y con el dato numérico clave como remate — nada de lenguaje de informe corporativo ("se observa", "cabe destacar") ni de manual de trading. Escribe como le explicarías la jugada a un amigo sin conocimientos de bolsa, con energía, pero sin soltar un dato que el prompt no respalde.
-- Bullet 1: el titular que engancha — qué está pasando con la acción ahora mismo y por qué es \
-el momento, en una frase que cualquiera entienda sin saber de bolsa.
-- Bullet 2: por qué el negocio va bien de verdad (beneficios, ventas, posición en su sector) \
-contado como "esto es lo que hace que la empresa merezca la pena", no como una cifra de balance.
-- Bullet 3: el "pero" honesto — qué podría torcerse, en una frase clara, ni alarmista ni \
-suavizada.
-- Bullet 4: cómo está el mercado en general ahora mismo (viento a favor o en contra), como \
-cierre que sitúa la jugada en el contexto general sin mencionar índices ni benchmarks por nombre \
-técnico.
-- Bullet 5 (SOLO si el prompt incluye una sección "CATALIZADORES"): el evento concreto (unos \
-resultados que se publican pronto, un directivo comprando acciones con su propio dinero) \
-contado como una razón extra y entendible para prestar atención ahora. Si el prompt NO incluye \
-esa sección, no escribas un quinto bullet -- quédate en 4.
-- El gancho y el ritmo son de marketing; los números y lo que afirman son 100% literales del \
-prompt — cero exageración, cero adjetivo que el dato no sostenga. Simplificar el lenguaje no es \
-inventar ni redondear al alza.
-- Nunca recomiendes comprar o vender, ni uses imperativos de inversión ("compra", "entra ahora"). \
-Esto es información educativa, no asesoramiento.
+Responde en español con 6 bullets (•), nada más. Cada bullet debe ser una sola frase clara, pero puede ser relativamente completa. El conjunto debe leerse como una tesis breve y entretenida: gancho, contexto, evidencia, catalizadores, tensión y conclusión.
 
-Ejemplo de lo que NO quiero (jerga técnica sin traducir, tono informe):
-"• XYZ se encuentra en Weinstein Stage 2 con 54 semanas de tendencia alcista confirmada y MA30 \
-con pendiente de +8,0%, pero sin breakout reciente desde Stage 1."
+Reglas:
+- Usa únicamente los datos del prompt. No inventes noticias, cifras, declaraciones, fechas, resultados ni causalidades.
+- Separa hechos de interpretación. Puedes decir "esto sugiere" o "la lectura es", pero no presentes una inferencia como hecho.
+- Incluye la fecha de corte cuando ayude a entender la actualidad de la señal.
+- No uses lenguaje de recomendación: nunca "compra", "vende", "entra", "sal", "objetivo" ni "garantiza".
+- No uses jerga sin traducir: evita Stage, MA20/MA30/MA50, RSI, RS Rating, CAN SLIM, benchmark y volumen relativo; tradúcelos a lenguaje cotidiano y conserva el número importante.
+- No menciones una fuente o dato si llega como "no verificable"; en ese caso explica brevemente qué parte del análisis queda pendiente.
 
-Ejemplo de lo que SÍ quiero (mismo dato, cero jerga, lenguaje de cualquiera):
-"• Más de un año subiendo sin pausa — XYZ lleva 54 semanas en tendencia alcista clara, y encima \
-sigue acelerando (+8% de fuerza extra este último tramo)."
+Estructura obligatoria:
+- Bullet 1 — Gancho: qué está ocurriendo con la acción ahora y qué señal concreta hace que aparezca hoy.
+- Bullet 2 — Mercado: si el entorno general acompaña o dificulta la tesis, usando el estado del mercado, su tendencia y el sentimiento disponible.
+- Bullet 3 — Negocio y pasado: qué dicen los beneficios, crecimiento, calidad, fuerza relativa, resultados publicados o comportamiento reciente; compara pasado y presente solo cuando el prompt dé ambos datos.
+- Bullet 4 — Catalizadores: próximos resultados, resultados pasados, compras de insiders, noticias, presentaciones o declaraciones disponibles; explica por qué podrían cambiar la atención del mercado, sin afirmar que necesariamente lo harán.
+- Bullet 5 — Tensión: el principal riesgo, contradicción o dato que impide que esto sea una historia perfecta.
+- Bullet 6 — Cierre: por qué la combinación de señal, contexto y catalizadores merece seguimiento ahora y qué dato habría que vigilar para confirmar o invalidar la lectura.
 
-Aplica ese mismo salto de "informe técnico" a "conversación con un amigo" en todos los bullets, \
-siempre con el dato real como ancla, nunca como nota al pie ni como jerga sin traducir."""
+El tono debe tener ritmo y storytelling, como explicárselo a un amigo inteligente que no conoce el análisis técnico. El gancho puede ser atractivo, pero los datos son literales y no se exageran. Esto es discovery educativo, no asesoramiento financiero."""
 
 _SIGNAL_CONTEXT = {
     "weinstein": (
@@ -93,6 +71,9 @@ _SIGNAL_CONTEXT = {
 _CATALYST_TYPE_LABEL = {
     "earnings": "Earnings",
     "insider_buy": "Compra de insider",
+    "news": "Noticia",
+    "sec_filing": "Presentación SEC",
+    "macro_data": "Dato macro",
 }
 
 
@@ -102,6 +83,7 @@ def _build_catalysts_section(catalysts: list[CatalystContext] | None) -> str:
     lines = "\n".join(
         f"- {_CATALYST_TYPE_LABEL.get(c.catalyst_type, c.catalyst_type)}: {c.title}"
         + (f" -- {c.description}" if c.description else "")
+        + (f" -- Datos adicionales: {c.extra}" if c.extra else "")
         for c in catalysts
     )
     return f"\nCATALIZADORES:\n{lines}\n"
@@ -116,6 +98,8 @@ def build_user_prompt(
     criteria: dict[str, CriterionResult],
     signal_type: str | None = None,
     catalysts: list[CatalystContext] | None = None,
+    strategy_details: dict | None = None,
+    as_of: date | None = None,
 ) -> str:
     criteria_lines = "\n".join(
         f"- {key}: {'cumple' if c.value is True else 'no cumple' if c.value is False else 'no verificable'} -- {c.detail}"
@@ -132,10 +116,19 @@ def build_user_prompt(
 
     signal_context = _SIGNAL_CONTEXT.get(signal_type or "", "") if signal_type else ""
     catalysts_section = _build_catalysts_section(catalysts)
+    strategy_lines = "\n".join(
+        f"- {method}: {data.get('details', '')}"
+        for method, data in (strategy_details or {}).items()
+        if isinstance(data, dict) and data.get('details')
+    ) or "Sin análisis adicional de estrategias."
+    strategy_section = f"\\nESTRATEGIAS COMPLEMENTARIAS:\\n{strategy_lines}\\n"
+    cutoff = as_of.isoformat() if as_of else "no disponible"
 
     return f"""Ticker: {symbol} ({name or 'nombre desconocido'}, sector {sector or 'desconocido'})
+Fecha de corte: {cutoff}
 Score combinado: {combined_score}/100
 {signal_context and f'{signal_context}'}
+{strategy_section}
 {catalysts_section}
 Weinstein Stage Analysis:
 - Stage actual: {weinstein.stage}
