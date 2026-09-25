@@ -19,10 +19,11 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 _EARLY_STAGE2 = "early_stage2"
 _MEAN_REVERSION = "mean_reversion"
+_FEATURED = "featured"
 # early_stage2 y mean_reversion se explican con el narrador AI (ver
 # update_portfolio._ensure_explanation) -- ninguno de los dos tiene un
 # "details" factual propio en Opportunity.strategies.
-_AI_EXPLAINED_METHODS = (_EARLY_STAGE2, _MEAN_REVERSION)
+_AI_EXPLAINED_METHODS = (_EARLY_STAGE2, _MEAN_REVERSION, _FEATURED)
 
 # Position sizing por volatilidad: cada posición pesa según el inverso de su
 # ATR%(14 semanas) en el momento de la entrada (más volátil = menos peso,
