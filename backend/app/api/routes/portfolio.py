@@ -145,12 +145,20 @@ def _strategy_details(opp: Opportunity, method: str) -> str | None:
 def get_portfolio(db: Session = Depends(get_db)) -> PortfolioSchema:
     spy_ticker = db.query(Ticker).filter_by(symbol=BENCHMARK_SYMBOL).one_or_none()
 
-    rows = (
+    all_rows = (
         db.query(PortfolioPosition, Ticker)
         .join(Ticker, PortfolioPosition.ticker_id == Ticker.id)
         .order_by(PortfolioPosition.entry_date.desc())
         .all()
     )
+    # Las posiciones abiertas legacy se congelan y se excluyen de la cartera
+    # pública y de sus estadísticas. No se borran: siguen en la BD para
+    # auditoría, pero una corrección de reglas no debe reescribir su historial.
+    rows = [
+        (pos, ticker)
+        for pos, ticker in all_rows
+        if pos.portfolio_scope != "legacy" or pos.status == "closed"
+    ]
 
     # El "porqué se eligió": para early_stage2 (literalmente Weinstein+CAN SLIM)
     # se reutiliza la explicación AI del feed; para los otros 4 métodos se usa
