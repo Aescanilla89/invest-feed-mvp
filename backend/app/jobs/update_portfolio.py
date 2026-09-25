@@ -645,6 +645,7 @@ def _ensure_explanation(db: Session, explainer: ClaudeExplainer | None, opp: Opp
     ai_cache.get_or_create_explanation(
         db, ticker, opp.run_date, opp.combined_score, weinstein, criteria, explainer,
         signal_type=_compute_signal_type(opp),
+        strategy_details=opp.strategies,
     )
     db.commit()
 
