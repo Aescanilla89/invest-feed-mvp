@@ -43,9 +43,12 @@ class ClaudeExplainer:
         criteria: dict[str, CriterionResult],
         signal_type: str | None = None,
         catalysts: list[CatalystContext] | None = None,
+        strategy_details: dict | None = None,
+        as_of=None,
     ) -> str:
         user_prompt = build_user_prompt(
             symbol, name, sector, combined_score, weinstein, criteria, signal_type, catalysts,
+            strategy_details=strategy_details, as_of=as_of,
         )
         try:
             response = self._client.messages.create(
