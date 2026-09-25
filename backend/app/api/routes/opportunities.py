@@ -14,6 +14,7 @@ from app.stock_selection import stock_selection_score
 _STRATEGY_NAMES = {"minervini", "lynch", "berkshire", "dividendos"}
 _EARLY_STAGE2 = "early_stage2"
 _EARLY_STAGE2_MAX_WEEKS = 6  # ventana de "entrada temprana": recién confirmado Stage 2
+_FEATURED_MIN_SCORE = 80  # corte histórico de la sección Destacadas
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -161,7 +162,7 @@ def _first_detected_dates(db: Session, ticker_ids: set[int]) -> dict[int, date]:
 def list_opportunities(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0, le=10000),
-    min_score: int = Query(0, ge=0, le=100),
+    min_score: int = Query(_FEATURED_MIN_SCORE, ge=0, le=100),
     risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"),
     sector: str | None = None,
     sort: str = Query("score", pattern="^(score|stage)$"),
@@ -208,11 +209,11 @@ def list_opportunities(
     elif strategy and strategy in _STRATEGY_NAMES:
         rows = [(opp, ticker) for opp, ticker in rows if _has_strategy_signal(opp, strategy)]
     else:
-        # Vista por defecto: señales Weinstein + CAN SLIM, más cualquiera que pase al menos una estrategia
+        # Destacadas es una selección global por score, no la unión de las
+        # alertas tempranas ni de las pestañas de estrategias.
         rows = [
             (opp, ticker) for opp, ticker in rows
-            if _compute_signal_type(opp) is not None
-            or any(_has_strategy_signal(opp, s) for s in _STRATEGY_NAMES)
+            if opp.combined_score >= _FEATURED_MIN_SCORE
         ]
 
     rows = rows[offset : offset + limit]
