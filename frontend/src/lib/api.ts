@@ -172,7 +172,7 @@ export async function getFearGreed(): Promise<FearGreed> {
   return fetchJson<FearGreed>("/catalysts/fear-greed");
 }
 
-export type PortfolioMethod = StrategyName | "early_stage2" | "mean_reversion";
+export type PortfolioMethod = StrategyName | "early_stage2" | "mean_reversion" | "featured";
 export type PortfolioStatus = "open" | "closed";
 
 export interface PortfolioPosition {
