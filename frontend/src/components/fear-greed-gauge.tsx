@@ -55,7 +55,7 @@ function DeltaRow({ label, value, current }: { label: string; value: number; cur
   );
 }
 
-export function FearGreedGauge({ data }: { data: FearGreed }) {
+export function FearGreedGauge({ data, className }: { data: FearGreed; className?: string }) {
   const rating = normalizeRating(data.rating);
   // La aguja arranca en 50 (neutral) y anima hasta el score real al montar
   // -- el pequeño delay es a propósito, para que la transición CSS se note
@@ -69,7 +69,7 @@ export function FearGreedGauge({ data }: { data: FearGreed }) {
   const angle = needleAngle(displayScore);
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:gap-6">
+    <div className={cn("flex flex-col gap-4 rounded-xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:gap-6", className)}>
       <div className="relative mx-auto w-full max-w-[240px] shrink-0 sm:mx-0">
         <svg viewBox="0 0 200 118" className="w-full overflow-visible">
           <defs>
