@@ -77,22 +77,28 @@ export function CatalystsSection() {
       {/* Header -- deliberadamente distinto de SectionHeader: icono inline sin
        * círculo tintado, con línea de radar bajo el título en vez de un badge,
        * para diferenciar esta sección orientada a eventos del resto de grids. */}
-      <div className="flex items-center gap-2.5">
-        <Radar className="size-5 shrink-0 text-(--color-catalyst-earnings)" aria-hidden />
-        <h2 className="font-heading text-base font-semibold leading-none">
-          Catalizadores del Día
-        </h2>
-        {catalysts !== null && (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            {catalysts.length}
-          </span>
+      <div className="relative flex flex-col gap-4 lg:min-h-[158px] lg:pr-[330px]">
+        <div className="flex items-center gap-2.5">
+          <Radar className="size-5 shrink-0 text-(--color-catalyst-earnings)" aria-hidden />
+          <h2 className="font-heading text-base font-semibold leading-none">
+            Catalizadores del Día
+          </h2>
+          {catalysts !== null && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {catalysts.length}
+            </span>
+          )}
+        </div>
+        <p className="-mt-3 border-l-2 border-(--color-catalyst-earnings)/40 pl-4 text-xs text-muted-foreground">
+          Earnings · Insider Buys · cruzados con Weinstein + CAN SLIM
+        </p>
+
+        {!fearGreedFailed && (
+          <div className="lg:absolute lg:right-0 lg:top-0 lg:w-[310px]">
+            {fearGreed ? <FearGreedGauge data={fearGreed} className="p-4" /> : <FearGreedSkeleton />}
+          </div>
         )}
       </div>
-      <p className="-mt-3 border-l-2 border-(--color-catalyst-earnings)/40 pl-4 text-xs text-muted-foreground">
-        Earnings · Insider Buys · cruzados con Weinstein + CAN SLIM
-      </p>
-
-      {!fearGreedFailed && (fearGreed ? <FearGreedGauge data={fearGreed} /> : <FearGreedSkeleton />)}
 
       {/* Contenido */}
       {error ? (
