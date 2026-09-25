@@ -22,11 +22,11 @@ interface WeinsteinChartProps {
   positions?: ChartPosition[];
 }
 
-function computeMA30(bars: PriceBar[]): { time: string; value: number }[] {
+function computeMA(bars: PriceBar[], window: number): { time: string; value: number }[] {
   const result: { time: string; value: number }[] = [];
-  for (let i = 29; i < bars.length; i++) {
-    const slice = bars.slice(i - 29, i + 1);
-    const avg = slice.reduce((s, b) => s + b.close, 0) / 30;
+  for (let i = window - 1; i < bars.length; i++) {
+    const slice = bars.slice(i - window + 1, i + 1);
+    const avg = slice.reduce((sum, b) => sum + b.close, 0) / window;
     result.push({ time: bars[i].date, value: avg });
   }
   return result;
@@ -85,16 +85,23 @@ export function WeinsteinChart({ bars, weeksInStage, isTransition, positions = [
       bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close }))
     );
 
-    // MA30 Weinstein (naranja/ámbar)
-    const ma30Series = chart.addLineSeries({
-      color: "#f59e0b",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      crosshairMarkerVisible: false,
-      title: "MA30",
-    });
-    ma30Series.setData(computeMA30(bars));
+    // Medias móviles de corto, medio y largo plazo.
+    const movingAverages = [
+      { window: 20, color: "#60a5fa", title: "MA20" },
+      { window: 30, color: "#f59e0b", title: "MA30" },
+      { window: 50, color: "#c084fc", title: "MA50" },
+    ];
+    for (const { window, color, title } of movingAverages) {
+      const series = chart.addLineSeries({
+        color,
+        lineWidth: window === 30 ? 2 : 1,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+        title,
+      });
+      series.setData(computeMA(bars, window));
+    }
 
     // Volumen (histograma en panel inferior)
     const volumeSeries = chart.addHistogramSeries({
