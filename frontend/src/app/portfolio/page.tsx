@@ -34,18 +34,11 @@ function ReturnValue({ pct }: { pct: number }) {
  * mismo ticker reabriéndose tras el stop-loss), se muestra solo lo
  * representativo -- los mejores trades, la mejor operación de cada ticker
  * que cerró en positivo, ordenados de mayor a menor rentabilidad. */
-const MAX_TOP_TRADES = 10;
-
 function curateClosedPositions(closed: PortfolioPosition[]): PortfolioPosition[] {
-  const bestPerTicker = new Map<string, PortfolioPosition>();
-  for (const p of closed) {
-    const current = bestPerTicker.get(p.ticker);
-    if (!current || p.return_pct > current.return_pct) bestPerTicker.set(p.ticker, p);
-  }
-  return [...bestPerTicker.values()]
-    .filter((p) => p.return_pct > 0)
-    .sort((a, b) => b.return_pct - a.return_pct)
-    .slice(0, MAX_TOP_TRADES);
+  return [...closed].sort((a, b) => {
+    const dateOrder = (b.exit_date ?? b.entry_date).localeCompare(a.exit_date ?? a.entry_date);
+    return dateOrder || b.return_pct - a.return_pct;
+  });
 }
 
 function PositionRow({ position }: { position: PortfolioPosition }) {
@@ -157,9 +150,9 @@ export default async function PortfolioPage() {
           {closed.length > 0 && (
             <div className="mt-8 flex flex-col gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-foreground">Top trades ({closed.length})</h2>
+                <h2 className="text-sm font-semibold text-foreground">Histórico de operaciones ({closed.length})</h2>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  La mejor operación de cada ticker que cerró en positivo, ordenadas de mayor a menor rentabilidad.
+                  Todas las operaciones cerradas de la cartera pública, ordenadas de más recientes a más antiguas.
                 </p>
               </div>
               <div className="flex flex-col gap-2">
