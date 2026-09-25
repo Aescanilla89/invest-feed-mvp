@@ -174,6 +174,10 @@ class PortfolioPosition(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ticker_id: Mapped[int] = mapped_column(ForeignKey("tickers.id"), nullable=False, index=True)
     method: Mapped[str] = mapped_column(String(32), nullable=False)
+    # "current" = cartera válida bajo la regla Destacadas; "legacy" = posición
+    # abierta creada por la lógica antigua. Las posiciones cerradas se conservan
+    # como histórico y no se recalculan por cambios posteriores de criterio.
+    portfolio_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="legacy", server_default="legacy")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)
 
     signal_date: Mapped[date | None] = mapped_column(Date, nullable=True)
