@@ -4,7 +4,7 @@ datos gratuitas elegidas (yfinance + SEC EDGAR).
 Cobertura real (ver README para la tabla completa):
   C - Current quarterly EPS growth   -> calculable; incluye aceleración YoY
   A - Annual EPS growth              -> calculable; incluye consistencia 3/5 años
-  N - New highs con volumen          -> ATH desde price_snapshots acumulado
+  N - New highs con volumen          -> criterio cuantitativo, sin requisito cualitativo
   S - Supply/demand (buybacks)       -> calculable (SEC EDGAR shares outstanding)
   L - Leader (fuerza relativa)       -> RS Rating percentil vs universo
   I - Institutional sponsorship      -> calculable (top-30 instituciones vía 13F-HR de SEC EDGAR)
@@ -104,13 +104,15 @@ def evaluate_a(fundamentals: FundamentalData) -> CriterionResult:
 
 
 def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) -> CriterionResult:
-    """Criterio N: rotura de máximo 52 semanas con volumen confirmatorio.
+    """Criterio N cuantitativo: precio cerca del máximo previo de 52 semanas con volumen confirmatorio.
+    No exige verificar un producto, gestión o catalizador cualitativo: solo se evalúan precio y volumen.
     Usamos el máximo de 52 semanas (no el ATH histórico) para capturar breakouts reales
     desde una base — muchos stocks válidos nunca recuperan su ATH de años anteriores."""
-    if len(weekly_prices) < 52:
-        return CriterionResult(None, "Menos de 52 semanas de histórico, no se puede evaluar")
+    if len(weekly_prices) < 53:
+        return CriterionResult(None, "Menos de 53 semanas de histórico, no se puede evaluar")
 
-    high_52w = float(weekly_prices["High"].tail(52).max())
+    # Excluimos la vela actual para comparar contra el máximo previo real.
+    high_52w = float(weekly_prices["High"].iloc[-53:-1].max())
     current_close = weekly_prices["Close"].iloc[-1]
     # Volumen confirmatorio: la semana ACTUAL vs media de las 10 semanas previas
     # (excluyéndola) -- una rotura real es un pico puntual de 1 semana, no un
@@ -130,8 +132,7 @@ def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) 
         f"Cierre {current_close:.2f} vs máx 52w {high_52w:.2f} "
         f"({current_close / high_52w:.1%} del máximo){ath_str}; "
         f"volumen esta semana {rel_volume:.2f}x vs media 10 semanas previas (umbral {NEW_HIGH_VOLUME_RATIO}x). "
-        "Solo evalúa precio+volumen; el catalizador cualitativo de O'Neil "
-        "('nuevo producto/gestión') no se verifica aquí."
+        "N cuantitativa: solo se evalúan precio y volumen; no se exige catalizador cualitativo."
     )
     return CriterionResult(passed, detail)
 
