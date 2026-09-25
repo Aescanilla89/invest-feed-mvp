@@ -1,8 +1,8 @@
 """Punto de entrada para el workflow diario de GitHub Actions.
 Sustituye al BackgroundScheduler (app/main.py), que no puede correr en el
-backend serverless de Vercel. Ejecuta, en orden, el screener, la
-actualización de la cartera pública, la detección de catalizadores y (solo
-los lunes) la comprobación trimestral de holdings institucionales.
+backend serverless de Vercel. Detecta primero los catalizadores disponibles
+para que el análisis AI del screener los pueda incorporar; después recalcula
+oportunidades y actualiza la cartera pública.
 """
 import logging
 import os
@@ -19,8 +19,17 @@ def main() -> None:
     from app.screener import universe
 
     init_db()
-
     failed = False
+
+    # Primero se recogen los catalizadores de los últimos días y los próximos
+    # eventos. Así run_screener puede incorporarlos a las explicaciones que
+    # genera en esta misma corrida.
+    logger.info("Iniciando detección de catalizadores")
+    try:
+        detect_catalysts.run()
+    except Exception:
+        logger.exception("Error durante la detección de catalizadores")
+        failed = True
 
     logger.info("Iniciando corrida diaria del screener")
     try:
@@ -36,17 +45,9 @@ def main() -> None:
             logger.exception("Error actualizando la cartera pública")
             failed = True
 
-    logger.info("Iniciando detección de catalizadores")
-    try:
-        detect_catalysts.run()
-    except Exception:
-        logger.exception("Error durante la detección de catalizadores")
-        failed = True
-
     # 13F-HR solo se publica ~1 vez por trimestre; comprobar los lunes basta
     # y update_institutional.run() se salta el trabajo si el trimestre ya
-    # está cargado (ver _quarter_already_loaded). `force_institutional` permite
-    # forzarlo desde un workflow_dispatch manual (p.ej. tras poblar una BD nueva).
+    # está cargado. force_institutional permite forzarlo desde workflow_dispatch.
     force_institutional = os.environ.get("FORCE_INSTITUTIONAL", "").lower() == "true"
     if date.today().weekday() == 0 or force_institutional:
         logger.info("Comprobando actualización trimestral de institutional_holdings (force=%s)", force_institutional)
