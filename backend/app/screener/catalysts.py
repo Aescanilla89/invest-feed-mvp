@@ -182,7 +182,6 @@ def detect_news(symbols: list[str], lookback_days: int = 7, max_per_ticker: int 
 
 # ---------------------------------------------------------------------------
 # Insider buying — SEC EDGAR por ticker
- — SEC EDGAR submissions por ticker (Render-compatible)
 # ---------------------------------------------------------------------------
 
 def detect_insider_buys(symbols: list[str], lookback_days: int = 21) -> list[CatalystData]:
