@@ -34,7 +34,7 @@ def _compute_signal_type(opp: Opportunity) -> str | None:
     """
     is_weinstein = bool(opp.weinstein_transition) and opp.weeks_in_stage <= _WEINSTEIN_MAX_WEEKS
 
-    criteria = opp.canslim_criteria
+    criteria = _normalise_criteria(opp.canslim_criteria)
     n_passes = criteria.get("N", {}).get("value") is True
     all_verifiable_pass = all(
         v["value"] is True
@@ -50,6 +50,25 @@ def _compute_signal_type(opp: Opportunity) -> str | None:
     if is_canslim:
         return "canslim"
     return None
+
+
+def _normalise_criteria(raw: dict | None) -> dict[str, dict]:
+    """Normaliza payloads antiguos y actuales de CAN SLIM."""
+    result: dict[str, dict] = {}
+    for letter in ("C", "A", "N", "S", "L", "I", "M"):
+        item = (raw or {}).get(letter) or (raw or {}).get(letter.lower())
+        if not isinstance(item, dict):
+            continue
+        value = item.get("value", item.get("passed"))
+        if isinstance(value, str):
+            value = value.strip().lower() in {"true", "1", "cumple", "passed"}
+        if value not in (True, False, None):
+            value = None
+        result[letter] = {
+            "value": value,
+            "detail": item.get("detail") or item.get("description") or "Sin datos.",
+        }
+    return result
 
 
 def _strategies_to_schema(raw: dict) -> dict[str, StrategyResultSchema]:
@@ -109,7 +128,7 @@ def _to_schema(
             rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0,
         ),
         canslim=CanslimSchema(
-            criteria=opp.canslim_criteria,
+            criteria=_normalise_criteria(opp.canslim_criteria),
             score=f"{passed}/{verifiable} verificables",
         ),
         explanation=explanation_text,
