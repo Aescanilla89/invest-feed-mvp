@@ -880,6 +880,7 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
                 db.add(PortfolioPosition(
                     ticker_id=top.ticker_id,
                     method=_FEATURED,
+                    portfolio_scope="current",
                     status="open",
                     signal_date=signal_date,
                     entry_date=target_date,
