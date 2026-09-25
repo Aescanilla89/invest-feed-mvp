@@ -173,11 +173,11 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
         </div>
         <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <p className="text-xs text-muted-foreground">
-            Media móvil de 30 semanas con pendiente {weinstein.ma_slope_pct >= 0 ? "+" : ""}
+            Media móvil principal de 30 semanas con pendiente {weinstein.ma_slope_pct >= 0 ? "+" : ""}
             {(weinstein.ma_slope_pct * 100).toFixed(1)}% y volumen relativo {weinstein.relative_volume.toFixed(2)}x sobre
             su media de 10 semanas.
           </p>
-          <span className="text-xs text-muted-foreground">Velas semanales · volumen · MA30 (ámbar)</span>
+          <span className="text-xs text-muted-foreground">Velas semanales · volumen · MA20 (azul) · MA30 (ámbar) · MA50 (violeta)</span>
         </div>
         <div className="mt-4 -mx-5">
           <WeinsteinChart
