@@ -36,10 +36,8 @@ móvil de 30 semanas", "RSI", las letras C/A/N/S/L/I/M de CAN SLIM, "criterio", 
 MA30 subiendo" di algo como "lleva meses en tendencia alcista clara y sigue acelerando"; en vez \
 de "criterio C: crecimiento EPS +45%" di algo como "está ganando un 45% más de dinero que hace \
 un año"; en vez de "RSI 65" di algo como "con fuerza compradora real detrás, no solo ruido".
-- Cada bullet es una sola frase corta, con gancho, con el dato numérico clave como remate — \
-nada de lenguaje de informe corporativo ("se observa", "cabe destacar") ni de manual de trading. \
-Escribe como le explicarías la jugada a un amigo sin conocimientos de bolsa, con energía, pero \
-sin soltar un dato que el prompt no respalde.
+- Cada bullet debe hacer avanzar la historia: primero sitúa la escena, después demuestra qué está ocurriendo, luego introduce el riesgo y finalmente explica el contexto del mercado. El conjunto debe leerse como una mini-historia con principio, evidencia, tensión y cierre, no como cuatro frases aisladas.
+- Cada bullet es una sola frase clara, con gancho y con el dato numérico clave como remate — nada de lenguaje de informe corporativo ("se observa", "cabe destacar") ni de manual de trading. Escribe como le explicarías la jugada a un amigo sin conocimientos de bolsa, con energía, pero sin soltar un dato que el prompt no respalde.
 - Bullet 1: el titular que engancha — qué está pasando con la acción ahora mismo y por qué es \
 el momento, en una frase que cualquiera entienda sin saber de bolsa.
 - Bullet 2: por qué el negocio va bien de verdad (beneficios, ventas, posición en su sector) \
