@@ -382,6 +382,7 @@ def _generate_explanations(db: Session, run_date: date, screened: list[ScreenedT
                 db, item.ticker, run_date, item.score.combined_score,
                 item.weinstein_result, item.criteria, explainer,
                 signal_type=item.signal_type,
+                strategy_details=item.strategies,
             )
             db.commit()
         except Exception:
