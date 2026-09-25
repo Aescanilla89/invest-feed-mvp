@@ -21,6 +21,7 @@ from app.screener.catalysts import (
     detect_earnings,
     detect_insider_buys,
     detect_macro_data_releases,
+    detect_news,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -77,8 +78,9 @@ def run(lookback_days_opps: int = 7) -> dict:
         if symbols:
             logger.info("Detectando catalizadores para %d tickers activos", len(symbols))
             per_ticker: list[CatalystData] = []
-            per_ticker.extend(detect_earnings(symbols, lookback_days=3))
-            per_ticker.extend(detect_insider_buys(symbols, lookback_days=14))
+            per_ticker.extend(detect_earnings(symbols, lookback_days=7, lookahead_days=45))
+            per_ticker.extend(detect_insider_buys(symbols, lookback_days=21))
+            per_ticker.extend(detect_news(symbols, lookback_days=7))
             more_saved, more_skipped = _persist(per_ticker)
             saved += more_saved
             skipped += more_skipped
