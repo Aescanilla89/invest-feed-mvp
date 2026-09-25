@@ -140,6 +140,7 @@ _EARLY_STAGE2 = "early_stage2"
 # lynch/berkshire/dividendos del filtro por la misma razón).
 _MEAN_REVERSION = "mean_reversion"
 _FEATURED = "featured"
+_FEATURED_MIN_SCORE = 80  # mismo corte que la sección Destacadas del feed
 _MEAN_REVERSION_RSI_MAX = 30.0
 # Stop de momentum (MA30, ver _exit_signal) vs stop de tesis larga (MA40,
 # ver _fundamentals_exit_signal) -- early_stage2/minervini son señales de
@@ -280,15 +281,8 @@ def _strategy_result(opp: Opportunity, method: str) -> dict | None:
 
 
 def _is_highlighted(opp: Opportunity) -> bool:
-    """Replica exactamente la vista Destacadas del feed.
-    Cualquier señal Weinstein/CAN SLIM o estrategia aprobada entra en la
-    cartera pública, sin un segundo filtro de excepcionalidad."""
-    if _compute_signal_type(opp) is not None:
-        return True
-    return any(
-        (_strategy_result(opp, method) or {}).get("passed") is True
-        for method in _STRATEGY_METHODS
-    )
+    """Replica exactamente el corte de la sección Destacadas del feed."""
+    return opp.combined_score >= _FEATURED_MIN_SCORE
 
 
 def _mean_reversion_quality_ok(opp: Opportunity) -> bool:
@@ -787,7 +781,7 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
                     signal_date, "SÍ evalúan (extreme fear desbloquea)" if momentum_unblocked else "se omiten",
                 )
 
-            for method in _enabled_portfolio_methods():
+            # Las pestañas de estrategias y Entrada Temprana no abren cartera:\n            # solo la sección Destacadas tiene efecto sobre nuevas entradas.\n            for method in ():
                 if method in _MOMENTUM_METHODS and not momentum_unblocked:
                     continue
                 for top in _pick_all_for_method(signal_opps, method, fear_greed_rating):
@@ -848,6 +842,25 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
             # feed considera destacadas. No aplicamos aquí el filtro excepcional,
             # el régimen, la fuerza relativa ni el cooldown: si aparece en
             # Destacadas, se registra como posición al siguiente precio abierto.
+            # Si una ejecución anterior abrió una posición `featured` con
+            # la regla antigua (cualquier señal o estrategia), se cierra de forma
+            # trazable cuando ya tenemos una oportunidad actual y no supera el
+            # corte real de Destacadas. No borramos historial.
+            latest_signal_by_ticker = {o.ticker_id: o for o in signal_opps}
+            for pos in db.query(PortfolioPosition).filter_by(status="open", method=_FEATURED).all():
+                latest_for_position = latest_signal_by_ticker.get(pos.ticker_id)
+                if latest_for_position is None or _is_highlighted(latest_for_position):
+                    continue
+                exit_price = _open_price_on(db, pos.ticker_id, target_date) or pos.entry_price
+                pos.status = "closed"
+                pos.exit_signal_date = signal_date
+                pos.exit_date = target_date
+                pos.exit_price = exit_price
+                pos.exit_spy_price = spy_entry_price
+                pos.exit_reason = "featured_score_below_threshold"
+                tickers_with_open.discard(pos.ticker_id)
+                stats["closed"] += 1
+
             featured_candidates = sorted(
                 (o for o in signal_opps if _is_highlighted(o)),
                 key=lambda o: (-o.combined_score, o.ticker_id),
