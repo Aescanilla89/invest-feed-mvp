@@ -139,12 +139,13 @@ _EARLY_STAGE2 = "early_stage2"
 # del método (ver _market_regime_ok más abajo, que ya excluye a
 # lynch/berkshire/dividendos del filtro por la misma razón).
 _MEAN_REVERSION = "mean_reversion"
+_FEATURED = "featured"
 _MEAN_REVERSION_RSI_MAX = 30.0
 # Stop de momentum (MA30, ver _exit_signal) vs stop de tesis larga (MA40,
 # ver _fundamentals_exit_signal) -- early_stage2/minervini son señales de
 # rotura de corto plazo, lynch/berkshire/dividendos son tesis de calidad/
 # valor/dividendo que necesitan más margen (ver docstring del módulo).
-_MOMENTUM_METHODS = (_EARLY_STAGE2, "minervini")
+_MOMENTUM_METHODS = (_EARLY_STAGE2, "minervini", _FEATURED)
 _EARLY_STAGE2_MAX_WEEKS = 6
 _WEINSTEIN_MAX_WEEKS = 8  # mismo umbral que _compute_signal_type en opportunities.py
 
@@ -276,6 +277,18 @@ def _strategy_result(opp: Opportunity, method: str) -> dict | None:
         return None
     data = raw.get(method)
     return data if isinstance(data, dict) else None
+
+
+def _is_highlighted(opp: Opportunity) -> bool:
+    """Replica exactamente la vista Destacadas del feed.
+    Cualquier señal Weinstein/CAN SLIM o estrategia aprobada entra en la
+    cartera pública, sin un segundo filtro de excepcionalidad."""
+    if _compute_signal_type(opp) is not None:
+        return True
+    return any(
+        (_strategy_result(opp, method) or {}).get("passed") is True
+        for method in _STRATEGY_METHODS
+    )
 
 
 def _mean_reversion_quality_ok(opp: Opportunity) -> bool:
@@ -829,6 +842,41 @@ def run(run_date: date | None = None, fear_greed_history: dict[date, str] | None
                     # no requieren ninguna llamada a la API de Claude.
                     if method in (_EARLY_STAGE2, _MEAN_REVERSION):
                         _ensure_explanation(db, explainer, top, top.ticker)
+
+            # La cartera pública replica todas las oportunidades que el
+            # feed considera destacadas. No aplicamos aquí el filtro excepcional,
+            # el régimen, la fuerza relativa ni el cooldown: si aparece en
+            # Destacadas, se registra como posición al siguiente precio abierto.
+            featured_candidates = sorted(
+                (o for o in signal_opps if _is_highlighted(o)),
+                key=lambda o: (-o.combined_score, o.ticker_id),
+            )
+            for top in featured_candidates:
+                if top.ticker_id in tickers_with_open:
+                    continue
+                entry_price = _open_price_on(db, top.ticker_id, target_date)
+                if entry_price is None or spy_entry_price is None:
+                    logger.warning(
+                        "featured: sin apertura del %s para ticker_id=%s, se pospone",
+                        target_date, top.ticker_id,
+                    )
+                    continue
+                db.add(PortfolioPosition(
+                    ticker_id=top.ticker_id,
+                    method=_FEATURED,
+                    status="open",
+                    signal_date=signal_date,
+                    entry_date=target_date,
+                    entry_price=entry_price,
+                    entry_spy_price=spy_entry_price,
+                ))
+                tickers_with_open.add(top.ticker_id)
+                stats["opened"] += 1
+                logger.info(
+                    "Nueva posición featured: ticker_id=%s señal %s, entrada %.2f (apertura %s)",
+                    top.ticker_id, signal_date, entry_price, target_date,
+                )
+                _ensure_explanation(db, explainer, top, top.ticker)
 
         db.commit()
         logger.info("update_portfolio completado: %s", stats)
