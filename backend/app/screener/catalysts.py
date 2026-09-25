@@ -16,6 +16,7 @@ por el modelo ORM `Catalyst`).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -166,7 +167,7 @@ def detect_news(symbols: list[str], lookback_days: int = 7, max_per_ticker: int 
                 source_key = url or f"{symbol}_{published.isoformat()}_{title}"
                 results.append(CatalystData(
                     catalyst_type="news", symbol=symbol, title=str(title)[:255],
-                    source_id=f"news_{symbol}_{abs(hash(source_key))}",
+                    source_id=f"news_{symbol}_{hashlib.sha1(source_key.encode()).hexdigest()[:16]}",
                     description=f"Publicado por {publisher}" if publisher else None,
                     extra={"published": published.isoformat(), "publisher": publisher, "url": url},
                 ))
