@@ -121,7 +121,7 @@ def build_user_prompt(
         for method, data in (strategy_details or {}).items()
         if isinstance(data, dict) and data.get('details')
     ) or "Sin análisis adicional de estrategias."
-    strategy_section = f"\\nESTRATEGIAS COMPLEMENTARIAS:\\n{strategy_lines}\\n"
+    strategy_section = f"\nESTRATEGIAS COMPLEMENTARIAS:\n{strategy_lines}\n"
     cutoff = as_of.isoformat() if as_of else "no disponible"
 
     return f"""Ticker: {symbol} ({name or 'nombre desconocido'}, sector {sector or 'desconocido'})
