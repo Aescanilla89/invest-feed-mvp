@@ -108,11 +108,11 @@ def evaluate_n(weekly_prices: pd.DataFrame, all_time_high: float | None = None) 
     No exige verificar un producto, gestión o catalizador cualitativo: solo se evalúan precio y volumen.
     Usamos el máximo de 52 semanas (no el ATH histórico) para capturar breakouts reales
     desde una base — muchos stocks válidos nunca recuperan su ATH de años anteriores."""
-    if len(weekly_prices) < 53:
-        return CriterionResult(None, "Menos de 53 semanas de histórico, no se puede evaluar")
+    if len(weekly_prices) < 52:
+        return CriterionResult(None, "Menos de 52 semanas de histórico, no se puede evaluar")
 
     # Excluimos la vela actual para comparar contra el máximo previo real.
-    high_52w = float(weekly_prices["High"].iloc[-53:-1].max())
+    high_52w = float(weekly_prices["High"].iloc[-52:-1].max())
     current_close = weekly_prices["Close"].iloc[-1]
     # Volumen confirmatorio: la semana ACTUAL vs media de las 10 semanas previas
     # (excluyéndola) -- una rotura real es un pico puntual de 1 semana, no un
