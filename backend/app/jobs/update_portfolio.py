@@ -471,7 +471,7 @@ _MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 3
 # corto para aprovecharlo. El umbral de calidad de cada método NO cambia
 # (sigue siendo el mismo "excepcional" de siempre) -- solo se dejan entrar
 # más de los que YA califican.
-_EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 50
+_EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 6
 
 
 def _enabled_portfolio_methods() -> tuple[str, ...]:
