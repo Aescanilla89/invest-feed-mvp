@@ -451,14 +451,14 @@ def _fundamentals_exit_signal(db: Session, ticker_id: int, as_of: date) -> tuple
     return dates[-1], "ma40_break"
 
 
-_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 3
+_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 20
 # En pánico extremo el sistema debe operar más, no igual -- hay más calidad
 # real cotizando barata de lo habitual (más candidatos que superan el umbral
 # "excepcional" de cada método el mismo día), y el tope normal de 3 se queda
 # corto para aprovecharlo. El umbral de calidad de cada método NO cambia
 # (sigue siendo el mismo "excepcional" de siempre) -- solo se dejan entrar
 # más de los que YA califican.
-_EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 6
+_EXTREME_FEAR_MAX_NEW_ENTRIES_PER_METHOD_PER_DAY = 50
 
 
 def _enabled_portfolio_methods() -> tuple[str, ...]:
