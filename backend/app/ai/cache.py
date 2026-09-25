@@ -16,6 +16,7 @@ from app.screener.weinstein import WeinsteinResult
 from datetime import date, timedelta
 
 logger = logging.getLogger("ai.cache")
+_PROMPT_VERSION = "story_v2"
 
 # Earnings quedan relevantes unos días antes/después del evento; insider buys
 # se consideran una señal fresca durante un par de semanas. 14 días cubre
@@ -50,6 +51,7 @@ def get_or_create_explanation(
 
     catalysts = _get_recent_catalysts(db, ticker.id, run_date)
     catalyst_ids = ",".join(str(c.id) for c in sorted(catalysts, key=lambda c: c.id))
+    model_tag = f"{explainer.model}:{_PROMPT_VERSION}"
 
     last = (
         db.query(Explanation)
@@ -61,6 +63,7 @@ def get_or_create_explanation(
         last is not None
         and last.combined_score_at_generation == combined_score
         and (last.catalyst_ids_at_generation or "") == catalyst_ids
+        and last.model_used == model_tag
     ):
         logger.info("%s: score y catalizadores sin cambios, reutilizando explicación del %s", ticker.symbol, last.run_date)
         reused = Explanation(
@@ -68,7 +71,7 @@ def get_or_create_explanation(
             run_date=run_date,
             combined_score_at_generation=combined_score,
             text=last.text,
-            model_used=last.model_used,
+            model_used=model_tag,
             catalyst_ids_at_generation=catalyst_ids,
         )
         db.add(reused)
@@ -76,7 +79,7 @@ def get_or_create_explanation(
         return reused
 
     catalyst_context = [
-        CatalystContext(catalyst_type=c.catalyst_type, title=c.title, description=c.description)
+        CatalystContext(catalyst_type=c.catalyst_type, title=c.title, description=c.description, extra=c.extra or {})
         for c in catalysts
     ]
 
@@ -94,7 +97,7 @@ def get_or_create_explanation(
         run_date=run_date,
         combined_score_at_generation=combined_score,
         text=text,
-        model_used=explainer.model,
+        model_used=model_tag,
         catalyst_ids_at_generation=catalyst_ids,
     )
     db.add(new_explanation)
