@@ -16,7 +16,7 @@ from app.screener.weinstein import WeinsteinResult
 
 logger = logging.getLogger("ai.explainer")
 
-MAX_TOKENS = 500
+MAX_TOKENS = 800
 
 
 class ExplanationError(RuntimeError):
