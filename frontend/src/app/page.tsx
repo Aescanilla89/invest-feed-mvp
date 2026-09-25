@@ -8,8 +8,8 @@ export default function Home() {
       <Header />
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
         <div className="flex flex-col gap-12">
-          <CatalystsSection />
           <FeedSection />
+          <CatalystsSection />
         </div>
       </main>
     </>
