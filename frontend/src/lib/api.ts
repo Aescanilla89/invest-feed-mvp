@@ -59,6 +59,19 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
 
 export async function getOpportunityDetail(symbol: string): Promise<OpportunityDetail> {
   if (DEMO_MODE) {
+
+
+export type FearGreedRating = "extreme_fear" | "fear" | "neutral" | "greed" | "extreme_greed";
+export interface FearGreed {
+  score: number;
+  rating: FearGreedRating;
+  timestamp: string;
+  previous_close: number;
+  previous_1_week: number;
+  previous_1_month: number;
+  previous_1_year: number;
+  history: Array<{ date: string; score: number; rating: FearGreedRating }> ;
+}
     const { getDemoDetail } = await import("./demo-data");
     const detail = getDemoDetail(symbol);
     if (!detail) throw new Error("Ticker " + symbol + " no existe en el set de demo");
