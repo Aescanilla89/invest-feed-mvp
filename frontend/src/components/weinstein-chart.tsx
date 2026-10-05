@@ -1,159 +1,46 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import {
-  createChart,
-  ColorType,
-  CrosshairMode,
-  LineStyle,
-} from "lightweight-charts";
+import { createChart, ColorType, CrosshairMode, LineStyle } from "lightweight-charts";
 import type { PriceBar } from "@/lib/api";
 
-interface WeinsteinChartProps {
-  bars: PriceBar[];
-  weeksInStage: number;
-  isTransition: boolean;
-}
+interface WeinsteinChartProps { bars: PriceBar[]; weeksInStage: number; isTransition: boolean; firstDetectedDate?: string | null; }
 
 function computeMA(bars: PriceBar[], window: number): { time: string; value: number }[] {
   const result: { time: string; value: number }[] = [];
   for (let i = window - 1; i < bars.length; i++) {
     const slice = bars.slice(i - window + 1, i + 1);
-    const avg = slice.reduce((sum, b) => sum + b.close, 0) / window;
-    result.push({ time: bars[i].date, value: avg });
+    result.push({ time: bars[i].date, value: slice.reduce((sum, b) => sum + b.close, 0) / window });
   }
   return result;
 }
 
-export function WeinsteinChart({ bars, weeksInStage, isTransition }: WeinsteinChartProps) {
+export function WeinsteinChart({ bars, weeksInStage, isTransition, firstDetectedDate }: WeinsteinChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!containerRef.current || bars.length < 2) return;
     const container = containerRef.current;
-
     const isDark = document.documentElement.classList.contains("dark");
     const textColor = isDark ? "rgba(200,200,200,0.65)" : "rgba(0,0,0,0.5)";
     const gridColor = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)";
-    const bgColor = isDark ? "#0a0a0a" : "#ffffff";
-
-    const chart = createChart(container, {
-      layout: {
-        background: { type: ColorType.Solid, color: bgColor },
-        textColor,
-        fontFamily: "inherit",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: gridColor, style: LineStyle.Dotted },
-        horzLines: { color: gridColor, style: LineStyle.Dotted },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)", labelBackgroundColor: isDark ? "#333" : "#eee" },
-        horzLine: { color: isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)", labelBackgroundColor: isDark ? "#333" : "#eee" },
-      },
-      rightPriceScale: {
-        borderVisible: false,
-        scaleMargins: { top: 0.05, bottom: 0.28 },
-      },
-      timeScale: {
-        borderVisible: false,
-        barSpacing: 6,
-      },
-      width: container.clientWidth,
-      height: 420,
-    });
-
-    // Velas
-    const candleSeries = chart.addCandlestickSeries({
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
-    });
-    candleSeries.setData(
-      bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close }))
-    );
-
-    // Medias móviles de corto, medio y largo plazo.
-    const movingAverages = [
-      { window: 20, color: "#60a5fa", title: "MA20" },
-      { window: 30, color: "#f59e0b", title: "MA30" },
-      { window: 50, color: "#c084fc", title: "MA50" },
-    ];
-    for (const { window, color, title } of movingAverages) {
-      const series = chart.addLineSeries({
-        color,
-        lineWidth: window === 30 ? 2 : 1,
-        priceLineVisible: false,
-        lastValueVisible: true,
-        crosshairMarkerVisible: false,
-        title,
-      });
+    const chart = createChart(container, { layout: { background: { type: ColorType.Solid, color: isDark ? "#0a0a0a" : "#ffffff" }, textColor, fontFamily: "inherit", fontSize: 11 }, grid: { vertLines: { color: gridColor, style: LineStyle.Dotted }, horzLines: { color: gridColor, style: LineStyle.Dotted } }, crosshair: { mode: CrosshairMode.Normal }, rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.05, bottom: 0.28 } }, timeScale: { borderVisible: false, barSpacing: 6 }, width: container.clientWidth, height: 420 });
+    const candleSeries = chart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderUpColor: "#22c55e", borderDownColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
+    candleSeries.setData(bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })));
+    for (const { window, color, title } of [{ window: 20, color: "#60a5fa", title: "MA20" }, { window: 30, color: "#f59e0b", title: "MA30" }, { window: 50, color: "#c084fc", title: "MA50" }]) {
+      const series = chart.addLineSeries({ color, lineWidth: window === 30 ? 2 : 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false, title });
       series.setData(computeMA(bars, window));
     }
-
-    // Volumen (histograma en panel inferior)
-    const volumeSeries = chart.addHistogramSeries({
-      priceFormat: { type: "volume" },
-      priceScaleId: "volume",
-    });
-    chart.priceScale("volume").applyOptions({
-      scaleMargins: { top: 0.78, bottom: 0 },
-    });
-    volumeSeries.setData(
-      bars.map((b) => ({
-        time: b.date,
-        value: b.volume,
-        color: b.close >= b.open ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.35)",
-      }))
-    );
-
-    // Marcador de transición Stage 1→2 de Weinstein.
+    const volumeSeries = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "volume" });
+    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+    volumeSeries.setData(bars.map((b) => ({ time: b.date, value: b.volume, color: b.close >= b.open ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.35)" })));
     const markers: Parameters<typeof candleSeries.setMarkers>[0] = [];
-
-    if (isTransition && weeksInStage >= 1 && weeksInStage <= bars.length) {
-      const idx = bars.length - weeksInStage;
-      const markerBar = bars[idx];
-      if (markerBar) {
-        markers.push({
-          time: markerBar.date,
-          position: "belowBar",
-          color: "#22c55e",
-          shape: "arrowUp",
-          text: "Stage 1→2",
-        });
-      }
-    }
-
-    if (markers.length > 0) {
-      markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
-      candleSeries.setMarkers(markers);
-    }
-
+    if (isTransition && weeksInStage >= 1 && weeksInStage <= bars.length) { const markerBar = bars[bars.length - weeksInStage]; if (markerBar) markers.push({ time: markerBar.date, position: "belowBar", color: "#22c55e", shape: "arrowUp", text: "Stage 1→2" }); }
+    if (firstDetectedDate) { const detectedBar = bars.find((bar) => bar.date >= firstDetectedDate); if (detectedBar) markers.push({ time: detectedBar.date, position: "aboveBar", color: "#f59e0b", shape: "circle", text: "Primera detección" }); }
+    if (markers.length > 0) { markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)); candleSeries.setMarkers(markers); }
     chart.timeScale().fitContent();
-
-    const ro = new ResizeObserver(() => {
-      chart.applyOptions({ width: container.clientWidth });
-    });
-    ro.observe(container);
-
-    return () => {
-      ro.disconnect();
-      chart.remove();
-    };
-  }, [bars, weeksInStage, isTransition]);
-
-  if (bars.length < 2) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Histórico de precio no disponible todavía.
-      </p>
-    );
-  }
-
-  return <div ref={containerRef} className="w-full rounded-lg overflow-hidden" />;
+    const ro = new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth })); ro.observe(container);
+    return () => { ro.disconnect(); chart.remove(); };
+  }, [bars, weeksInStage, isTransition, firstDetectedDate]);
+  if (bars.length < 2) return <p className="text-sm text-muted-foreground">Histórico de precio no disponible todavía.</p>;
+  return <div ref={containerRef} className="w-full overflow-hidden rounded-lg" />;
 }
