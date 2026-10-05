@@ -170,7 +170,8 @@ class AlpacaDataSource:
     """
 
     def __init__(self, api_key: str, secret_key: str, request_delay_seconds: float = 0.0):
-        from alpaca.data.historical import CorporateActionsClient, StockHistoricalDataClient
+        from alpaca.data.historical import StockHistoricalDataClient
+        from alpaca.data.historical.corporate_actions import CorporateActionsClient
 
         self._client = StockHistoricalDataClient(api_key, secret_key)
         self._corporate_actions = CorporateActionsClient(api_key, secret_key)
