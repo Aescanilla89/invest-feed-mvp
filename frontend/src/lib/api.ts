@@ -1,6 +1,6 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://invest-feed-mvp.onrender.com/api";
 export type RiskBucket = "bajo" | "medio" | "alto" | "desconocido";
-export type FearGreedRating = "extreme_fear" | "fear" | "neutral" | "greed" | "extreme_greed";
+export type FearGreedRating = "extreme fear" | "fear" | "neutral" | "greed" | "extreme greed";
 export interface FearGreed { score: number; rating: FearGreedRating; timestamp: string; previous_close: number; previous_1_week: number; previous_1_month: number; previous_1_year: number; history: Array<{ date: string; score: number; rating: FearGreedRating }>; }
 export interface Weinstein { stage: 1 | 2 | 3 | 4; is_transition: boolean; weeks_in_stage: number; ma_slope_pct: number; relative_volume: number; rsi: number; }
 export interface CanslimCriterion { value: boolean | null; detail: string; }
