@@ -18,7 +18,7 @@ pip install -r backend/requirements.txt
 Start command:
 
 ```text
-bash backend/render-start.sh$PORT
+cd backend && bash render-start.sh
 ```
 
 Health checks:
@@ -58,10 +58,9 @@ Use the pooler or direct PostgreSQL connection string as `DATABASE_URL`. Apply s
 GET /api/health
 GET /api/health/ready
 GET /api/opportunities
-GET /api/portfolio
 ```
 
-A successful deployment requires HTTP 200 for all four endpoints and no CORS errors from the Vercel origin.
+A successful deployment requires HTTP 200 for all three endpoints and no CORS errors from the Vercel origin.
 
 The Render start command applies Alembic migrations before starting FastAPI. Bootstrap an existing database with the documented stamp procedure before enabling it.
 
@@ -78,7 +77,14 @@ For the existing production database, first take a Supabase backup and verify th
 
 ```text
 cd backend
-alembic stamp head
+alembic stamp 6ab752a2f0ca
 ```
 
-Only after that bootstrap should Render deploys run alembic upgrade head before starting the API. Do not run stamp against an unverified database.
+Only after that bootstrap should Render deploys run alembic upgrade head before starting the API to apply subsequent migrations, including portfolio_scope_20260925. Do not run stamp against an unverified database.
+
+## Dashboard scope
+
+The public website shows opportunities and catalysts. `/portfolio` redirects to `/`,
+and the daily pipeline no longer updates portfolio positions. Existing portfolio
+tables and historical data are retained. Portfolio tools remain available for
+manual internal use, but are outside the dashboard smoke test.
