@@ -52,9 +52,17 @@ def _compute_rsi(close: pd.Series, period: int = RSI_WINDOW) -> pd.Series:
     loss = (-delta.clip(upper=0))
     avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0.0, float("nan"))
-    rsi = 100.0 - (100.0 / (1.0 + rs))
-    return rsi.fillna(50.0)  # 50 = neutro cuando avg_loss == 0
+    # A series with gains and no losses is RSI 100; a series with losses and
+    # no gains is RSI 0. Only a genuinely uninitialized first value is neutral.
+    rsi = pd.Series(50.0, index=close.index)
+    gains_only = (avg_loss == 0) & (avg_gain > 0)
+    losses_only = (avg_gain == 0) & (avg_loss > 0)
+    normal = (avg_gain > 0) & (avg_loss > 0)
+    rsi[gains_only] = 100.0
+    rsi[losses_only] = 0.0
+    rs = avg_gain[normal] / avg_loss[normal]
+    rsi[normal] = 100.0 - (100.0 / (1.0 + rs))
+    return rsi
 
 
 def _stage_series(close: pd.Series, ma: pd.Series, slope_pct: pd.Series) -> pd.Series:

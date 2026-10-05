@@ -16,6 +16,7 @@ Interfaz esperada:
 from __future__ import annotations
 
 import time
+from datetime import date, timedelta
 from dataclasses import dataclass
 
 import pandas as pd
@@ -169,13 +170,15 @@ class AlpacaDataSource:
     """
 
     def __init__(self, api_key: str, secret_key: str, request_delay_seconds: float = 0.0):
-        from alpaca.data.historical import StockHistoricalDataClient
+        from alpaca.data.historical import CorporateActionsClient, StockHistoricalDataClient
 
         self._client = StockHistoricalDataClient(api_key, secret_key)
+        self._corporate_actions = CorporateActionsClient(api_key, secret_key)
         self._api_key = api_key
         self._secret_key = secret_key
         self._delay = request_delay_seconds
         self._asset_cache: dict[str, dict] = {}
+        self._latest_price_cache: dict[str, float] = {}
 
     def get_weekly_prices(self, symbol: str, lookback_weeks: int = 104) -> pd.DataFrame:
         from datetime import datetime, timedelta, timezone
@@ -228,6 +231,8 @@ class AlpacaDataSource:
         ).dropna()
         weekly = weekly.tail(lookback_weeks)
         _stash_latest_daily(weekly, daily)
+        if not daily.empty:
+            self._latest_price_cache[symbol] = float(daily["Close"].iloc[-1])
         return weekly
 
     def get_fundamentals(self, symbol: str) -> FundamentalData:
@@ -242,7 +247,38 @@ class AlpacaDataSource:
         )
 
     def get_dividend_data(self, symbol: str) -> DividendData:
-        return DividendData(None, None, None)  # no disponible en Alpaca free tier
+        """Obtiene dividendos ejecutados del endpoint oficial de Alpaca.
+
+        El feed IEX no incluye dividendos, pero Corporate Actions sí está
+        disponible con las mismas credenciales. Se suman los pagos ordinarios
+        de los últimos 12 meses y se calcula el yield con el último cierre ya
+        descargado para el mismo ticker.
+        """
+        try:
+            from alpaca.data.enums import CorporateActionsType
+            from alpaca.data.requests import CorporateActionsRequest
+
+            actions = self._corporate_actions.get_corporate_actions(
+                CorporateActionsRequest(
+                    symbols=[symbol],
+                    types=[CorporateActionsType.CASH_DIVIDEND],
+                    start=date.today() - timedelta(days=370),
+                    end=date.today(),
+                    limit=1000,
+                )
+            )
+            dividends = (getattr(actions, "data", {}) or {}).get("cash_dividends", [])
+            annual_dividend = sum(
+                float(getattr(item, "rate", 0) or 0)
+                for item in dividends
+                if not bool(getattr(item, "special", False))
+            )
+            price = self._latest_price_cache.get(symbol)
+            if annual_dividend <= 0 or not price or price <= 0:
+                return DividendData(None, None, None)
+            return DividendData(annual_dividend / price, None, annual_dividend)
+        except Exception:
+            return DividendData(None, None, None)
 
     def get_profile(self, symbol: str) -> tuple[str | None, str | None, float | None]:
         """Nombre via Alpaca /v2/assets. Sector e institutional_pct no disponibles
