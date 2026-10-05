@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { Clock, Flame, TrendingUp, Search, Award, DollarSign, Rocket } from "lucide-react";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
@@ -11,15 +10,6 @@ import { getOpportunities, type Opportunity, type StrategyName } from "@/lib/api
 import { cn } from "@/lib/utils";
 
 const DEFAULT_FILTERS: FeedFilters = { risk: "todos", sector: "todos" };
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.05 } },
-};
-const item = {
-  hidden: { opacity: 0, y: 14 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.25, 1, 0.5, 1] as const } },
-};
 
 // "early_stage2" es un filtro propio (Weinstein stage+semanas), no una de las
 // 4 estrategias evaluadas en el JSON `strategies` del backend -- de ahí el tipo
@@ -104,18 +94,15 @@ function splitByDetectionAge(opportunities: Opportunity[]): {
 function CardGrid({ opportunities }: { opportunities: Opportunity[] }) {
   if (opportunities.length === 0) return null;
   return (
-    <motion.div
+    <div
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-      variants={container}
-      initial="hidden"
-      animate="show"
     >
       {opportunities.map((o) => (
-        <motion.div key={o.ticker} variants={item}>
+        <div key={o.ticker}>
           <OpportunityCard opportunity={o} />
-        </motion.div>
+        </div>
       ))}
-    </motion.div>
+    </div>
   );
 }
 
@@ -240,11 +227,11 @@ export function FeedSection() {
     return Array.from(new Set(all.map((o) => o.sector).filter((s): s is string => Boolean(s)))).sort();
   }, [top, strategyData]);
 
-  if (error || topError) {
-    return <ErrorState message={error ?? topError!} />;
+  if (topError) {
+    return <ErrorState message={topError} />;
   }
 
-  if (!strategyData || !top) {
+  if (!top) {
     // Mirrors the real DOM shape below (FeaturedHeader + StrategyTabBar) at
     // matching heights so the section's total height doesn't jump once data
     // arrives -- avoids a CLS-driven mis-click on the tab bar.
@@ -290,13 +277,13 @@ export function FeedSection() {
   }
 
   const activeConf = STRATEGY_SECTIONS.find((s) => s.key === activeStrategy)!;
-  const activeOpps = strategyData.byStrategy[activeStrategy];
+  const activeOpps = strategyData?.byStrategy[activeStrategy] ?? [];
   const counts = {
-    early_stage2: strategyData.byStrategy.early_stage2.length,
-    minervini: strategyData.byStrategy.minervini.length,
-    lynch: strategyData.byStrategy.lynch.length,
-    berkshire: strategyData.byStrategy.berkshire.length,
-    dividendos: strategyData.byStrategy.dividendos.length,
+    early_stage2: strategyData?.byStrategy.early_stage2.length ?? 0,
+    minervini: strategyData?.byStrategy.minervini.length ?? 0,
+    lynch: strategyData?.byStrategy.lynch.length ?? 0,
+    berkshire: strategyData?.byStrategy.berkshire.length ?? 0,
+    dividendos: strategyData?.byStrategy.dividendos.length ?? 0,
   };
 
   return (
@@ -351,7 +338,11 @@ export function FeedSection() {
         <StrategyTabBar active={activeStrategy} counts={counts} onChange={setActiveStrategy} />
         <div className="mt-4 flex flex-col gap-3">
           <p className={cn("text-xs", activeConf.iconColor)}>{activeConf.sublabel}</p>
-          {activeOpps.length === 0 ? (
+          {error ? <ErrorState message={error} /> : !strategyData ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[...Array(6)].map((_, i) => <OpportunityCardSkeleton key={i} />)}
+            </div>
+          ) : activeOpps.length === 0 ? (
             <EmptyState
               icon={activeConf.icon}
               message={`Sin oportunidades ${activeConf.label} detectadas hoy.`}
