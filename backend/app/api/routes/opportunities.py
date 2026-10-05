@@ -99,7 +99,15 @@ def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None, f
 def _first_detected_dates(db: Session, ticker_ids: set[int]) -> dict[int, date]:
     if not ticker_ids:
         return {}
-    rows = db.query(Opportunity.ticker_id, func.min(Opportunity.run_date)).filter(Opportunity.ticker_id.in_(ticker_ids)).group_by(Opportunity.ticker_id).all()
+    rows = (
+        db.query(Opportunity.ticker_id, func.min(Opportunity.run_date))
+        .filter(
+            Opportunity.ticker_id.in_(ticker_ids),
+            Opportunity.combined_score >= _FEATURED_MIN_SCORE,
+        )
+        .group_by(Opportunity.ticker_id)
+        .all()
+    )
     return {tid: first_date for tid, first_date in rows}
 
 
