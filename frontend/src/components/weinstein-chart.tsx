@@ -9,17 +9,10 @@ import {
 } from "lightweight-charts";
 import type { PriceBar } from "@/lib/api";
 
-export interface ChartPosition {
-  entry_date: string;
-  exit_date: string | null;
-  status: "open" | "closed";
-}
-
 interface WeinsteinChartProps {
   bars: PriceBar[];
   weeksInStage: number;
   isTransition: boolean;
-  positions?: ChartPosition[];
 }
 
 function computeMA(bars: PriceBar[], window: number): { time: string; value: number }[] {
@@ -32,7 +25,7 @@ function computeMA(bars: PriceBar[], window: number): { time: string; value: num
   return result;
 }
 
-export function WeinsteinChart({ bars, weeksInStage, isTransition, positions = [] }: WeinsteinChartProps) {
+export function WeinsteinChart({ bars, weeksInStage, isTransition }: WeinsteinChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -119,9 +112,7 @@ export function WeinsteinChart({ bars, weeksInStage, isTransition, positions = [
       }))
     );
 
-    // Marcadores: transición Stage 1→2 (Weinstein) + entradas/salidas reales
-    // de la cartera pública para este ticker, todos en un único setMarkers
-    // (llamadas sucesivas se pisan entre sí, no se acumulan).
+    // Marcador de transición Stage 1→2 de Weinstein.
     const markers: Parameters<typeof candleSeries.setMarkers>[0] = [];
 
     if (isTransition && weeksInStage >= 1 && weeksInStage <= bars.length) {
@@ -134,25 +125,6 @@ export function WeinsteinChart({ bars, weeksInStage, isTransition, positions = [
           color: "#22c55e",
           shape: "arrowUp",
           text: "Stage 1→2",
-        });
-      }
-    }
-
-    for (const pos of positions) {
-      markers.push({
-        time: pos.entry_date,
-        position: "belowBar",
-        color: "#3b82f6",
-        shape: "arrowUp",
-        text: "Entrada",
-      });
-      if (pos.exit_date) {
-        markers.push({
-          time: pos.exit_date,
-          position: "aboveBar",
-          color: pos.status === "closed" ? "#ef4444" : "#94a3b8",
-          shape: "arrowDown",
-          text: "Salida",
         });
       }
     }
@@ -173,7 +145,7 @@ export function WeinsteinChart({ bars, weeksInStage, isTransition, positions = [
       ro.disconnect();
       chart.remove();
     };
-  }, [bars, weeksInStage, isTransition, positions]);
+  }, [bars, weeksInStage, isTransition]);
 
   if (bars.length < 2) {
     return (
