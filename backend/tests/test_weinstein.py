@@ -1,4 +1,5 @@
 import pytest
+import pandas as pd
 
 from app.screener.weinstein import analyze, InsufficientDataError
 from tests.helpers import make_weekly_df, steady_uptrend, steady_downtrend, flat_sideways
@@ -82,3 +83,10 @@ def test_breakout_with_delayed_volume_not_flagged_as_transition():
     result = analyze(df)
     assert result.stage == 2
     assert result.is_transition_1_to_2 is False
+
+
+def test_rsi_is_100_when_prices_only_rise():
+    from app.screener.weinstein import _compute_rsi
+
+    rsi = _compute_rsi(pd.Series([float(i) for i in range(1, 40)]))
+    assert rsi.iloc[-1] == 100.0
