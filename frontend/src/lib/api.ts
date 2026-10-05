@@ -1,6 +1,7 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://invest-feed-mvp.onrender.com/api";
-
 export type RiskBucket = "bajo" | "medio" | "alto" | "desconocido";
+export type FearGreedRating = "extreme_fear" | "fear" | "neutral" | "greed" | "extreme_greed";
+export interface FearGreed { score: number; rating: FearGreedRating; timestamp: string; previous_close: number; previous_1_week: number; previous_1_month: number; previous_1_year: number; history: Array<{ date: string; score: number; rating: FearGreedRating }>; }
 export interface Weinstein { stage: 1 | 2 | 3 | 4; is_transition: boolean; weeks_in_stage: number; ma_slope_pct: number; relative_volume: number; rsi: number; }
 export interface CanslimCriterion { value: boolean | null; detail: string; }
 export interface Canslim { criteria: Record<string, CanslimCriterion>; score: string; }
@@ -11,12 +12,10 @@ export interface Opportunity { ticker: string; name: string | null; sector: stri
 export interface PriceBar { date: string; open: number; high: number; low: number; close: number; volume: number; }
 export interface OpportunityDetail extends Opportunity { price_history: PriceBar[]; first_detected_price?: number | null; current_price?: number | null; return_since_first_detected_pct?: number | null; }
 export interface OpportunityFilters { risk?: RiskBucket; sector?: string; strategy?: StrategyName | "weinstein" | "canslim" | "early_stage2"; limit?: number; offset?: number; }
-
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const responseCache = new Map<string, { expires: number; value: unknown }>();
 const pendingRequests = new Map<string, Promise<unknown>>();
 const CACHE_TTL = 60_000;
-
 async function fetchJson<T>(path: string): Promise<T> {
   const browser = typeof window !== "undefined";
   const cached = browser ? responseCache.get(path) : undefined;
@@ -37,7 +36,6 @@ async function fetchJson<T>(path: string): Promise<T> {
   if (browser) pendingRequests.set(path, request);
   try { return await request; } finally { if (browser) pendingRequests.delete(path); }
 }
-
 export async function getOpportunities(filters: OpportunityFilters = {}): Promise<Opportunity[]> {
   if (DEMO_MODE) {
     const { DEMO_OPPORTUNITIES } = await import("./demo-data");
@@ -56,22 +54,8 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
   const query = params.toString();
   return fetchJson<Opportunity[]>("/opportunities" + (query ? "?" + query : ""));
 }
-
 export async function getOpportunityDetail(symbol: string): Promise<OpportunityDetail> {
   if (DEMO_MODE) {
-
-
-export type FearGreedRating = "extreme_fear" | "fear" | "neutral" | "greed" | "extreme_greed";
-export interface FearGreed {
-  score: number;
-  rating: FearGreedRating;
-  timestamp: string;
-  previous_close: number;
-  previous_1_week: number;
-  previous_1_month: number;
-  previous_1_year: number;
-  history: Array<{ date: string; score: number; rating: FearGreedRating }> ;
-}
     const { getDemoDetail } = await import("./demo-data");
     const detail = getDemoDetail(symbol);
     if (!detail) throw new Error("Ticker " + symbol + " no existe en el set de demo");
@@ -79,7 +63,6 @@ export interface FearGreed {
   }
   return fetchJson<OpportunityDetail>("/opportunities/" + symbol);
 }
-
 export type CatalystType = "earnings" | "insider_buy" | "macro_data";
 export type CatalystClassification = "oro" | "plata" | "bronce";
 export interface Catalyst { id: number; ticker: string | null; company_name: string | null; sector: string | null; catalyst_type: CatalystType; title: string; description: string | null; detected_date: string; extra: Record<string, unknown>; combined_score: number | null; classification: CatalystClassification | null; explanation: string | null; }
