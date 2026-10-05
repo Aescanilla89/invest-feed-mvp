@@ -197,7 +197,13 @@ def _extract_supply(facts: dict, quarters_to_compare: int, as_of: date | None = 
         if node:
             units = [u for u in node.get("units", {}).get("shares", []) if _filed_ok(u, as_of)]
             if units:
-                series = sorted(units, key=lambda u: u.get("end", ""))
+                # EDGAR repeats the same end date in amended filings and in
+                # several contexts. Keep the latest filed fact per period.
+                by_end: dict[str, dict] = {}
+                for item in sorted(units, key=lambda u: u.get("filed", "")):
+                    if item.get("end"):
+                        by_end[item["end"]] = item
+                series = [by_end[k] for k in sorted(by_end)]
                 break
 
     if not series or len(series) <= quarters_to_compare:
@@ -231,7 +237,8 @@ def _extract_eps(facts: dict, as_of: date | None = None) -> EpsSeriesData:
 
     sorted_units = sorted((u for u in units if _filed_ok(u, as_of)), key=lambda u: u.get("filed", ""))
     quarterly: dict[date, float] = {}
-    annual: dict[date, float] = {}
+    quarterly_periods: dict[date, tuple[date, float]] = {}
+    annual: dict[date, tuple[date, float]] = {}
 
     for item in sorted_units:
         start_str = item.get("start")
@@ -250,12 +257,27 @@ def _extract_eps(facts: dict, as_of: date | None = None) -> EpsSeriesData:
         period_days = (end_date - start_date).days
         if form == "10-Q" and 60 <= period_days <= 120:
             quarterly[end_date] = float(val)
+            quarterly_periods[end_date] = (start_date, float(val))
         elif form == "10-K" and 330 <= period_days <= 400:
-            annual[end_date] = float(val)
+            annual[end_date] = (start_date, float(val))
+
+    # Q4 is normally disclosed only as the annual 10-K total. Reconstruct it
+    # from the annual EPS and the three reported quarters of the same fiscal
+    # year, keeping the series genuinely quarterly for YoY/TTM calculations.
+    for annual_end, (annual_start, annual_eps) in sorted(annual.items()):
+        same_year = [
+            (end, value) for end, (start, value) in quarterly_periods.items()
+            if annual_start <= start < end <= annual_end
+        ]
+        if len(same_year) >= 3:
+            q1_q3 = sorted(same_year)[-3:]
+            q4_end = annual_end
+            if q4_end not in quarterly:
+                quarterly[q4_end] = float(annual_eps - sum(value for _, value in q1_q3))
 
     return EpsSeriesData(
         quarterly=[v for _, v in sorted(quarterly.items())],
-        annual=[v for _, v in sorted(annual.items())],
+        annual=[value for _, (_, value) in sorted(annual.items())],
     )
 
 
@@ -285,10 +307,66 @@ def _annual_series(facts: dict, *tags: str, unit: str = "USD", as_of: date | Non
     return []
 
 
+def _annual_series_by_end(
+    facts: dict, *tags: str, unit: str = "USD", as_of: date | None = None,
+) -> dict[date, float]:
+    """Same extraction as _annual_series, retaining each fiscal end date."""
+    candidates: list[dict[date, float]] = []
+    for tag in tags:
+        node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        if not node:
+            continue
+        annual: dict[date, tuple[str, float]] = {}
+        for item in node.get("units", {}).get(unit, []):
+            if item.get("form") != "10-K" or not _filed_ok(item, as_of):
+                continue
+            start, end, val = item.get("start"), item.get("end"), item.get("val")
+            if not start or not end or val is None:
+                continue
+            try:
+                start_date, end_date = date.fromisoformat(start), date.fromisoformat(end)
+            except ValueError:
+                continue
+            if 330 <= (end_date - start_date).days <= 400:
+                filed = item.get("filed", "")
+                if end_date not in annual or filed >= annual[end_date][0]:
+                    annual[end_date] = (filed, float(val))
+        if annual:
+            candidates.append({end: value for end, (_, value) in annual.items()})
+    if not candidates:
+        return {}
+    return max(candidates, key=lambda series: (max(series), len(series)))
+
+
+def _instant_series_by_end(
+    facts: dict, *tags: str, unit: str = "USD", as_of: date | None = None,
+) -> dict[date, float]:
+    """Extract balance-sheet facts, whose XBRL contexts have no start date."""
+    for tag in tags:
+        node = facts.get("facts", {}).get("us-gaap", {}).get(tag)
+        if not node:
+            continue
+        values: dict[date, tuple[str, float]] = {}
+        for item in node.get("units", {}).get(unit, []):
+            end, val = item.get("end"), item.get("val")
+            if not end or val is None or item.get("start") or not _filed_ok(item, as_of):
+                continue
+            try:
+                end_date = date.fromisoformat(end)
+            except ValueError:
+                continue
+            filed = item.get("filed", "")
+            if end_date not in values or filed >= values[end_date][0]:
+                values[end_date] = (filed, float(val))
+        if values:
+            return {end: value for end, (_, value) in values.items()}
+    return {}
+
+
 def _extract_quality(facts: dict, as_of: date | None = None) -> QualityMetrics:
     """Extrae métricas de calidad del mismo companyfacts que ya descargamos."""
-    gross_profits = _annual_series(facts, "GrossProfit", as_of=as_of)
-    revenues = _annual_series(
+    gross_profits = _annual_series_by_end(facts, "GrossProfit", as_of=as_of)
+    revenues = _annual_series_by_end(
         facts,
         "Revenues",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
@@ -296,16 +374,15 @@ def _extract_quality(facts: dict, as_of: date | None = None) -> QualityMetrics:
         "RevenueFromContractWithCustomerIncludingAssessedTax",
         as_of=as_of,
     )
-    net_incomes = _annual_series(facts, "NetIncomeLoss", as_of=as_of)
-    ocfs = _annual_series(facts, "NetCashProvidedByUsedInOperatingActivities", as_of=as_of)
-    equities = _annual_series(facts, "StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", as_of=as_of)
+    net_incomes = _annual_series_by_end(facts, "NetIncomeLoss", as_of=as_of)
+    ocfs = _annual_series_by_end(facts, "NetCashProvidedByUsedInOperatingActivities", as_of=as_of)
+    equities = _instant_series_by_end(
+        facts, "StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", as_of=as_of,
+    )
 
-    def _avg_ratio(numerators: list[float], denominators: list[float], n_years: int = 3) -> float | None:
-        pairs = [
-            (n, d)
-            for n, d in zip(numerators[-n_years:], denominators[-n_years:])
-            if d and d != 0
-        ]
+    def _avg_ratio(numerators: dict[date, float], denominators: dict[date, float], n_years: int = 3) -> float | None:
+        dates = sorted(numerators.keys() & denominators.keys())[-n_years:]
+        pairs = [(numerators[end], denominators[end]) for end in dates if denominators[end]]
         if not pairs:
             return None
         ratios = [n / d for n, d in pairs]
@@ -313,8 +390,15 @@ def _extract_quality(facts: dict, as_of: date | None = None) -> QualityMetrics:
 
     gross_margin = _avg_ratio(gross_profits, revenues)
     net_margin = _avg_ratio(net_incomes, revenues)
-    ocf_to_ni = _avg_ratio(ocfs, net_incomes) if net_incomes and all(v > 0 for v in net_incomes[-3:]) else None
-    roe = (net_incomes[-1] / equities[-1]) if net_incomes and equities and equities[-1] != 0 else None
+    ni_dates = sorted(net_incomes.keys())
+    ocf_dates = sorted(ocfs.keys() & net_incomes.keys())[-3:]
+    ocf_to_ni = _avg_ratio(ocfs, net_incomes) if ocf_dates and all(net_incomes[end] > 0 for end in ocf_dates) else None
+    roe = None
+    if ni_dates and equities:
+        latest_ni_date = ni_dates[-1]
+        equity_dates = [end for end in equities if end <= latest_ni_date]
+        if equity_dates and equities[max(equity_dates)] != 0:
+            roe = net_incomes[latest_ni_date] / equities[max(equity_dates)]
 
     return QualityMetrics(
         gross_margin=gross_margin,
