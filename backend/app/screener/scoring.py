@@ -24,7 +24,8 @@ _TRANSITION_BONUS = 12  # stage 2 + transición 1->2 reciente = señal de compra
 
 # Bonificaciones dentro de Stage 2 usando métricas de calidad de la tendencia
 # MA slope semanal (>= 0.1% = ~5% anualizado)
-_SLOPE_THRESHOLDS = [(1.0, 7), (0.5, 5), (0.2, 3), (0.1, 1)]
+# ma_slope_pct is a decimal fraction from pandas pct_change: 0.01 = 1%.
+_SLOPE_THRESHOLDS = [(0.01, 7), (0.005, 5), (0.002, 3), (0.001, 1)]
 # RSI: sweet spot 55-75; <50 o >85 penaliza implícitamente por no sumar
 _RSI_BONUS = [(55, 75, 5), (50, 55, 2), (75, 82, 2)]
 # Volumen relativo confirma momentum
