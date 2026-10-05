@@ -13,8 +13,8 @@ from app.stock_selection import stock_selection_score
 
 _STRATEGY_NAMES = {"minervini", "lynch", "berkshire", "dividendos"}
 _EARLY_STAGE2 = "early_stage2"
-_EARLY_STAGE2_MAX_WEEKS = 6  # ventana de "entrada temprana": recién confirmado Stage 2
-_FEATURED_MIN_SCORE = 80  # corte histórico de la sección Destacadas
+_EARLY_STAGE2_MAX_WEEKS = 6
+_FEATURED_MIN_SCORE = 80
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -23,27 +23,15 @@ def _latest_run_date(db: Session) -> date | None:
     return db.query(func.max(Opportunity.run_date)).scalar()
 
 
-_WEINSTEIN_MAX_WEEKS = 8  # entrada fresca: máximo 8 semanas desde el cruce 1→2
+_WEINSTEIN_MAX_WEEKS = 8
 
 
 def _compute_signal_type(opp: Opportunity) -> str | None:
-    """Determina el tipo de señal de entrada según criterios estrictos:
-    - weinstein: Stage 2 + transición 1→2 con volumen confirmado en <= 8 semanas
-    - canslim: criterio N en verde (rotura ATH con volumen) + TODOS los criterios
-               verificables en verde
-    - both: ambas condiciones simultáneas
-    """
     is_weinstein = bool(opp.weinstein_transition) and opp.weeks_in_stage <= _WEINSTEIN_MAX_WEEKS
-
     criteria = _normalise_criteria(opp.canslim_criteria)
     n_passes = criteria.get("N", {}).get("value") is True
-    all_verifiable_pass = all(
-        v["value"] is True
-        for v in criteria.values()
-        if v.get("value") is not None
-    )
+    all_verifiable_pass = all(v["value"] is True for v in criteria.values() if v.get("value") is not None)
     is_canslim = n_passes and all_verifiable_pass
-
     if is_weinstein and is_canslim:
         return "both"
     if is_weinstein:
@@ -54,7 +42,6 @@ def _compute_signal_type(opp: Opportunity) -> str | None:
 
 
 def _normalise_criteria(raw: dict | None) -> dict[str, dict]:
-    """Normaliza payloads antiguos y actuales de CAN SLIM."""
     result: dict[str, dict] = {}
     for letter in ("C", "A", "N", "S", "L", "I", "M"):
         item = (raw or {}).get(letter) or (raw or {}).get(letter.lower())
@@ -65,10 +52,7 @@ def _normalise_criteria(raw: dict | None) -> dict[str, dict]:
             value = value.strip().lower() in {"true", "1", "cumple", "passed"}
         if value not in (True, False, None):
             value = None
-        result[letter] = {
-            "value": value,
-            "detail": item.get("detail") or item.get("description") or "Sin datos.",
-        }
+        result[letter] = {"value": value, "detail": item.get("detail") or item.get("description") or "Sin datos."}
     return result
 
 
@@ -76,11 +60,7 @@ def _strategies_to_schema(raw: dict) -> dict[str, StrategyResultSchema]:
     result = {}
     for name, data in (raw or {}).items():
         if isinstance(data, dict):
-            result[name] = StrategyResultSchema(
-                passed=data.get("passed"),
-                score=data.get("score"),
-                details=data.get("details", ""),
-            )
+            result[name] = StrategyResultSchema(passed=data.get("passed"), score=data.get("score"), details=data.get("details", ""))
     return result
 
 
@@ -98,154 +78,58 @@ def _parse_strategies(opp: Opportunity) -> dict:
 
 
 def _has_strategy_signal(opp: Opportunity, strategy: str) -> bool:
-    raw = _parse_strategies(opp)
-    return bool((raw.get(strategy) or {}).get("passed"))
+    return bool((_parse_strategies(opp).get(strategy) or {}).get("passed"))
 
 
-def _to_schema(
-    opp: Opportunity, ticker: Ticker, explanation_text: str | None, first_detected_date: date | None = None,
-    requested_strategy: str | None = None,
-) -> OpportunitySchema:
+def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None, first_detected_date: date | None = None, requested_strategy: str | None = None) -> OpportunitySchema:
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
     raw_strategies = _parse_strategies(opp)
-    selection_scores = {
-        method: round(stock_selection_score(opp, method), 2)
-        for method, result in raw_strategies.items()
-        if isinstance(result, dict) and result.get("passed") is True
-    }
-    selection_method = (
-        requested_strategy
-        if requested_strategy in selection_scores
-        else (max(selection_scores, key=selection_scores.get) if selection_scores else None)
-    )
+    selection_scores = {method: round(stock_selection_score(opp, method), 2) for method, result in raw_strategies.items() if isinstance(result, dict) and result.get("passed") is True}
+    selection_method = requested_strategy if requested_strategy in selection_scores else (max(selection_scores, key=selection_scores.get) if selection_scores else None)
     return OpportunitySchema(
-        ticker=ticker.symbol,
-        name=ticker.name,
-        sector=ticker.sector,
-        combined_score=opp.combined_score,
-        risk_bucket=opp.risk_bucket,
-        weinstein=WeinsteinSchema(
-            stage=opp.weinstein_stage,
-            is_transition=opp.weinstein_transition,
-            weeks_in_stage=opp.weeks_in_stage,
-            ma_slope_pct=opp.weinstein_ma_slope_pct,
-            relative_volume=opp.weinstein_relative_volume,
-            rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0,
-        ),
-        canslim=CanslimSchema(
-            criteria=_normalise_criteria(opp.canslim_criteria),
-            score=f"{passed}/{verifiable} verificables",
-        ),
-        explanation=explanation_text,
-        last_updated=opp.run_date,
-        first_detected_date=first_detected_date or opp.run_date,
-        signal_type=_compute_signal_type(opp),
-        strategies=_strategies_to_schema(raw_strategies),
-        selection_score=selection_scores.get(selection_method) if selection_method else None,
-        selection_method=selection_method,
+        ticker=ticker.symbol, name=ticker.name, sector=ticker.sector, combined_score=opp.combined_score, risk_bucket=opp.risk_bucket,
+        weinstein=WeinsteinSchema(stage=opp.weinstein_stage, is_transition=opp.weinstein_transition, weeks_in_stage=opp.weeks_in_stage, ma_slope_pct=opp.weinstein_ma_slope_pct, relative_volume=opp.weinstein_relative_volume, rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0),
+        canslim=CanslimSchema(criteria=_normalise_criteria(opp.canslim_criteria), score=f"{passed}/{verifiable} verificables"),
+        explanation=explanation_text, last_updated=opp.run_date, first_detected_date=first_detected_date or opp.run_date,
+        signal_type=_compute_signal_type(opp), strategies=_strategies_to_schema(raw_strategies), selection_score=selection_scores.get(selection_method) if selection_method else None, selection_method=selection_method,
     )
 
 
 def _first_detected_dates(db: Session, ticker_ids: set[int]) -> dict[int, date]:
-    """Primera vez que cada ticker apareció como oportunidad (MIN(run_date)
-    de todo su histórico), en UNA sola consulta agregada -- nunca una
-    consulta por ticker dentro de un bucle (ver el mismo fallo, ya
-    arreglado, en /api/portfolio)."""
     if not ticker_ids:
         return {}
-    rows = (
-        db.query(Opportunity.ticker_id, func.min(Opportunity.run_date))
-        .filter(Opportunity.ticker_id.in_(ticker_ids))
-        .group_by(Opportunity.ticker_id)
-        .all()
-    )
+    rows = db.query(Opportunity.ticker_id, func.min(Opportunity.run_date)).filter(Opportunity.ticker_id.in_(ticker_ids)).group_by(Opportunity.ticker_id).all()
     return {tid: first_date for tid, first_date in rows}
 
 
 @router.get("", response_model=list[OpportunitySchema])
-def list_opportunities(
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0, le=10000),
-    min_score: int = Query(_FEATURED_MIN_SCORE, ge=0, le=100),
-    risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"),
-    sector: str | None = None,
-    sort: str = Query("score", pattern="^(score|stage)$"),
-    strategy: str | None = Query(None),
-    db: Session = Depends(get_db),
-) -> list[OpportunitySchema]:
+def list_opportunities(limit: int = Query(10, ge=1, le=100), offset: int = Query(0, ge=0, le=10000), min_score: int = Query(_FEATURED_MIN_SCORE, ge=0, le=100), risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"), sector: str | None = None, sort: str = Query("score", pattern="^(score|stage)$"), strategy: str | None = Query(None), db: Session = Depends(get_db)) -> list[OpportunitySchema]:
     run_date = _latest_run_date(db)
     if run_date is None:
         return []
-
-    # Cuando se filtra por estrategia específica, no aplicar min_score
-    # (las estrategias tienen su propio score, independiente del combined_score Weinstein+CAN SLIM)
     apply_score_filter = not (strategy and (strategy in _STRATEGY_NAMES or strategy == _EARLY_STAGE2))
-
-    query = (
-        db.query(Opportunity, Ticker)
-        .join(Ticker, Opportunity.ticker_id == Ticker.id)
-        .filter(Opportunity.run_date == run_date)
-    )
+    query = db.query(Opportunity, Ticker).join(Ticker, Opportunity.ticker_id == Ticker.id).filter(Opportunity.run_date == run_date)
     if apply_score_filter:
         query = query.filter(Opportunity.combined_score >= min_score)
     if risk:
         query = query.filter(Opportunity.risk_bucket == risk)
     if sector:
         query = query.filter(Ticker.sector == sector)
-
-    if sort == "score":
-        query = query.order_by(Opportunity.combined_score.desc())
-    else:
-        query = query.order_by(Opportunity.weinstein_stage.asc(), Opportunity.combined_score.desc())
-
+    query = query.order_by(Opportunity.combined_score.desc()) if sort == "score" else query.order_by(Opportunity.weinstein_stage.asc(), Opportunity.combined_score.desc())
     rows = query.all()
-
-    # Filtro por señal activa según la estrategia seleccionada
     if strategy == _EARLY_STAGE2:
-        # Entrada temprana significa una transición 1->2 confirmada, no solo
-        # que el precio lleve pocas semanas por encima de la media.
-        rows = [
-            (opp, ticker) for opp, ticker in rows
-            if opp.weinstein_stage == 2
-            and opp.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS
-            and opp.weinstein_transition
-        ]
+        rows = [(opp, ticker) for opp, ticker in rows if opp.weinstein_stage == 2 and opp.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS and opp.weinstein_transition]
         rows.sort(key=lambda pair: (pair[0].weeks_in_stage, -pair[0].combined_score))
     elif strategy and strategy in _STRATEGY_NAMES:
         rows = [(opp, ticker) for opp, ticker in rows if _has_strategy_signal(opp, strategy)]
-        # Cada pestaña representa su método; su orden debe empezar por el
-        # score de ese método y usar el score general solo como desempate.
-        rows.sort(key=lambda pair: (
-            -float((_parse_strategies(pair[0]).get(strategy) or {}).get("score") or 0),
-            -pair[0].combined_score,
-        ))
+        rows.sort(key=lambda pair: (-float((_parse_strategies(pair[0]).get(strategy) or {}).get("score") or 0), -pair[0].combined_score))
     else:
-        # Destacadas es una selección global por score, no la unión de las
-        # alertas tempranas ni de las pestañas de estrategias.
-        rows = [
-            (opp, ticker) for opp, ticker in rows
-            if opp.combined_score >= _FEATURED_MIN_SCORE
-        ]
-
+        rows = [(opp, ticker) for opp, ticker in rows if opp.combined_score >= _FEATURED_MIN_SCORE]
     rows = rows[offset : offset + limit]
-
-    explanations = {
-        e.ticker_id: e.text
-        for e in db.query(Explanation).filter(Explanation.run_date == run_date).all()
-    }
+    explanations = {e.ticker_id: e.text for e in db.query(Explanation).filter(Explanation.run_date == run_date).all()}
     first_detected = _first_detected_dates(db, {opp.ticker_id for opp, _ in rows})
-
-    return [
-        _to_schema(
-            opp,
-            ticker,
-            explanations.get(opp.ticker_id),
-            first_detected.get(opp.ticker_id),
-            requested_strategy=strategy if strategy in _STRATEGY_NAMES else None,
-        )
-        for opp, ticker in rows
-    ]
+    return [_to_schema(opp, ticker, explanations.get(opp.ticker_id), first_detected.get(opp.ticker_id), requested_strategy=strategy if strategy in _STRATEGY_NAMES else None) for opp, ticker in rows]
 
 
 @router.get("/{symbol}", response_model=OpportunityDetailSchema)
@@ -253,44 +137,17 @@ def get_opportunity_detail(symbol: str, db: Session = Depends(get_db)) -> Opport
     ticker = db.query(Ticker).filter_by(symbol=symbol.upper()).one_or_none()
     if ticker is None:
         raise HTTPException(status_code=404, detail=f"Ticker {symbol} no encontrado")
-
-    opp = (
-        db.query(Opportunity)
-        .filter(Opportunity.ticker_id == ticker.id)
-        .order_by(Opportunity.run_date.desc())
-        .first()
-    )
+    opp = db.query(Opportunity).filter(Opportunity.ticker_id == ticker.id).order_by(Opportunity.run_date.desc()).first()
     if opp is None:
         raise HTTPException(status_code=404, detail=f"Sin datos de screener para {symbol} todavia")
-
-    explanation = (
-        db.query(Explanation)
-        .filter(Explanation.ticker_id == ticker.id, Explanation.run_date == opp.run_date)
-        .one_or_none()
-    )
-
-    base = _to_schema(opp, ticker, explanation.text if explanation else None)
-
-    # Historial de precios desde price_snapshots (acumulado por el screener diario)
-    # 130 semanas (~2.5 años): suficiente para mostrar MA30 con contexto histórico
-    snapshots = (
-        db.query(PriceSnapshot)
-        .filter(PriceSnapshot.ticker_id == ticker.id)
-        .order_by(PriceSnapshot.date.desc())
-        .limit(130)
-        .all()
-    )
+    explanation = db.query(Explanation).filter(Explanation.ticker_id == ticker.id, Explanation.run_date == opp.run_date).one_or_none()
+    first_detected_date = _first_detected_dates(db, {ticker.id}).get(ticker.id) or opp.run_date
+    base = _to_schema(opp, ticker, explanation.text if explanation else None, first_detected_date=first_detected_date)
+    snapshots = db.query(PriceSnapshot).filter(PriceSnapshot.ticker_id == ticker.id).order_by(PriceSnapshot.date.desc()).limit(130).all()
     snapshots = list(reversed(snapshots))
-    price_history = [
-        {
-            "date": s.date.isoformat(),
-            "open": s.open,
-            "high": s.high,
-            "low": s.low,
-            "close": s.close,
-            "volume": s.volume,
-        }
-        for s in snapshots
-    ]
-
-    return OpportunityDetailSchema(**base.model_dump(), price_history=price_history)
+    price_history = [{"date": s.date.isoformat(), "open": s.open, "high": s.high, "low": s.low, "close": s.close, "volume": s.volume} for s in snapshots]
+    first_snapshot = db.query(PriceSnapshot).filter(PriceSnapshot.ticker_id == ticker.id, PriceSnapshot.date >= first_detected_date).order_by(PriceSnapshot.date.asc()).first()
+    first_detected_price = first_snapshot.close if first_snapshot else None
+    current_price = ticker.last_daily_close or (snapshots[-1].close if snapshots else None)
+    return_since_first_detected_pct = round((current_price / first_detected_price - 1) * 100, 2) if first_detected_price and current_price else None
+    return OpportunityDetailSchema(**base.model_dump(), price_history=price_history, first_detected_price=first_detected_price, current_price=current_price, return_since_first_detected_pct=return_since_first_detected_pct)
