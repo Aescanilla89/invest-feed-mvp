@@ -1,21 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { Radar, CalendarClock } from "lucide-react";
 import { CatalystCard } from "@/components/catalyst-card";
 import { FearGreedGauge } from "@/components/fear-greed-gauge";
 import { EmptyState, ErrorState } from "@/components/empty-state";
 import { getCatalysts, getFearGreed, type Catalyst, type FearGreed } from "@/lib/api";
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
-};
-const item = {
-  hidden: { opacity: 0, y: 14 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.25, 1, 0.5, 1] as const } },
-};
 
 function CatalystCardSkeleton() {
   return (
@@ -38,7 +28,7 @@ function CatalystCardSkeleton() {
 function FearGreedSkeleton() {
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:gap-6">
-      <div className="mx-auto h-[130px] w-full max-w-[240px] animate-pulse rounded-full bg-muted sm:mx-0" />
+      <div className="mx-auto h-[200px] w-full max-w-[240px] animate-pulse rounded-full bg-muted sm:mx-0" />
       <div className="flex flex-1 flex-col gap-2">
         <div className="h-4 w-40 animate-pulse rounded bg-muted" />
         <div className="h-3 w-full animate-pulse rounded bg-muted" />
@@ -51,9 +41,6 @@ function FearGreedSkeleton() {
 export function CatalystsSection() {
   const [catalysts, setCatalysts] = useState<Catalyst[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
-  const [fearGreedFailed, setFearGreedFailed] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     getCatalysts(7)
@@ -62,22 +49,12 @@ export function CatalystsSection() {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    getFearGreed()
-      .then((data) => { if (!cancelled) setFearGreed(data); })
-      // El índice es un extra, no crítico -- si CNN falla, se oculta el
-      // widget en silencio en vez de romper toda la sección de catalizadores.
-      .catch(() => { if (!cancelled) setFearGreedFailed(true); });
-    return () => { cancelled = true; };
-  }, []);
-
   return (
     <section className="flex flex-col gap-4">
       {/* Header -- deliberadamente distinto de SectionHeader: icono inline sin
        * círculo tintado, con línea de radar bajo el título en vez de un badge,
        * para diferenciar esta sección orientada a eventos del resto de grids. */}
-      <div className="relative flex flex-col gap-4 lg:min-h-[158px] lg:pr-[330px]">
+      <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2.5">
           <Radar className="size-5 shrink-0 text-(--color-catalyst-earnings)" aria-hidden />
           <h2 className="font-heading text-base font-semibold leading-none">
@@ -93,11 +70,6 @@ export function CatalystsSection() {
           Earnings · Insider Buys · cruzados con Weinstein + CAN SLIM
         </p>
 
-        {!fearGreedFailed && (
-          <div className="lg:absolute lg:right-0 lg:top-0 lg:w-[310px]">
-            {fearGreed ? <FearGreedGauge data={fearGreed} className="p-4" /> : <FearGreedSkeleton />}
-          </div>
-        )}
       </div>
 
       {/* Contenido */}
@@ -116,19 +88,38 @@ export function CatalystsSection() {
           detail="El job corre tras el screener diario."
         />
       ) : (
-        <motion.div
+        <div
           className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-          variants={container}
-          initial="hidden"
-          animate="show"
         >
           {catalysts.map((c) => (
-            <motion.div key={c.id} variants={item}>
+            <div key={c.id}>
               <CatalystCard catalyst={c} />
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
       )}
+    </section>
+  );
+}
+
+export function FearGreedSection() {
+  const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
+  const [fearGreedFailed, setFearGreedFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getFearGreed()
+      .then((data) => { if (!cancelled) setFearGreed(data); })
+      // El índice es un extra, no crítico -- si CNN falla, se oculta el
+      // widget en silencio en vez de romper toda la sección de catalizadores.
+      .catch(() => { if (!cancelled) setFearGreedFailed(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (fearGreedFailed) return null;
+  return (
+    <section aria-label="Sentimiento del mercado">
+      {fearGreed ? <FearGreedGauge data={fearGreed} /> : <FearGreedSkeleton />}
     </section>
   );
 }
