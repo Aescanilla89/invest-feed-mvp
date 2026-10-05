@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Clock, Lightbulb, LineChart, ListChecks } from "lucide-react";
+import { ArrowLeft, Lightbulb, LineChart, ListChecks } from "lucide-react";
 import { CanslimPatternDiagram } from "@/components/canslim-pattern-diagram";
 import { CriteriaChips } from "@/components/criteria-chips";
 import { WeinsteinChart } from "@/components/weinstein-chart";
@@ -10,97 +10,23 @@ import { WeinsteinCycleDiagram } from "@/components/weinstein-cycle-diagram";
 import { ExplanationBullets } from "@/components/explanation-bullets";
 import { STRATEGY_META } from "@/components/strategy-badges";
 import { TimeHorizonBadge } from "@/components/time-horizon-badge";
-import { getOpportunityDetail, getPortfolio, type PortfolioPosition } from "@/lib/api";
+import { getOpportunityDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-// Gancho en una frase por método, en lenguaje llano -- lo que vio el sistema,
-// no el desglose técnico de criterios (ese ya está en "Metodologías" más
-// abajo, no hace falta repetirlo aquí en la narrativa).
-const METHOD_HOOKS: Record<string, string> = {
-  early_stage2: "acababa de salir de suelo con volumen fuerte detrás",
-  minervini: "rompía en tendencia con una estructura de libro",
-  lynch: "cotizaba barata para lo que estaba creciendo",
-  berkshire: "tenía la pinta de negocio de calidad que aguanta ciclos",
-  dividendos: "pagaba un dividendo sólido y sostenible",
-  mean_reversion: "era calidad de verdad cayendo en pleno pánico del mercado -- entramos contra la corriente",
-};
-
-const EXIT_REASON_LABELS: Record<string, string> = {
-  ma40_break: "se le rompió la tendencia de fondo",
-  weinstein_stage_1: "se le rompió la tendencia",
-  weinstein_stage_4: "se le rompió la tendencia",
-};
-
-function describeExitReason(reason: string | null): string {
-  if (!reason) return "cerramos sin motivo registrado";
-  if (reason in EXIT_REASON_LABELS) return EXIT_REASON_LABELS[reason];
-  const stopMatch = reason.match(/^trailing_stop_(\d+)pct$/);
-  if (stopMatch) return `saltó el stop`;
-  return reason;
-}
-
-/** Storytelling de una operación ya cerrada: sustituye a "por qué es una
- * oportunidad ahora" (que no tiene sentido para algo que ya no está
- * abierto) por el relato de cómo fue, en tono directo y sin la jerga de
- * criterios técnicos (esa ya vive en "Metodologías" más abajo). */
-function buildTradeStory(p: PortfolioPosition): string {
-  const hook = METHOD_HOOKS[p.method] ?? "encajaba con la señal del sistema";
-  const weeksOpen = p.exit_date
-    ? Math.max(1, Math.round((new Date(p.exit_date).getTime() - new Date(p.entry_date).getTime()) / (7 * 86400000)))
-    : null;
-  const isWin = p.return_pct >= 0;
-  const pct = Math.abs(p.return_pct).toFixed(1);
-
-  let story = `El ${p.entry_date}, ${p.ticker} entró en el radar: ${hook}. Compramos a $${p.entry_price.toFixed(2)}.`;
-
-  if (p.exit_date && weeksOpen !== null) {
-    if (isWin) {
-      story += ` ${weeksOpen} semana${weeksOpen === 1 ? "" : "s"} después tocaba recoger: vendimos a `
-        + `$${p.current_price.toFixed(2)}, un +${pct}% de subida.`;
-    } else {
-      story += ` No salió como esperábamos: ${weeksOpen} semana${weeksOpen === 1 ? "" : "s"} después `
-        + `${describeExitReason(p.exit_reason)}, así que cerramos a $${p.current_price.toFixed(2)}, -${pct}%. `
-        + `El método corta rápido lo que deja de funcionar.`;
-    }
-  }
-  return story;
-}
 
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
-  // Las dos peticiones son independientes (ninguna depende del resultado de
-  // la otra) -- en paralelo en vez de en serie, la página tarda lo que
-  // tarde la más lenta de las dos, no la suma de ambas.
-  const [detail, portfolio] = await Promise.all([
-    getOpportunityDetail(ticker.toUpperCase()).catch(() => null),
-    getPortfolio().catch(() => null),
-  ]);
+  const detail = await getOpportunityDetail(ticker.toUpperCase()).catch(() => null);
 
   if (!detail) notFound();
 
   const { name, sector, risk_bucket, weinstein, canslim, explanation, last_updated, price_history, strategies } =
     detail;
 
-  // Posiciones reales de la cartera pública para este ticker (puede haber
-  // varias si el mismo ticker entró y salió más de una vez) -- se pintan
-  // como marcadores de entrada/salida sobre el mismo gráfico de precio.
-  const tickerPositions = (portfolio?.positions ?? []).filter((p) => p.ticker === detail.ticker);
-
-  // Si el ticker tiene una posición abierta ahora mismo, sigue siendo una
-  // oportunidad activa -- se muestra el "por qué ahora" de siempre. Si solo
-  // tiene historial cerrado (sin ninguna abierta), no tiene sentido esa
-  // pregunta: se cuenta cómo fue la operación en su lugar.
-  const openPosition = tickerPositions.find((p) => p.status === "open");
-  const closedPositions = [...tickerPositions]
-    .filter((p) => p.status === "closed")
-    .sort((a, b) => b.entry_date.localeCompare(a.entry_date));
-  const showTradeStory = !openPosition && closedPositions.length > 0;
-
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
       <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
-        <ArrowLeft className="size-4" aria-hidden /> Volver al feed
+        <ArrowLeft className="size-4" aria-hidden /> Volver al dashboard
       </Link>
 
       <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
@@ -118,49 +44,23 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
         </div>
       </div>
 
-      {/* Explicación IA / storytelling -- la sección con más peso de la
-       * página: regla de acento a la izquierda + icono en círculo relleno +
-       * tinte de fondo, sin chrome de card, para que destaque sobre las
-       * secciones de referencia que le siguen. Si el ticker ya no tiene
-       * posición abierta, "por qué es una oportunidad ahora" no aplica --
-       * se cuenta cómo fue la operación (o las operaciones, si entró y
-       * salió más de una vez) en su lugar. */}
-      {showTradeStory ? (
-        <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4">
-          <div className="flex items-center gap-2.5">
-            <div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground">
-              <Clock className="size-3.5" aria-hidden />
-            </div>
-            <h2 className="font-heading text-lg font-semibold leading-none">
-              {closedPositions.length > 1 ? "Cómo fueron estas inversiones" : "Cómo fue esta inversión"}
-            </h2>
+      {/* Explicación de la oportunidad actual. */}
+      <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4">
+        <div className="flex items-center gap-2.5">
+          <div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground">
+            <Lightbulb className="size-3.5" aria-hidden />
           </div>
-          <div className="mt-4 flex flex-col gap-3">
-            {closedPositions.map((p) => (
-              <p key={`${p.entry_date}-${p.method}`} className="text-sm leading-relaxed text-foreground/90">
-                {buildTradeStory(p)}
-              </p>
-            ))}
-          </div>
-        </section>
-      ) : (
-        <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4">
-          <div className="flex items-center gap-2.5">
-            <div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground">
-              <Lightbulb className="size-3.5" aria-hidden />
-            </div>
-            <h2 className="font-heading text-lg font-semibold leading-none">Por qué es una oportunidad ahora</h2>
-          </div>
-          {explanation ? (
-            <ExplanationBullets explanation={explanation} className="mt-4 flex flex-col gap-2" />
-          ) : (
-            <p className="mt-4 text-sm italic text-muted-foreground">
-              Sin explicación generada todavía para esta corrida.
-            </p>
-          )}
-          <p className="mt-4 text-[11px] text-muted-foreground/70">Actualizado {last_updated}</p>
-        </section>
-      )}
+          <h2 className="font-heading text-lg font-semibold leading-none">Por qué es una oportunidad ahora</h2>
+        </div>
+        {explanation ? (
+          <ExplanationBullets explanation={explanation} className="mt-4 flex flex-col gap-2" />
+        ) : (
+          <p className="mt-4 text-sm italic text-muted-foreground">
+            Sin explicación generada todavía para esta corrida.
+          </p>
+        )}
+        <p className="mt-4 text-[11px] text-muted-foreground/70">Actualizado {last_updated}</p>
+      </section>
 
       {/* Precio + Stage Analysis -- combinados en una sola card (ambos son
        * lectura del mismo Weinstein) en vez de dos bloques idénticos
@@ -184,28 +84,8 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
             bars={price_history}
             weeksInStage={weinstein.weeks_in_stage}
             isTransition={weinstein.is_transition}
-            positions={tickerPositions}
           />
         </div>
-        {tickerPositions.length > 0 && (
-          <ul className="mt-3 flex flex-col gap-1.5">
-            {tickerPositions.map((p) => (
-              <li key={`${p.entry_date}-${p.method}`} className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-muted-foreground">
-                <span className="font-medium text-(--color-stage-advance)">Entrada {p.entry_date}</span>
-                <span>(${p.entry_price.toFixed(2)})</span>
-                {p.exit_date ? (
-                  <>
-                    <span>→</span>
-                    <span className="font-medium text-(--color-risk-high)">Salida {p.exit_date}</span>
-                    {p.exit_reason && <span>({describeExitReason(p.exit_reason)})</span>}
-                  </>
-                ) : (
-                  <span className="italic">— posición abierta</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
         <div className="mt-6 border-t border-border/60 pt-5">
           <h3 className="text-sm font-semibold text-muted-foreground">Ciclo de Weinstein</h3>
           <div className="mt-4">

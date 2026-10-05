@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from datetime import timedelta
@@ -49,6 +49,7 @@ class ScreenedTicker:
     weinstein_result: WeinsteinResult
     criteria: dict[str, canslim.CriterionResult]
     signal_type: str | None = None
+    strategies: dict = field(default_factory=dict)
 
 
 _WEINSTEIN_MAX_WEEKS = 8
@@ -336,7 +337,7 @@ def run(symbols_by_universe: dict[str, list[str]], delay_seconds: float = 0.0) -
                 _upsert_opportunity(db, ticker, run_date, score, weinstein_result, criteria, strategies)
                 db.commit()
                 processed += 1
-                screened.append(ScreenedTicker(ticker, score, weinstein_result, criteria, signal_type))
+                screened.append(ScreenedTicker(ticker, score, weinstein_result, criteria, signal_type, strategies=strategies))
                 logger.info("%s: stage=%s score=%s risk=%s", symbol, weinstein_result.stage, score.combined_score, score.risk_bucket)
             except InsufficientDataError as exc:
                 logger.warning("%s: histórico insuficiente, se omite (%s)", symbol, exc)

@@ -31,10 +31,7 @@ export function Header() {
         </div>
         <nav className="flex items-center gap-4">
           <Link href="/" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-            Feed
-          </Link>
-          <Link href="/portfolio" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-            Cartera pública
+            Dashboard de oportunidades
           </Link>
           <p className="hidden max-w-xs text-xs leading-relaxed text-muted-foreground/80 lg:block">
             Información educativa con retraso, no asesoramiento financiero ni ejecución de
