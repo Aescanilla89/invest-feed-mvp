@@ -51,6 +51,15 @@ def test_no_verifiable_criteria_gives_zero_canslim_component():
     assert score.canslim_verifiable_count == 0
 
 
+def test_slope_uses_decimal_fraction_units():
+    from app.screener.scoring import _weinstein_component
+
+    base = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.0, relative_volume=0.0, is_transition_1_to_2=False, rsi=50.0)
+    one_percent = WeinsteinResult(stage=2, weeks_in_stage=2, ma_slope_pct=0.01, relative_volume=0.0, is_transition_1_to_2=False, rsi=50.0)
+    assert _weinstein_component(base) == 30  # RSI 50 receives the neutral +2 bonus
+    assert _weinstein_component(one_percent) == 37
+
+
 def test_risk_bucket_low_volatility():
     df = make_weekly_df(flat_sideways(n=20, level=100, noise_std=0.05))
     assert compute_risk_bucket(df) == "bajo"
