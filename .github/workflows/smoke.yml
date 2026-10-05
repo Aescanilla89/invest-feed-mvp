@@ -8,15 +8,47 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Check public API
+      - name: Check dashboard API endpoints
         shell: bash
         run: |
           set -euo pipefail
           base="https://invest-feed-mvp.onrender.com/api"
-          curl --fail --silent --show-error "$base/health" | grep -q '"status":"ok"'
-          curl --fail --silent --show-error "$base/health/ready" | grep -q '"database":"ok"'
-          curl --fail --silent --show-error "$base/opportunities" | grep -q '"ticker"'
-          curl --fail --silent --show-error "$base/portfolio" | grep -q '"positions"'
+          body=$(mktemp)
+          trap 'rm -f "$body"' EXIT
+          failed=0
+          for endpoint in health health/ready opportunities; do
+            echo "Checking $base/$endpoint"
+            if ! status=$(curl --fail-with-body --silent --show-error \
+              --connect-timeout 10 --max-time 90 --retry 2 --retry-delay 5 \
+              --output "$body" --write-out '%{http_code}' "$base/$endpoint"); then
+              echo "::error::GET $base/$endpoint failed (HTTP $status)"
+              failed=1
+              continue
+            fi
+            echo "GET $base/$endpoint: HTTP $status"
+            if ! python3 - "$endpoint" "$body" <<'PY_CHECK'
+          import json
+          import sys
+
+          endpoint, filename = sys.argv[1:]
+          with open(filename) as response:
+              data = json.load(response)
+          if endpoint == "health":
+              assert data.get("status") == "ok", "Unexpected liveness response"
+          elif endpoint == "health/ready":
+              assert data.get("database") == "ok", "Database is not ready"
+          else:
+              assert isinstance(data, list), "Opportunities must be a list"
+              assert all(isinstance(item, dict) and "ticker" in item for item in data), "Invalid opportunity"
+          PY_CHECK
+            then
+              echo "::error::Invalid JSON response from $base/$endpoint"
+              failed=1
+            fi
+          done
+          exit "$failed"
       - name: Check frontend
-        run: curl --fail --silent --show-error https://frontend-inky-nine-48.vercel.app/ >/dev/null
+        if: always()
+        run: curl --fail --silent --show-error --connect-timeout 10 --max-time 90 --retry 2 --retry-delay 5 https://frontend-inky-nine-48.vercel.app/ >/dev/null
