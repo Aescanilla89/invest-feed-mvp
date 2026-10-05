@@ -104,6 +104,7 @@ def _has_strategy_signal(opp: Opportunity, strategy: str) -> bool:
 
 def _to_schema(
     opp: Opportunity, ticker: Ticker, explanation_text: str | None, first_detected_date: date | None = None,
+    requested_strategy: str | None = None,
 ) -> OpportunitySchema:
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
@@ -113,7 +114,11 @@ def _to_schema(
         for method, result in raw_strategies.items()
         if isinstance(result, dict) and result.get("passed") is True
     }
-    selection_method = max(selection_scores, key=selection_scores.get) if selection_scores else None
+    selection_method = (
+        requested_strategy
+        if requested_strategy in selection_scores
+        else (max(selection_scores, key=selection_scores.get) if selection_scores else None)
+    )
     return OpportunitySchema(
         ticker=ticker.symbol,
         name=ticker.name,
@@ -198,16 +203,23 @@ def list_opportunities(
 
     # Filtro por señal activa según la estrategia seleccionada
     if strategy == _EARLY_STAGE2:
-        # No exige el bonus de transición (volumen 2x + RSI>50): el objetivo es
-        # detectar actividad temprana de Stage 2 aunque no cumpla ese umbral
-        # estricto, sin descartar la señal ya existente en "Destacadas".
+        # Entrada temprana significa una transición 1->2 confirmada, no solo
+        # que el precio lleve pocas semanas por encima de la media.
         rows = [
             (opp, ticker) for opp, ticker in rows
-            if opp.weinstein_stage == 2 and opp.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS
+            if opp.weinstein_stage == 2
+            and opp.weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS
+            and opp.weinstein_transition
         ]
         rows.sort(key=lambda pair: (pair[0].weeks_in_stage, -pair[0].combined_score))
     elif strategy and strategy in _STRATEGY_NAMES:
         rows = [(opp, ticker) for opp, ticker in rows if _has_strategy_signal(opp, strategy)]
+        # Cada pestaña representa su método; su orden debe empezar por el
+        # score de ese método y usar el score general solo como desempate.
+        rows.sort(key=lambda pair: (
+            -float((_parse_strategies(pair[0]).get(strategy) or {}).get("score") or 0),
+            -pair[0].combined_score,
+        ))
     else:
         # Destacadas es una selección global por score, no la unión de las
         # alertas tempranas ni de las pestañas de estrategias.
@@ -225,7 +237,13 @@ def list_opportunities(
     first_detected = _first_detected_dates(db, {opp.ticker_id for opp, _ in rows})
 
     return [
-        _to_schema(opp, ticker, explanations.get(opp.ticker_id), first_detected.get(opp.ticker_id))
+        _to_schema(
+            opp,
+            ticker,
+            explanations.get(opp.ticker_id),
+            first_detected.get(opp.ticker_id),
+            requested_strategy=strategy if strategy in _STRATEGY_NAMES else None,
+        )
         for opp, ticker in rows
     ]
 
