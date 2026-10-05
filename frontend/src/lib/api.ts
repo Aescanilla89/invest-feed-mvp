@@ -34,6 +34,14 @@ export interface StrategyResult {
 }
 
 export interface Opportunity {
+
+
+// Historical performance fields returned by the detail endpoint.
+export interface OpportunityDetailPerformance {
+  first_detected_price?: number | null;
+  current_price?: number | null;
+  return_since_first_detected_pct?: number | null;
+}
   ticker: string;
   name: string | null;
   sector: string | null;
@@ -98,6 +106,12 @@ async function fetchJson<T>(path: string): Promise<T> {
     }
     return value;
   })();
+
+export interface OpportunityDetail {
+  first_detected_price?: number | null;
+  current_price?: number | null;
+  return_since_first_detected_pct?: number | null;
+}
   if (browser) pendingRequests.set(path, request);
   try {
     return await request;
