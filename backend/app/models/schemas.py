@@ -23,7 +23,7 @@ class CanslimCriterionSchema(BaseModel):
 
 class CanslimSchema(BaseModel):
     criteria: dict[str, CanslimCriterionSchema]
-    score: str  # ej. "4/6 verificables"
+    score: str
 
 
 class StrategyResultSchema(BaseModel):
@@ -42,12 +42,8 @@ class OpportunitySchema(BaseModel):
     canslim: CanslimSchema
     explanation: str | None
     last_updated: date
-    # Primera vez que este ticker apareció como oportunidad (MIN(run_date) de
-    # todo su histórico en `opportunities`) -- separa "oportunidades de la
-    # semana" (detectadas hace <7 días) de las que llevan más tiempo pero
-    # siguen cumpliendo el criterio hoy. Ver list_opportunities.
     first_detected_date: date | None = None
-    signal_type: str | None = None  # "weinstein" | "canslim" | "both"
+    signal_type: str | None = None
     strategies: dict[str, StrategyResultSchema] = {}
     selection_score: float | None = None
     selection_method: str | None = None
@@ -57,6 +53,9 @@ class OpportunitySchema(BaseModel):
 
 class OpportunityDetailSchema(OpportunitySchema):
     price_history: list[dict] = []
+    first_detected_price: float | None = None
+    current_price: float | None = None
+    return_since_first_detected_pct: float | None = None
 
 
 class DataLimitation(BaseModel):
@@ -76,15 +75,15 @@ class PortfolioPositionSchema(BaseModel):
     sector: str | None
     method: str
     selection_score: float | None = None
-    status: str  # "open" | "closed"
-    explanation: str | None = None  # por qué se eligió, misma explicación AI del feed para ese ticker/día
-    signal_date: date | None = None  # día en que se detectó la señal (cierre); entry_date es el día siguiente
+    status: str
+    explanation: str | None = None
+    signal_date: date | None = None
     entry_date: date
     entry_price: float
-    current_price: float  # precio actual si abierta, precio de salida si cerrada
+    current_price: float
     return_pct: float
-    spy_return_pct: float  # retorno del S&P 500 en el mismo periodo exacto
-    exit_signal_date: date | None = None  # día en que se detectó la ruptura de Stage 2; exit_date es el día siguiente
+    spy_return_pct: float
+    exit_signal_date: date | None = None
     exit_date: date | None = None
     exit_reason: str | None = None
 
@@ -95,13 +94,6 @@ class PortfolioStatsSchema(BaseModel):
     total_positions: int
     open_positions: int
     closed_positions: int
-    # Única métrica de rentabilidad de cartera: ponderada por volatilidad
-    # (ver _atr_pct/_position_weights en la ruta), año en curso, vs S&P 500 en
-    # el mismo periodo. Se descartó promediar return_pct de TODAS las
-    # posiciones (histórico completo, cualquier antigüedad) por mezclar
-    # periodos de tenencia muy distintos (posiciones de hace casi 2 años junto
-    # a otras de la semana pasada) -- inflaba el promedio con ganadoras muy
-    # antiguas y no reflejaba cómo se comporta la cartera como conjunto ahora.
     ytd_return_pct: float | None
     ytd_spy_return_pct: float | None
     best: PortfolioPositionSchema | None
@@ -126,7 +118,7 @@ class CatalystSchema(BaseModel):
     detected_date: date
     extra: dict
     combined_score: int | None
-    classification: str | None  # "oro" | "plata" | "bronce"
+    classification: str | None
     explanation: str | None
 
     model_config = {"from_attributes": True}
@@ -140,7 +132,7 @@ class FearGreedPointSchema(BaseModel):
 
 class FearGreedSchema(BaseModel):
     score: float
-    rating: str  # "extreme fear" | "fear" | "neutral" | "greed" | "extreme greed"
+    rating: str
     timestamp: str
     previous_close: float
     previous_1_week: float

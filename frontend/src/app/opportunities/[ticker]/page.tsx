@@ -15,152 +15,17 @@ import { cn } from "@/lib/utils";
 
 export default async function OpportunityDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
-
   const detail = await getOpportunityDetail(ticker.toUpperCase()).catch(() => null);
-
   if (!detail) notFound();
-
-  const { name, sector, risk_bucket, weinstein, canslim, explanation, last_updated, price_history, strategies } =
-    detail;
-
+  const { name, sector, risk_bucket, weinstein, canslim, explanation, last_updated, first_detected_date, first_detected_price, current_price, return_since_first_detected_pct, price_history, strategies } = detail;
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
-      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
-        <ArrowLeft className="size-4" aria-hidden /> Volver al dashboard
-      </Link>
-
-      <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-baseline gap-2">
-            <h1 className="font-heading text-3xl font-bold tracking-tight">{detail.ticker}</h1>
-            {sector && <span className="text-sm text-muted-foreground">{sector}</span>}
-          </div>
-          <p className="mt-1 text-muted-foreground">{name ?? "Nombre no disponible"}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <StagePill weinstein={weinstein} />
-            <RiskBadge risk={risk_bucket} />
-            <TimeHorizonBadge opportunity={detail} />
-          </div>
-        </div>
-      </div>
-
-      {/* Explicación de la oportunidad actual. */}
-      <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4">
-        <div className="flex items-center gap-2.5">
-          <div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground">
-            <Lightbulb className="size-3.5" aria-hidden />
-          </div>
-          <h2 className="font-heading text-lg font-semibold leading-none">Por qué es una oportunidad ahora</h2>
-        </div>
-        {explanation ? (
-          <ExplanationBullets explanation={explanation} className="mt-4 flex flex-col gap-2" />
-        ) : (
-          <p className="mt-4 text-sm italic text-muted-foreground">
-            Sin explicación generada todavía para esta corrida.
-          </p>
-        )}
-        <p className="mt-4 text-[11px] text-muted-foreground/70">Actualizado {last_updated}</p>
-      </section>
-
-      {/* Precio + Stage Analysis -- combinados en una sola card (ambos son
-       * lectura del mismo Weinstein) en vez de dos bloques idénticos
-       * apilados; sigue siendo la card con más contenido visual tras la
-       * explicación. */}
-      <section className="mt-6 rounded-xl border border-border/60 bg-card p-5">
-        <div className="flex items-center gap-2 text-(--color-stage-neutral)">
-          <LineChart className="size-4 shrink-0" aria-hidden />
-          <h2 className="font-heading text-base font-semibold text-foreground">Precio semanal · Stage Analysis de Weinstein</h2>
-        </div>
-        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <p className="text-xs text-muted-foreground">
-            Media móvil principal de 30 semanas con pendiente {weinstein.ma_slope_pct >= 0 ? "+" : ""}
-            {(weinstein.ma_slope_pct * 100).toFixed(1)}% y volumen relativo {weinstein.relative_volume.toFixed(2)}x sobre
-            su media de 10 semanas.
-          </p>
-          <span className="text-xs text-muted-foreground">Velas semanales · volumen · MA20 (azul) · MA30 (ámbar) · MA50 (violeta)</span>
-        </div>
-        <div className="mt-4 -mx-5">
-          <WeinsteinChart
-            bars={price_history}
-            weeksInStage={weinstein.weeks_in_stage}
-            isTransition={weinstein.is_transition}
-          />
-        </div>
-        <div className="mt-6 border-t border-border/60 pt-5">
-          <h3 className="text-sm font-semibold text-muted-foreground">Ciclo de Weinstein</h3>
-          <div className="mt-4">
-            <WeinsteinCycleDiagram weinstein={weinstein} />
-          </div>
-        </div>
-      </section>
-
-      {/* Metodologías -- muestra las 4 estrategias completas (cumple o no),
-       * no solo las que pasan, para que el detalle sea la única vista donde
-       * se ve el desglose de metodología. */}
-      {strategies && (
-        <section className="mt-8 border-t border-border/60 pt-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Metodologías</h2>
-          <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {(Object.entries(STRATEGY_META) as [keyof typeof STRATEGY_META, (typeof STRATEGY_META)[keyof typeof STRATEGY_META]][])
-              .map(([name, meta]) => {
-                const result = strategies[name];
-                const Icon = meta.icon;
-                const passed = result?.passed ?? null;
-                return (
-                  <li
-                    key={name}
-                    className={cn(
-                      "flex items-start gap-2.5 rounded-lg border px-3 py-2.5",
-                      passed === true && meta.classes,
-                      passed === false && "border-border/40 text-muted-foreground/60",
-                      passed === null && "border-dashed border-border/40 text-muted-foreground/60",
-                    )}
-                  >
-                    <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium leading-none">
-                        {meta.label}
-                        {result?.score !== null && result?.score !== undefined && (
-                          <span className="ml-1.5 font-normal opacity-70">{result.score}/100</span>
-                        )}
-                        {passed === false && <span className="ml-1.5 font-normal">· no cumple</span>}
-                        {passed === null && <span className="ml-1.5 font-normal">· sin datos</span>}
-                      </p>
-                      <p className="mt-1 text-xs leading-snug opacity-80">{result?.details ?? meta.sublabel}</p>
-                    </div>
-                  </li>
-                );
-              })}
-          </ul>
-        </section>
-      )}
-
-      {/* Criterios CAN SLIM -- también de referencia; card más discreta
-       * (borde tenue, sin bg-card) y encabezado más pequeño que las
-       * secciones de arriba para reforzar la jerarquía. */}
-      <section className="mt-8 rounded-lg border border-border/40 p-5">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <ListChecks className="size-4 shrink-0" aria-hidden />
-          <h2 className="text-sm font-semibold text-foreground">Criterios CAN&nbsp;SLIM</h2>
-        </div>
-        <div className="mt-4">
-          <CriteriaChips criteria={canslim.criteria} />
-        </div>
-        <ul className="mt-4 space-y-2 text-sm">
-          {Object.entries(canslim.criteria).map(([letter, criterion]) => (
-            <li key={letter} className="flex gap-2 leading-relaxed">
-              <span className="font-semibold text-foreground">{letter}</span>
-              <span className="text-muted-foreground">{criterion.detail}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-6 border-t border-border/60 pt-5">
-          <h3 className="text-sm font-semibold">Patrón esperado: base + ruptura</h3>
-          <div className="mt-4">
-            <CanslimPatternDiagram newHighCriterion={canslim.criteria["N"]} relativeVolume={weinstein.relative_volume} />
-          </div>
-        </div>
-      </section>
+      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" aria-hidden /> Volver al dashboard</Link>
+      <div className="mt-6 flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-baseline gap-2"><h1 className="font-heading text-3xl font-bold tracking-tight">{detail.ticker}</h1>{sector && <span className="text-sm text-muted-foreground">{sector}</span>}</div><p className="mt-1 text-muted-foreground">{name ?? "Nombre no disponible"}</p><div className="mt-3 flex flex-wrap items-center gap-3"><StagePill weinstein={weinstein} /><RiskBadge risk={risk_bucket} /><TimeHorizonBadge opportunity={detail} /></div></div></div>
+      <section className="mt-8 rounded-r-lg border-l-2 border-(--color-accent) bg-(--color-accent)/5 py-4 pl-5 pr-4"><div className="flex items-center gap-2.5"><div className="rounded-full bg-(--color-accent) p-1.5 text-accent-foreground"><Lightbulb className="size-3.5" aria-hidden /></div><h2 className="font-heading text-lg font-semibold">Por qué es una oportunidad ahora</h2></div>{explanation ? <ExplanationBullets explanation={explanation} className="mt-4 flex flex-col gap-2" /> : <p className="mt-4 text-sm italic text-muted-foreground">Sin explicación generada todavía para esta corrida.</p>}<p className="mt-4 text-[11px] text-muted-foreground/70">Actualizado {last_updated}</p></section>
+      <section className="mt-6 rounded-xl border border-border/60 bg-card p-5"><div className="flex items-center gap-2 text-(--color-stage-neutral)"><LineChart className="size-4" aria-hidden /><h2 className="font-heading text-base font-semibold text-foreground">Precio semanal · Stage Analysis de Weinstein</h2></div><p className="mt-1 text-xs text-muted-foreground">Media móvil de 30 semanas con pendiente {weinstein.ma_slope_pct >= 0 ? "+" : ""}{(weinstein.ma_slope_pct * 100).toFixed(1)}% y volumen relativo {weinstein.relative_volume.toFixed(2)}x.</p><div className="mt-4 -mx-5"><WeinsteinChart bars={price_history} weeksInStage={weinstein.weeks_in_stage} isTransition={weinstein.is_transition} firstDetectedDate={first_detected_date} /></div><div className="mt-4 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3"><div className="rounded-lg bg-muted/50 px-3 py-2"><p className="text-muted-foreground">Primera detección</p><p className="mt-0.5 font-semibold text-foreground">{first_detected_date ?? "—"}</p></div><div className="rounded-lg bg-muted/50 px-3 py-2"><p className="text-muted-foreground">Precio de referencia</p><p className="mt-0.5 font-semibold text-foreground">{first_detected_price != null ? first_detected_price.toFixed(2) : "—"}</p></div><div className="rounded-lg bg-muted/50 px-3 py-2"><p className="text-muted-foreground">Desde la detección</p><p className={cn("mt-0.5 font-semibold", (return_since_first_detected_pct ?? 0) >= 0 ? "text-(--color-risk-low)" : "text-(--color-risk-high)")}>{return_since_first_detected_pct != null ? (return_since_first_detected_pct >= 0 ? "+" : "") + return_since_first_detected_pct.toFixed(1) + "%" : "—"}</p>{current_price != null && <p className="mt-0.5 text-[10px] text-muted-foreground">Actual {current_price.toFixed(2)}</p>}</div></div><div className="mt-6 border-t border-border/60 pt-5"><h3 className="text-sm font-semibold text-muted-foreground">Ciclo de Weinstein</h3><div className="mt-4"><WeinsteinCycleDiagram weinstein={weinstein} /></div></div></section>
+      {strategies && <section className="mt-8 border-t border-border/60 pt-5"><h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Metodologías</h2><ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">{(Object.entries(STRATEGY_META) as [keyof typeof STRATEGY_META, (typeof STRATEGY_META)[keyof typeof STRATEGY_META]][]).map(([strategy, meta]) => { const result = strategies[strategy]; const Icon = meta.icon; const passed = result?.passed ?? null; return <li key={strategy} className={cn("flex items-start gap-2.5 rounded-lg border px-3 py-2.5", passed === true && meta.classes, passed === false && "border-border/40 text-muted-foreground/60", passed === null && "border-dashed border-border/40 text-muted-foreground/60")}><Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden /><div><p className="text-sm font-medium">{meta.label}{result?.score != null && <span className="ml-1.5 font-normal opacity-70">{result.score}/100</span>}</p><p className="mt-1 text-xs opacity-80">{result?.details ?? meta.sublabel}</p></div></li>; })}</ul></section>}
+      <section className="mt-8 rounded-lg border border-border/40 p-5"><div className="flex items-center gap-2 text-muted-foreground"><ListChecks className="size-4" aria-hidden /><h2 className="text-sm font-semibold text-foreground">Criterios CAN&nbsp;SLIM</h2></div><div className="mt-4"><CriteriaChips criteria={canslim.criteria} /></div><ul className="mt-4 space-y-2 text-sm">{Object.entries(canslim.criteria).map(([letter, criterion]) => <li key={letter} className="flex gap-2"><span className="font-semibold">{letter}</span><span className="text-muted-foreground">{criterion.detail}</span></li>)}</ul><div className="mt-6 border-t border-border/60 pt-5"><h3 className="text-sm font-semibold">Patrón esperado: base + ruptura</h3><div className="mt-4"><CanslimPatternDiagram newHighCriterion={canslim.criteria["N"]} relativeVolume={weinstein.relative_volume} /></div></div></section>
     </main>
   );
 }

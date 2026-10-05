@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { Radar, CalendarClock } from "lucide-react";
 import { CatalystCard } from "@/components/catalyst-card";
-import { FearGreedGauge } from "@/components/fear-greed-gauge";
 import { EmptyState, ErrorState } from "@/components/empty-state";
-import { getCatalysts, getFearGreed, type Catalyst, type FearGreed } from "@/lib/api";
+import { getCatalysts, type Catalyst } from "@/lib/api";
 
 function CatalystCardSkeleton() {
   return (
@@ -25,19 +24,6 @@ function CatalystCardSkeleton() {
   );
 }
 
-function FearGreedSkeleton() {
-  return (
-    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:gap-6">
-      <div className="mx-auto h-[200px] w-full max-w-[240px] animate-pulse rounded-full bg-muted sm:mx-0" />
-      <div className="flex flex-1 flex-col gap-2">
-        <div className="h-4 w-40 animate-pulse rounded bg-muted" />
-        <div className="h-3 w-full animate-pulse rounded bg-muted" />
-        <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
-      </div>
-    </div>
-  );
-}
-
 export function CatalystsSection() {
   const [catalysts, setCatalysts] = useState<Catalyst[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +37,6 @@ export function CatalystsSection() {
 
   return (
     <section className="flex flex-col gap-4">
-      {/* Header -- deliberadamente distinto de SectionHeader: icono inline sin
-       * círculo tintado, con línea de radar bajo el título en vez de un badge,
-       * para diferenciar esta sección orientada a eventos del resto de grids. */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2.5">
           <Radar className="size-5 shrink-0 text-(--color-catalyst-earnings)" aria-hidden />
@@ -69,16 +52,12 @@ export function CatalystsSection() {
         <p className="-mt-3 border-l-2 border-(--color-catalyst-earnings)/40 pl-4 text-xs text-muted-foreground">
           Earnings · Insider Buys · cruzados con Weinstein + CAN SLIM
         </p>
-
       </div>
 
-      {/* Contenido */}
       {error ? (
         <ErrorState message={error} />
       ) : catalysts === null ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* getCatalysts(7) can return up to 7 items -- size the skeleton
-           * closer to that so the grid doesn't gain/lose rows on load. */}
           {[...Array(6)].map((_, i) => <CatalystCardSkeleton key={i} />)}
         </div>
       ) : catalysts.length === 0 ? (
@@ -88,9 +67,7 @@ export function CatalystsSection() {
           detail="El job corre tras el screener diario."
         />
       ) : (
-        <div
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-        >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {catalysts.map((c) => (
             <div key={c.id}>
               <CatalystCard catalyst={c} />
@@ -98,28 +75,6 @@ export function CatalystsSection() {
           ))}
         </div>
       )}
-    </section>
-  );
-}
-
-export function FearGreedSection() {
-  const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
-  const [fearGreedFailed, setFearGreedFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getFearGreed()
-      .then((data) => { if (!cancelled) setFearGreed(data); })
-      // El índice es un extra, no crítico -- si CNN falla, se oculta el
-      // widget en silencio en vez de romper toda la sección de catalizadores.
-      .catch(() => { if (!cancelled) setFearGreedFailed(true); });
-    return () => { cancelled = true; };
-  }, []);
-
-  if (fearGreedFailed) return null;
-  return (
-    <section aria-label="Sentimiento del mercado">
-      {fearGreed ? <FearGreedGauge data={fearGreed} /> : <FearGreedSkeleton />}
     </section>
   );
 }
