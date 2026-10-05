@@ -37,7 +37,7 @@ def _to_dict(r: StrategyResult) -> dict:
 # Trend Template de Mark Minervini en versión semanal
 # ---------------------------------------------------------------------------
 
-_MINERVINI_PASS_THRESHOLD = 6   # de 7 criterios debe pasar al menos 6
+_MINERVINI_PASS_THRESHOLD = 7   # el Trend Template requiere los 7 criterios
 _MINERVINI_RS_MIN = 70          # RS Rating mínimo (percentil vs universo)
 
 
@@ -185,6 +185,7 @@ _BERK_NET_MARGIN_MIN = 0.10      # margen neto >= 10% (resistencia a ciclos)
 _BERK_OCF_TO_NI_MIN = 0.70       # OCF/NI >= 0.7 (calidad del beneficio)
 _BERK_ROE_MIN = 0.15             # ROE >= 15% (eficiencia del capital)
 _BERK_PASS_THRESHOLD = 0.60      # debe pasar >= 60% de criterios verificables
+_BERK_MIN_VERIFIABLE = 4         # una señal no puede aprobar con 1/1 dato
 
 
 def evaluate_berkshire(
@@ -240,7 +241,7 @@ def evaluate_berkshire(
         criteria.append((None, "Menos de 5 años de EPS anual para evaluar consistencia"))
 
     verifiable = [(ok, msg) for ok, msg in criteria if ok is not None]
-    if not verifiable:
+    if len(verifiable) < _BERK_MIN_VERIFIABLE:
         return StrategyResult(None, None, "Datos insuficientes para evaluar calidad Berkshire")
 
     passed_v = sum(1 for ok, _ in verifiable if ok)
@@ -305,9 +306,16 @@ def evaluate_dividendos(
     elif eps_a and eps_a[-1] <= 0:
         details_parts.append("EPS negativo (riesgo dividendo)")
         score -= 20
+    else:
+        details_parts.append("EPS no disponible")
 
     score = max(0, min(100, score))
-    passed = y >= _DIV_YIELD_MIN and (payout is None or _DIV_PAYOUT_MIN <= payout <= _DIV_PAYOUT_MAX)
+    eps_positive = bool(eps_a and eps_a[-1] > 0)
+    passed: bool | None = None if not eps_a else (
+        eps_positive
+        and y >= _DIV_YIELD_MIN
+        and (payout is None or _DIV_PAYOUT_MIN <= payout <= _DIV_PAYOUT_MAX)
+    )
 
     return StrategyResult(
         passed=passed,
