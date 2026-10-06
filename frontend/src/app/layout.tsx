@@ -22,9 +22,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TradeFinder — From Market Noise to Clear Decisions",
+  title: "TradeFinder — Research the Market with More Clarity",
   description:
-    "Oportunidades de inversión rankeadas combinando Stage Analysis de Weinstein y CAN SLIM, con el porqué explicado en lenguaje claro. Información educativa, no asesoramiento financiero.",
+    "Herramienta de investigación educativa que combina Stage Analysis de Weinstein y CAN SLIM, con criterios explicados en lenguaje claro.",
 };
 
 export default function RootLayout({

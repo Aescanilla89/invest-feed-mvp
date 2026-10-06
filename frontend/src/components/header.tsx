@@ -33,6 +33,9 @@ export function Header() {
           <Link href="/" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             Dashboard de oportunidades
           </Link>
+          <Link href="/pricing" className="text-sm font-semibold text-(--color-accent) transition-colors hover:opacity-80">
+            Pro
+          </Link>
           <p className="hidden max-w-xs text-xs leading-relaxed text-muted-foreground/80 lg:block">
             Información educativa con retraso, no asesoramiento financiero ni ejecución de
             órdenes.
