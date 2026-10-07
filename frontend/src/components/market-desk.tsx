@@ -173,7 +173,7 @@ export function MarketDesk() {
     <section className="overflow-hidden rounded-[24px] border border-white/[0.1] bg-[#0b111a] text-slate-100 shadow-[0_24px_70px_-45px_rgba(3,10,20,.9)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-5 py-4 sm:px-7">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[.16em] text-(--color-accent) sm:text-base">Tradefinder · Mesa de mercado</p>
+          <p className="text-sm font-semibold tracking-[.02em] text-[#e18a45] sm:text-base">TradeFinder · Mesa de Mercado</p>
           <p className="mt-1 text-xs text-slate-500">Lectura rápida del mercado estadounidense</p>
         </div>
         <div className="text-[10px] text-slate-500">{data ? `Actualizado ${new Date(data.updated_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC` : "Conectando con las fuentes"}</div>

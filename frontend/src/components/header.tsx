@@ -13,16 +13,19 @@ export function Header() {
       )}
       <div className="mx-auto flex max-w-6xl flex-col gap-5 px-6 py-8 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
         <div className="max-w-3xl">
-          <h1 className="font-heading text-2xl font-bold tracking-tight sm:text-3xl">
-            <Link href="/">
-              Trade
-              <span className="relative text-(--color-accent)">
-                Finder
-                <span className="absolute -right-2.5 top-1 size-1.5 rounded-full bg-(--color-stage-advance) motion-safe:animate-pulse" aria-hidden />
-              </span>
+          <h1>
+            <Link href="/" aria-label="TradeFinder, inicio" className="inline-flex">
+              <Image
+                src="/tradefinder-logo.svg"
+                alt="TradeFinder"
+                width={420}
+                height={72}
+                priority
+                className="h-auto w-[210px] sm:w-[250px]"
+              />
             </Link>
           </h1>
-          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-(--color-accent)">
+          <p className="mt-2 text-sm font-medium uppercase tracking-wide text-white sm:text-base">
             From Market Noise to Clear Decisions
           </p>
           <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -30,14 +33,6 @@ export function Header() {
             señales y seguir su evolución a medida que cambia el mercado.
           </p>
         </div>
-        <Image
-          src="/tradefinder-logo.svg"
-          alt="TradeFinder"
-          width={420}
-          height={72}
-          priority
-          className="hidden h-auto w-[210px] shrink-0 md:block lg:w-[250px]"
-        />
       </div>
     </header>
   );
