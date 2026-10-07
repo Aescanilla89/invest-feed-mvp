@@ -1,13 +1,23 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RiskBadge } from "@/components/risk-badge";
 import { TimeHorizonBadge } from "@/components/time-horizon-badge";
 import { TradingViewMiniChart } from "@/components/tradingview-mini-chart";
 import type { Opportunity } from "@/lib/api";
 
+function formatDetectedDate(value: string) {
+  return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", timeZone: "UTC" })
+    .format(new Date(`${value}T12:00:00Z`));
+}
+
+function formatReturn(value: number) {
+  return `${value > 0 ? "+" : ""}${value.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
 export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
-  const { ticker, name, sector, risk_bucket, last_updated } = opportunity;
+  const { ticker, name, sector, risk_bucket, last_updated, first_detected_date, return_since_first_detected_pct } = opportunity;
 
   return (
     <Card className="group relative flex h-full flex-col gap-4 border-border/60 bg-card p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-(--color-stage-advance)/40 hover:shadow-md">
@@ -35,9 +45,26 @@ export function OpportunityCard({ opportunity }: { opportunity: Opportunity }) {
         <TimeHorizonBadge opportunity={opportunity} />
       </div>
 
-      {/* Fila 3: volatilidad histórica calculada */}
-      <div className="relative z-10 flex items-center gap-2 pointer-events-none">
+      {/* Fila 3: volatilidad y evolución desde la primera detección */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pointer-events-none">
         <RiskBadge risk={risk_bucket} />
+        {first_detected_date && (
+          <div className="flex items-center gap-2 text-xs tabular-nums">
+            <span className="text-muted-foreground">Detectada {formatDetectedDate(first_detected_date)}</span>
+            <span
+              className={cn(
+                "font-semibold",
+                return_since_first_detected_pct == null && "text-muted-foreground",
+                return_since_first_detected_pct != null && return_since_first_detected_pct > 0 && "text-(--color-risk-low)",
+                return_since_first_detected_pct != null && return_since_first_detected_pct < 0 && "text-(--color-risk-high)",
+                return_since_first_detected_pct === 0 && "text-muted-foreground",
+              )}
+              title="Variación del precio desde la primera detección registrada. Rentabilidad histórica; no representa una operación ejecutada."
+            >
+              {return_since_first_detected_pct == null ? "—" : formatReturn(return_since_first_detected_pct)}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Fila 4: gráfica TradingView — overlay transparente encima para que el Link capture los clicks */}
