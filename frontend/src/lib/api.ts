@@ -1,7 +1,5 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://invest-feed-mvp.onrender.com/api";
 export type RiskBucket = "bajo" | "medio" | "alto" | "desconocido";
-export type FearGreedRating = "extreme fear" | "fear" | "neutral" | "greed" | "extreme greed";
-export interface FearGreed { score: number; rating: FearGreedRating; timestamp: string; previous_close: number; previous_1_week: number; previous_1_month: number; previous_1_year: number; history: Array<{ date: string; score: number; rating: FearGreedRating }>; }
 export interface Weinstein { stage: 1 | 2 | 3 | 4; is_transition: boolean; weeks_in_stage: number; ma_slope_pct: number; relative_volume: number; rsi: number; }
 export interface CanslimCriterion { value: boolean | null; detail: string; }
 export interface Canslim { criteria: Record<string, CanslimCriterion>; score: string; }
@@ -12,6 +10,9 @@ export interface Opportunity { ticker: string; name: string | null; sector: stri
 export interface PriceBar { date: string; open: number; high: number; low: number; close: number; volume: number; }
 export interface OpportunityDetail extends Opportunity { price_history: PriceBar[]; first_detected_price?: number | null; current_price?: number | null; return_since_first_detected_pct?: number | null; }
 export interface OpportunityFilters { risk?: RiskBucket; sector?: string; strategy?: StrategyName | "weinstein" | "canslim" | "early_stage2"; limit?: number; offset?: number; }
+export interface MarketIndicator { key:string; label:string; value:number|null; previous:number|null; change:number|null; change_1w?:number|null; change_1m?:number|null; as_of:string|null; frequency:string; freshness:string; source:string; source_url:string|null; reference_source_url?:string|null; interpretation:string; signal:string; score:number|null; weight:number; }
+export interface MarketDeskPanel { score:number|null; status:string; summary:string; indicators:MarketIndicator[]; coverage:number; }
+export interface MarketDesk { market_regime:{score:number|null;label:string;direction:string;status:string;components:Record<string,number|null>;method:string}; liquidity:MarketDeskPanel; stress:MarketDeskPanel; macro:{regime:string;growth:string;inflation:string;labour:string;confidence:number;indicators:MarketIndicator[];method:string}; market_internals:MarketDeskPanel; cross_asset_signals:Array<{level:string;title:string;detail:string}>; desk_call:string[]; what_changed:Array<{label:string;change:number;unit:string;horizon:string;as_of:string;source:string}>; watch_next:Array<{date:string;title:string;source:string;consensus:number|null}>; confidence:number; coverage:{available:number;expected:number}; sources:string[]; updated_at:string; }
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const responseCache = new Map<string, { expires: number; value: unknown }>();
 const pendingRequests = new Map<string, Promise<unknown>>();
@@ -70,3 +71,4 @@ export async function getCatalysts(days = 7): Promise<Catalyst[]> {
   if (DEMO_MODE) { const { DEMO_CATALYSTS } = await import("./demo-data"); return DEMO_CATALYSTS; }
   return fetchJson<Catalyst[]>("/catalysts?days=" + days);
 }
+export async function getMarketDesk(): Promise<MarketDesk> { return fetchJson<MarketDesk>("/market-desk"); }

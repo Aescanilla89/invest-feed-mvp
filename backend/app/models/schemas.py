@@ -122,20 +122,3 @@ class CatalystSchema(BaseModel):
     explanation: str | None
 
     model_config = {"from_attributes": True}
-
-
-class FearGreedPointSchema(BaseModel):
-    date: str
-    score: float
-    rating: str
-
-
-class FearGreedSchema(BaseModel):
-    score: float
-    rating: str
-    timestamp: str
-    previous_close: float
-    previous_1_week: float
-    previous_1_month: float
-    previous_1_year: float
-    history: list[FearGreedPointSchema] = []

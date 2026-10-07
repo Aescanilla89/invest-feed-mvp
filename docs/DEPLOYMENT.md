@@ -33,6 +33,7 @@ Required environment variables:
 - `CORS_ALLOW_ORIGINS`
 - `ALPACA_API_KEY`
 - `ALPACA_SECRET_KEY`
+- `FRED_API_KEY` (required for live Market Desk macro/liquidity/stress readings and the release calendar)
 - `ANTHROPIC_API_KEY` (optional unless explanations are enabled)
 - `ADMIN_SECRET` (required for admin endpoints)
 
