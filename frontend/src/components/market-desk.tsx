@@ -220,7 +220,6 @@ export function MarketDesk() {
               <p>El régimen combina liquidez (30 %), estrés financiero y crédito (30 %), macroeconomía (20 %) e indicadores de mercado (20 %). Si faltan datos, los pesos disponibles se reajustan y baja la confianza.</p>
               <p>La liquidez se valora con balance de la Fed, reservas bancarias, cuenta del Tesoro, repo inverso y diferencial SOFR–EFFR. El net liquidity es un proxy de mercado, no una identidad contable.</p>
               <p>Fuentes observadas: {data?.sources.join(" · ") || "FRED y Alpaca, cuando están configuradas"}. Cada indicador muestra su fecha y fuente al abrir el icono de ayuda.</p>
-              <a href="/docs/MARKET_DESK.md" className="inline-block text-cyan-200 underline decoration-white/20 underline-offset-2">Ver metodología completa</a>
             </div>
           </details>
         </div>
