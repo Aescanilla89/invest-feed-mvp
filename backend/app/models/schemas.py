@@ -43,6 +43,9 @@ class OpportunitySchema(BaseModel):
     explanation: str | None
     last_updated: date
     first_detected_date: date | None = None
+    first_detected_price: float | None = None
+    current_price: float | None = None
+    return_since_first_detected_pct: float | None = None
     signal_type: str | None = None
     strategies: dict[str, StrategyResultSchema] = {}
     selection_score: float | None = None
@@ -53,9 +56,6 @@ class OpportunitySchema(BaseModel):
 
 class OpportunityDetailSchema(OpportunitySchema):
     price_history: list[dict] = []
-    first_detected_price: float | None = None
-    current_price: float | None = None
-    return_since_first_detected_pct: float | None = None
 
 
 class DataLimitation(BaseModel):

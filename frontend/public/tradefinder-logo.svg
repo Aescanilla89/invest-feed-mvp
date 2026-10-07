@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 72" role="img" aria-labelledby="title">
+  <title id="title">TradeFinder</title>
+  <g fill="none" stroke="#e18a45" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="31" cy="29" r="22" stroke-width="5"/>
+    <path d="m47 46 15 15" stroke-width="7"/>
+    <path d="m15 34 9-8 8 5 13-12" stroke="#f4f5f6" stroke-width="3.5"/>
+  </g>
+  <text x="76" y="48" fill="#f4f5f6" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="700" letter-spacing="-1.8">Trade<tspan fill="#e18a45" font-style="italic">Finder</tspan></text>
+</svg>

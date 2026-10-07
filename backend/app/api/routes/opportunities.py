@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -81,7 +81,84 @@ def _has_strategy_signal(opp: Opportunity, strategy: str) -> bool:
     return bool((_parse_strategies(opp).get(strategy) or {}).get("passed"))
 
 
-def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None, first_detected_date: date | None = None, requested_strategy: str | None = None) -> OpportunitySchema:
+def _first_detected_performance(db: Session, rows: list[tuple[Opportunity, Ticker]], first_detected: dict[int, date]) -> dict[int, dict[str, float | None]]:
+    if not rows:
+        return {}
+
+    detection_dates = {ticker_id: detected for ticker_id, detected in first_detected.items() if detected is not None}
+    performance: dict[int, dict[str, float | None]] = {
+        opp.ticker_id: {
+            "first_detected_price": None,
+            "current_price": None,
+            "return_since_first_detected_pct": None,
+        }
+        for opp, _ in rows
+    }
+    if not detection_dates:
+        return performance
+
+    ticker_ids = list(detection_dates)
+    first_date_expression = case(detection_dates, value=PriceSnapshot.ticker_id, else_=date.max)
+    ranked_snapshots = (
+        db.query(
+            PriceSnapshot.ticker_id.label("ticker_id"),
+            PriceSnapshot.close.label("close"),
+            func.row_number().over(
+                partition_by=PriceSnapshot.ticker_id,
+                order_by=PriceSnapshot.date.asc(),
+            ).label("first_rank"),
+            func.row_number().over(
+                partition_by=PriceSnapshot.ticker_id,
+                order_by=PriceSnapshot.date.desc(),
+            ).label("latest_rank"),
+        )
+        .filter(
+            PriceSnapshot.ticker_id.in_(ticker_ids),
+            PriceSnapshot.date >= first_date_expression,
+        )
+        .subquery()
+    )
+    snapshots = db.query(
+        ranked_snapshots.c.ticker_id,
+        ranked_snapshots.c.close,
+        ranked_snapshots.c.first_rank,
+        ranked_snapshots.c.latest_rank,
+    ).filter(or_(ranked_snapshots.c.first_rank == 1, ranked_snapshots.c.latest_rank == 1)).all()
+
+    first_prices: dict[int, float] = {}
+    latest_prices: dict[int, float] = {}
+    for ticker_id, close, first_rank, latest_rank in snapshots:
+        if first_rank == 1:
+            first_prices[ticker_id] = close
+        if latest_rank == 1:
+            latest_prices[ticker_id] = close
+
+    for opp, ticker in rows:
+        ticker_id = opp.ticker_id
+        detected_on = detection_dates.get(ticker_id)
+        if detected_on is None:
+            continue
+        first_price = first_prices.get(ticker_id)
+        daily_date = ticker.last_daily_price_date
+        daily_price_is_current = (
+            ticker.last_daily_close is not None
+            and (daily_date is None or daily_date >= detected_on)
+        )
+        current_price = ticker.last_daily_close if daily_price_is_current else latest_prices.get(ticker_id)
+        return_pct = (
+            round((current_price / first_price - 1) * 100, 2)
+            if first_price is not None and first_price > 0 and current_price is not None
+            else None
+        )
+        performance[ticker_id] = {
+            "first_detected_price": first_price,
+            "current_price": current_price,
+            "return_since_first_detected_pct": return_pct,
+        }
+    return performance
+
+
+def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None, first_detected_date: date | None = None, requested_strategy: str | None = None, performance: dict[str, float | None] | None = None) -> OpportunitySchema:
     verifiable = opp.canslim_verifiable_count
     passed = opp.canslim_passed_count
     raw_strategies = _parse_strategies(opp)
@@ -91,7 +168,10 @@ def _to_schema(opp: Opportunity, ticker: Ticker, explanation_text: str | None, f
         ticker=ticker.symbol, name=ticker.name, sector=ticker.sector, combined_score=opp.combined_score, risk_bucket=opp.risk_bucket,
         weinstein=WeinsteinSchema(stage=opp.weinstein_stage, is_transition=opp.weinstein_transition, weeks_in_stage=opp.weeks_in_stage, ma_slope_pct=opp.weinstein_ma_slope_pct, relative_volume=opp.weinstein_relative_volume, rsi=opp.weinstein_rsi if opp.weinstein_rsi is not None else 50.0),
         canslim=CanslimSchema(criteria=_normalise_criteria(opp.canslim_criteria), score=f"{passed}/{verifiable} verificables"),
-        explanation=explanation_text, last_updated=opp.run_date, first_detected_date=first_detected_date or opp.run_date,
+        explanation=explanation_text, last_updated=opp.run_date, first_detected_date=first_detected_date,
+        first_detected_price=(performance or {}).get("first_detected_price"),
+        current_price=(performance or {}).get("current_price"),
+        return_since_first_detected_pct=(performance or {}).get("return_since_first_detected_pct"),
         signal_type=_compute_signal_type(opp), strategies=_strategies_to_schema(raw_strategies), selection_score=selection_scores.get(selection_method) if selection_method else None, selection_method=selection_method,
     )
 
@@ -137,7 +217,8 @@ def list_opportunities(limit: int = Query(10, ge=1, le=100), offset: int = Query
     rows = rows[offset : offset + limit]
     explanations = {e.ticker_id: e.text for e in db.query(Explanation).filter(Explanation.run_date == run_date).all()}
     first_detected = _first_detected_dates(db, {opp.ticker_id for opp, _ in rows})
-    return [_to_schema(opp, ticker, explanations.get(opp.ticker_id), first_detected.get(opp.ticker_id), requested_strategy=strategy if strategy in _STRATEGY_NAMES else None) for opp, ticker in rows]
+    performance = _first_detected_performance(db, rows, first_detected)
+    return [_to_schema(opp, ticker, explanations.get(opp.ticker_id), first_detected.get(opp.ticker_id), requested_strategy=strategy if strategy in _STRATEGY_NAMES else None, performance=performance.get(opp.ticker_id)) for opp, ticker in rows]
 
 
 @router.get("/{symbol}", response_model=OpportunityDetailSchema)
@@ -149,13 +230,22 @@ def get_opportunity_detail(symbol: str, db: Session = Depends(get_db)) -> Opport
     if opp is None:
         raise HTTPException(status_code=404, detail=f"Sin datos de screener para {symbol} todavia")
     explanation = db.query(Explanation).filter(Explanation.ticker_id == ticker.id, Explanation.run_date == opp.run_date).one_or_none()
-    first_detected_date = _first_detected_dates(db, {ticker.id}).get(ticker.id) or opp.run_date
+    first_detected_date = _first_detected_dates(db, {ticker.id}).get(ticker.id)
     base = _to_schema(opp, ticker, explanation.text if explanation else None, first_detected_date=first_detected_date)
     snapshots = db.query(PriceSnapshot).filter(PriceSnapshot.ticker_id == ticker.id).order_by(PriceSnapshot.date.desc()).limit(130).all()
     snapshots = list(reversed(snapshots))
     price_history = [{"date": s.date.isoformat(), "open": s.open, "high": s.high, "low": s.low, "close": s.close, "volume": s.volume} for s in snapshots]
-    first_snapshot = db.query(PriceSnapshot).filter(PriceSnapshot.ticker_id == ticker.id, PriceSnapshot.date >= first_detected_date).order_by(PriceSnapshot.date.asc()).first()
+    first_snapshot = (
+        db.query(PriceSnapshot)
+        .filter(PriceSnapshot.ticker_id == ticker.id, PriceSnapshot.date >= first_detected_date)
+        .order_by(PriceSnapshot.date.asc())
+        .first()
+        if first_detected_date
+        else None
+    )
     first_detected_price = first_snapshot.close if first_snapshot else None
     current_price = ticker.last_daily_close or (snapshots[-1].close if snapshots else None)
     return_since_first_detected_pct = round((current_price / first_detected_price - 1) * 100, 2) if first_detected_price and current_price else None
-    return OpportunityDetailSchema(**base.model_dump(), price_history=price_history, first_detected_price=first_detected_price, current_price=current_price, return_since_first_detected_pct=return_since_first_detected_pct)
+    base_data = base.model_dump()
+    base_data.update(first_detected_price=first_detected_price, current_price=current_price, return_since_first_detected_pct=return_since_first_detected_pct)
+    return OpportunityDetailSchema(**base_data, price_history=price_history)
