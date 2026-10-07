@@ -60,6 +60,7 @@ function spanishSignal(signal: string) {
     old: "Antiguo",
     unknown: "Desconocido",
     weak: "Débil",
+    normal: "Normal",
   };
   return labels[signal] ?? signal;
 }
@@ -87,9 +88,9 @@ function macroDirection(value: string, kind: "growth" | "inflation" | "labour") 
     return "Estable";
   }
   if (kind === "inflation") {
-    if (value.startsWith("rising")) return value.includes("above") ? "Sube; sobre el 2 %" : "Sube";
-    if (value.startsWith("cooling")) return value.includes("above") ? "Baja; sobre el 2 %" : "Baja";
-    return value.startsWith("stable") ? (value.includes("above") ? "Estable; sobre el 2 %" : "Estable") : "Sin datos suficientes";
+    if (value.startsWith("rising")) return "Repuntando";
+    if (value.startsWith("cooling")) return "Moderándose";
+    return value.startsWith("stable") ? "Estable" : "Sin datos suficientes";
   }
   if (value === "softening") return "Pierde fuerza";
   if (value === "stable") return "Estable";
@@ -99,32 +100,18 @@ function macroDirection(value: string, kind: "growth" | "inflation" | "labour") 
 function generatedBrief(data: MarketDeskData) {
   const regime = regimeNames[data.market_regime.label] ?? "Lectura parcial";
   const liquidityScore = data.liquidity.score;
-  const liquidityText = liquidityScore === null
-    ? "No hay datos suficientes para valorar la liquidez."
-    : liquidityScore >= 60
-      ? "La liquidez ofrece apoyo al mercado."
-      : liquidityScore < 40
-        ? "La liquidez muestra señales de drenaje."
-        : "La liquidez presenta señales mixtas.";
-  const stressText = data.stress.score === null
-    ? "El estrés financiero no se puede valorar con los datos disponibles."
-    : data.stress.score >= 60
-      ? "El estrés financiero permanece contenido."
-      : data.stress.score < 40
-        ? "El estrés financiero está elevado y conviene vigilarlo."
-        : "El estrés financiero ofrece una señal intermedia.";
-  const growth = macroDirection(data.macro.growth, "growth").toLowerCase();
-  const inflation = macroDirection(data.macro.inflation, "inflation").toLowerCase();
-  const macroText = data.macro.regime === "INSUFFICIENT DATA"
-    ? "La lectura macroeconómica aún es incompleta."
-    : `El crecimiento ${growth} y la inflación ${inflation}.`;
-  const coverageText = data.coverage.available < data.coverage.expected
-    ? `Lectura parcial: ${data.coverage.available} de ${data.coverage.expected} señales disponibles; la confianza se reduce por los datos ausentes.`
-    : `Régimen ${regime.toLowerCase()}: ${Math.round(data.market_regime.score ?? 0)} puntos. ${liquidityText} ${stressText} ${macroText}`;
-  if (data.coverage.available < data.coverage.expected) {
-    return `Régimen ${regime.toLowerCase()}${data.market_regime.score === null ? "" : `: ${Math.round(data.market_regime.score)} puntos`}. ${liquidityText} ${stressText} ${macroText} ${coverageText}`;
-  }
-  return coverageText;
+  const liquidity = liquidityScore === null ? "la liquidez no puede valorarse con los datos disponibles" : liquidityScore >= 60 ? "la liquidez ofrece apoyo" : liquidityScore < 40 ? "la liquidez muestra señales de drenaje" : "la liquidez presenta señales mixtas";
+  const stress = data.stress.score === null ? "el estrés financiero no puede valorarse" : data.stress.score >= 60 ? "el estrés financiero está contenido" : data.stress.score < 40 ? "el estrés financiero está elevado" : "el estrés financiero ofrece una señal mixta";
+  const growth = data.macro.growth === "cooling" ? "se enfría" : data.macro.growth === "improving" ? "mejora" : data.macro.growth === "stable" ? "se mantiene estable" : "no tiene una lectura suficiente";
+  const inflation = data.macro.inflation.startsWith("rising")
+    ? data.macro.inflation.includes("above") ? "repunta y sigue por encima del objetivo del 2 %" : "repunta"
+    : data.macro.inflation.startsWith("cooling")
+      ? data.macro.inflation.includes("above") ? "se modera, aunque sigue por encima del 2 %" : "se modera"
+      : data.macro.inflation.startsWith("stable")
+        ? data.macro.inflation.includes("above") ? "permanece estable, aún por encima del 2 %" : "permanece estable"
+        : "no tiene una lectura suficiente";
+  const score = data.market_regime.score === null ? "" : ` (${Math.round(data.market_regime.score)}/100)`;
+  return `Régimen ${regime.toLowerCase()}${score}. ${liquidity.charAt(0).toUpperCase()}${liquidity.slice(1)} y ${stress}. El crecimiento ${growth}, mientras la inflación ${inflation}.`;
 }
 
 function Why({ item }: { item: MarketIndicator }) {
