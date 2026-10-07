@@ -10,7 +10,7 @@ const STAGE_LABEL: Record<number, string> = {
 };
 
 export function StagePill({ weinstein }: { weinstein: Weinstein }) {
-  const { stage, is_transition, weeks_in_stage } = weinstein;
+  const { stage, is_transition } = weinstein;
   const isAdvance = stage === 2;
   const isDecline = stage === 4;
 
@@ -29,7 +29,6 @@ export function StagePill({ weinstein }: { weinstein: Weinstein }) {
         {!isAdvance && !isDecline && <Minus className="size-3.5" aria-hidden />}
         Stage {stage} · {STAGE_LABEL[stage]}
       </span>
-      <span className="text-xs text-muted-foreground">{weeks_in_stage} sem</span>
       {is_transition && (
         <span className="relative rounded-full bg-(--color-stage-advance)/20 px-2 py-0.5 text-[11px] font-semibold text-(--color-stage-advance)">
           <span className="absolute inset-0 rounded-full bg-(--color-stage-advance)/25 motion-safe:animate-pulse" aria-hidden />
