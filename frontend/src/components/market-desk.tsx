@@ -132,7 +132,7 @@ function Why({ item }: { item: MarketIndicator }) {
 function Kpi({ label, value, detail, score }: { label: string; value: string; detail: string; score: number | null }) {
   return (
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.025] p-3.5 sm:p-4">
-      <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500">{label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[.16em] text-white">{label}</div>
       <div className={`mt-2 truncate text-sm font-semibold sm:text-base ${scoreColor(score)}`}>{value}</div>
       <div className="mt-1 text-[11px] text-slate-500">{detail}</div>
     </div>
@@ -185,7 +185,7 @@ export function MarketDesk() {
         <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
           <div className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 sm:p-5">
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[.2em] text-slate-500">Régimen actual</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[.2em] text-white">Régimen actual</div>
               <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className={`font-mono text-5xl font-medium leading-none tracking-[-.06em] tabular-nums sm:text-6xl ${scoreColor(data?.market_regime.score ?? null)}`}>{data?.market_regime.score === null || data?.market_regime.score === undefined ? "—" : Math.round(data.market_regime.score)}<span className="ml-1 text-xl text-slate-600">/100</span></span>
                 <span className="text-base font-semibold text-white sm:text-lg">{data ? regimeNames[data.market_regime.label] ?? "Lectura parcial" : "Calculando lectura"}</span>
