@@ -8,10 +8,10 @@ export interface FeedFilters {
 }
 
 const RISK_OPTIONS = [
-  { value: "todos", label: "Cualquier riesgo" },
-  { value: "bajo", label: "Riesgo bajo" },
-  { value: "medio", label: "Riesgo medio" },
-  { value: "alto", label: "Riesgo alto" },
+  { value: "todos", label: "Cualquier volatilidad" },
+  { value: "bajo", label: "Volatilidad baja" },
+  { value: "medio", label: "Volatilidad media" },
+  { value: "alto", label: "Volatilidad alta" },
 ];
 
 export function FilterBar({
@@ -29,7 +29,7 @@ export function FilterBar({
   return (
     <div className="flex flex-wrap items-center gap-2.5" role="group" aria-label="Filtros del feed">
       <Select value={filters.risk} onValueChange={(v) => onChange({ ...filters, risk: v as FeedFilters["risk"] })}>
-        <SelectTrigger className="h-11 w-[150px]" aria-label="Riesgo">
+        <SelectTrigger className="h-11 w-[180px]" aria-label="Volatilidad semanal">
           <SelectValue>{(v: string) => riskLabels[v]}</SelectValue>
         </SelectTrigger>
         <SelectContent>

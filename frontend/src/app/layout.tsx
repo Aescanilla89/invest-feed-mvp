@@ -39,6 +39,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans">
         <TooltipProvider delay={150}>{children}</TooltipProvider>
+        <footer className="mt-auto border-t border-border/60 px-6 py-4 text-center text-xs text-muted-foreground/80">
+          Información educativa con retraso. No constituye asesoramiento financiero ni implica ejecución de órdenes.
+        </footer>
       </body>
     </html>
   );

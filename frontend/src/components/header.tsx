@@ -25,19 +25,11 @@ export function Header() {
             From Market Noise to Clear Decisions
           </p>
           <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-            Oportunidades rankeadas combinando Stage Analysis de Weinstein y CAN&nbsp;SLIM —
-            con el porqué explicado, no solo el qué.
+            TradeFinder combina el Stage Analysis de Weinstein y CAN SLIM para identificar señales
+            relevantes, explicar qué respalda cada oportunidad y seguir su evolución a medida que
+            cambia el mercado.
           </p>
         </div>
-        <nav className="flex items-center gap-4">
-          <Link href="/" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-            Dashboard de oportunidades
-          </Link>
-          <p className="hidden max-w-xs text-xs leading-relaxed text-muted-foreground/80 lg:block">
-            Información educativa con retraso, no asesoramiento financiero ni ejecución de
-            órdenes.
-          </p>
-        </nav>
       </div>
     </header>
   );
