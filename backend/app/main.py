@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
-from app.api.routes import admin, catalysts, health, meta, opportunities, portfolio
+from app.api.routes import admin, catalysts, health, market_desk, meta, opportunities, portfolio
 from app.core.config import settings
 from app.core.db import init_db
 
@@ -38,7 +38,7 @@ async def request_context(request: Request, call_next):
         raise
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
-    if request.method == "GET" and request.url.path in {"/api/opportunities", "/api/portfolio", "/api/catalysts"}:
+    if request.method == "GET" and request.url.path in {"/api/opportunities", "/api/portfolio", "/api/catalysts", "/api/market-desk"}:
         response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
     logger.info("request_complete", extra={"request_id": request_id, "method": request.method, "path": request.url.path, "status_code": response.status_code, "elapsed_ms": elapsed_ms})
     return response
@@ -55,6 +55,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(opportunities.router, prefix="/api")
 app.include_router(catalysts.router, prefix="/api")
+app.include_router(market_desk.router, prefix="/api")
 app.include_router(meta.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(portfolio.router, prefix="/api")
