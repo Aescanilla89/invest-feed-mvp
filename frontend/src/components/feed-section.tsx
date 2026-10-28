@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Flame, TrendingUp, Search, Award, DollarSign, Rocket } from "lucide-react";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
 import { EmptyState, ErrorState } from "@/components/empty-state";
 import { FilterBar, type FeedFilters } from "@/components/filter-bar";
-import { getOpportunities, type Opportunity, type StrategyName } from "@/lib/api";
+import { getOpportunityFeed, getOpportunities, type Opportunity, type StrategyName } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_FILTERS: FeedFilters = { risk: "todos", sector: "todos" };
@@ -170,43 +170,41 @@ export function FeedSection() {
   const [activeStrategy, setActiveStrategy] = useState<FeedTabKey>("early_stage2");
 
   const [filters, setFilters] = useState<FeedFilters>(DEFAULT_FILTERS);
+  const filtersRef = useRef(DEFAULT_FILTERS);
+  const skipInitialTopRequest = useRef(true);
   const [top, setTop] = useState<Opportunity[] | null>(null);
   const [topError, setTopError] = useState<string | null>(null);
 
-  // Estrategias: se cargan una única vez, no dependen de los filtros de Destacadas.
+  // La API devuelve todas las listas de la home en una única respuesta.
   useEffect(() => {
     let cancelled = false;
-
-    async function load() {
-      try {
-        const [earlyStage2, minervini, lynch, berkshire, dividendos] = await Promise.all([
-          getOpportunities({ limit: 6, strategy: "early_stage2" }),
-          getOpportunities({ limit: 6, strategy: "minervini" }),
-          getOpportunities({ limit: 6, strategy: "lynch" }),
-          getOpportunities({ limit: 6, strategy: "berkshire" }),
-          getOpportunities({ limit: 6, strategy: "dividendos" }),
-        ]);
-        if (!cancelled) {
-          setStrategyData({ byStrategy: { early_stage2: earlyStage2, minervini, lynch, berkshire, dividendos } });
+    getOpportunityFeed()
+      .then(({ featured, by_strategy }) => {
+        if (cancelled) return;
+        setStrategyData({ byStrategy: by_strategy });
+        if (filtersRef.current.risk === "todos" && filtersRef.current.sector === "todos") {
+          setTop(featured);
         }
-      } catch {
-        if (!cancelled) setError("No se pudo conectar con el backend.");
-      }
-    }
-
-    load();
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError("No se pudo conectar con el backend.");
+          setTopError("No se pudo conectar con el backend.");
+        }
+      });
     return () => { cancelled = true; };
   }, []);
 
-  // Destacadas: se refresca cada vez que cambian los filtros del FilterBar.
+  // Después de la respuesta inicial agrupada, los cambios de filtro solo actualizan Destacadas.
   useEffect(() => {
+    if (skipInitialTopRequest.current) {
+      skipInitialTopRequest.current = false;
+      return;
+    }
     let cancelled = false;
 
     async function load() {
       try {
-        // limit 20, no 4: con la vista partida en "de la semana" / "de antes"
-        // (ver splitByDetectionAge) hace falta traer suficientes para que las
-        // dos subsecciones tengan contenido, no solo la primera.
         const result = await getOpportunities({
           limit: 20,
           risk: filters.risk === "todos" ? undefined : filters.risk,
@@ -292,7 +290,14 @@ export function FeedSection() {
        * semana" (detectadas hace <7 días) y "de antes" (llevan más tiempo
        * pero siguen cumpliendo el criterio hoy). */}
       <section>
-        <FilterBar filters={filters} sectors={sectors} onChange={setFilters} />
+        <FilterBar
+          filters={filters}
+          sectors={sectors}
+          onChange={(nextFilters) => {
+            filtersRef.current = nextFilters;
+            setFilters(nextFilters);
+          }}
+        />
         {top.length === 0 ? (
           <div className="mt-4">
             <FeaturedHeader icon={Flame} title="Destacadas" sublabel="Señales activas · Weinstein + CAN SLIM" count={0} />

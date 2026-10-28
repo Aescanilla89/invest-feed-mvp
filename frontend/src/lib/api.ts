@@ -5,10 +5,16 @@ export interface CanslimCriterion { value: boolean | null; detail: string; }
 export interface Canslim { criteria: Record<string, CanslimCriterion>; score: string; }
 export type SignalType = "weinstein" | "canslim" | "both" | null;
 export type StrategyName = "minervini" | "lynch" | "berkshire" | "dividendos";
+export type FeedStrategyName = StrategyName | "early_stage2";
 export interface StrategyResult { passed: boolean | null; score: number | null; details: string; }
 export interface Opportunity { ticker: string; name: string | null; sector: string | null; combined_score: number; risk_bucket: RiskBucket; weinstein: Weinstein; canslim: Canslim; explanation: string | null; last_updated: string; first_detected_date?: string | null; first_detected_price?: number | null; current_price?: number | null; return_since_first_detected_pct?: number | null; signal_type?: SignalType; strategies: Partial<Record<StrategyName, StrategyResult>>; selection_score?: number | null; selection_method?: string | null; }
 export interface PriceBar { date: string; open: number; high: number; low: number; close: number; volume: number; }
 export interface OpportunityDetail extends Opportunity { price_history: PriceBar[]; }
+export interface OpportunityFeed {
+  featured: Opportunity[];
+  by_strategy: Record<FeedStrategyName, Opportunity[]>;
+}
+export interface OpportunityFeedFilters { risk?: RiskBucket; sector?: string; }
 export interface OpportunityFilters { risk?: RiskBucket; sector?: string; strategy?: StrategyName | "weinstein" | "canslim" | "early_stage2"; limit?: number; offset?: number; }
 export interface MarketIndicator { key:string; label:string; value:number|null; previous:number|null; change:number|null; change_1w?:number|null; change_1m?:number|null; as_of:string|null; frequency:string; freshness:string; source:string; source_url:string|null; reference_source_url?:string|null; interpretation:string; signal:string; score:number|null; weight:number; }
 export interface MarketDeskPanel { score:number|null; status:string; summary:string; indicators:MarketIndicator[]; coverage:number; }
@@ -55,6 +61,35 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
   const query = params.toString();
   return fetchJson<Opportunity[]>("/opportunities" + (query ? "?" + query : ""));
 }
+async function loadLegacyOpportunityFeed(filters: OpportunityFeedFilters): Promise<OpportunityFeed> {
+  const [featured, earlyStage2, minervini, lynch, berkshire, dividendos] = await Promise.all([
+    getOpportunities({ limit: 20, risk: filters.risk, sector: filters.sector }),
+    getOpportunities({ limit: 6, strategy: "early_stage2" }),
+    getOpportunities({ limit: 6, strategy: "minervini" }),
+    getOpportunities({ limit: 6, strategy: "lynch" }),
+    getOpportunities({ limit: 6, strategy: "berkshire" }),
+    getOpportunities({ limit: 6, strategy: "dividendos" }),
+  ]);
+  return { featured, by_strategy: { early_stage2: earlyStage2, minervini, lynch, berkshire, dividendos } };
+}
+
+export async function getOpportunityFeed(filters: OpportunityFeedFilters = {}): Promise<OpportunityFeed> {
+  if (DEMO_MODE) return loadLegacyOpportunityFeed(filters);
+  const params = new URLSearchParams();
+  if (filters.risk) params.set("risk", filters.risk);
+  if (filters.sector) params.set("sector", filters.sector);
+  const query = params.toString();
+  try {
+    return await fetchJson<OpportunityFeed>("/opportunities/feed" + (query ? "?" + query : ""));
+  } catch (error) {
+    // Keep the existing UI working while the API deployment rolls out.
+    if (error instanceof Error && error.message.startsWith("Error 404 ")) {
+      return loadLegacyOpportunityFeed(filters);
+    }
+    throw error;
+  }
+}
+
 export async function getOpportunityDetail(symbol: string): Promise<OpportunityDetail> {
   if (DEMO_MODE) {
     const { getDemoDetail } = await import("./demo-data");

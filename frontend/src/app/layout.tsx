@@ -21,6 +21,10 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
+const apiOrigin = new URL(
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://invest-feed-mvp.onrender.com/api",
+).origin;
+
 export const metadata: Metadata = {
   title: "TradeFinder — From Market Noise to Clear Decisions",
   description:
@@ -37,6 +41,10 @@ export default function RootLayout({
       lang="es"
       className={`dark ${heading.variable} ${body.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="//s3.tradingview.com" />
+      </head>
       <body className="min-h-full flex flex-col font-sans">
         <TooltipProvider delay={150}>{children}</TooltipProvider>
         <footer className="mt-auto border-t border-border/60 px-6 py-4 text-center text-xs text-muted-foreground/80">
