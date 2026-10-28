@@ -67,7 +67,7 @@ const STRATEGY_SECTIONS: {
 ];
 
 interface StrategyData {
-  byStrategy: Record<FeedTabKey, Opportunity[]>;
+  byStrategy: Partial<Record<FeedTabKey, Opportunity[]>>;
 }
 
 const NEW_THRESHOLD_DAYS = 7;
@@ -137,7 +137,7 @@ function StrategyTabBar({
   onChange,
 }: {
   active: FeedTabKey;
-  counts: Record<FeedTabKey, number>;
+  counts: Partial<Record<FeedTabKey, number>>;
   onChange: (key: FeedTabKey) => void;
 }) {
   return (
@@ -155,9 +155,11 @@ function StrategyTabBar({
         >
           <Icon className="size-3.5 shrink-0" aria-hidden />
           {label}
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-            {counts[key]}
-          </span>
+          {counts[key] !== undefined && (
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+              {counts[key]}
+            </span>
+          )}
         </button>
       ))}
     </div>
@@ -173,30 +175,29 @@ export function FeedSection() {
   const [top, setTop] = useState<Opportunity[] | null>(null);
   const [topError, setTopError] = useState<string | null>(null);
 
-  // Estrategias: se cargan una única vez, no dependen de los filtros de Destacadas.
+  // Cargar solo la estrategia activa; las demás se consultan al abrir su pestaña.
   useEffect(() => {
+    setError(null);
+    if (strategyData?.byStrategy[activeStrategy]) return;
+
     let cancelled = false;
-
-    async function load() {
-      try {
-        const [earlyStage2, minervini, lynch, berkshire, dividendos] = await Promise.all([
-          getOpportunities({ limit: 6, strategy: "early_stage2" }),
-          getOpportunities({ limit: 6, strategy: "minervini" }),
-          getOpportunities({ limit: 6, strategy: "lynch" }),
-          getOpportunities({ limit: 6, strategy: "berkshire" }),
-          getOpportunities({ limit: 6, strategy: "dividendos" }),
-        ]);
+    getOpportunities({ limit: 6, strategy: activeStrategy })
+      .then((opportunities) => {
         if (!cancelled) {
-          setStrategyData({ byStrategy: { early_stage2: earlyStage2, minervini, lynch, berkshire, dividendos } });
+          setStrategyData((current) => ({
+            byStrategy: {
+              ...(current?.byStrategy ?? {}),
+              [activeStrategy]: opportunities,
+            },
+          }));
         }
-      } catch {
+      })
+      .catch(() => {
         if (!cancelled) setError("No se pudo conectar con el backend.");
-      }
-    }
+      });
 
-    load();
     return () => { cancelled = true; };
-  }, []);
+  }, [activeStrategy, strategyData]);
 
   // Destacadas: se refresca cada vez que cambian los filtros del FilterBar.
   useEffect(() => {
@@ -278,13 +279,11 @@ export function FeedSection() {
 
   const activeConf = STRATEGY_SECTIONS.find((s) => s.key === activeStrategy)!;
   const activeOpps = strategyData?.byStrategy[activeStrategy] ?? [];
-  const counts = {
-    early_stage2: strategyData?.byStrategy.early_stage2.length ?? 0,
-    minervini: strategyData?.byStrategy.minervini.length ?? 0,
-    lynch: strategyData?.byStrategy.lynch.length ?? 0,
-    berkshire: strategyData?.byStrategy.berkshire.length ?? 0,
-    dividendos: strategyData?.byStrategy.dividendos.length ?? 0,
-  };
+  const counts: Partial<Record<FeedTabKey, number>> = {};
+  for (const strategy of STRATEGY_SECTIONS) {
+    const opportunities = strategyData?.byStrategy[strategy.key];
+    if (opportunities) counts[strategy.key] = opportunities.length;
+  }
 
   return (
     <div className="flex flex-col gap-10">
@@ -338,7 +337,7 @@ export function FeedSection() {
         <StrategyTabBar active={activeStrategy} counts={counts} onChange={setActiveStrategy} />
         <div className="mt-4 flex flex-col gap-3">
           <p className={cn("text-xs", activeConf.iconColor)}>{activeConf.sublabel}</p>
-          {error ? <ErrorState message={error} /> : !strategyData ? (
+          {error ? <ErrorState message={error} /> : !strategyData?.byStrategy[activeStrategy] ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {[...Array(6)].map((_, i) => <OpportunityCardSkeleton key={i} />)}
             </div>

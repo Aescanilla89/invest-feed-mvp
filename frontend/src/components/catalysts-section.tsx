@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Radar, CalendarClock } from "lucide-react";
 import { CatalystCard } from "@/components/catalyst-card";
 import { EmptyState, ErrorState } from "@/components/empty-state";
@@ -25,18 +25,40 @@ function CatalystCardSkeleton() {
 }
 
 export function CatalystsSection() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const [hasEnteredViewport, setHasEnteredViewport] = useState(false);
   const [catalysts, setCatalysts] = useState<Catalyst[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+    if (!("IntersectionObserver" in window)) {
+      setHasEnteredViewport(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setHasEnteredViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "400px" });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!hasEnteredViewport) return;
     let cancelled = false;
     getCatalysts(7)
       .then((data) => { if (!cancelled) setCatalysts(data); })
       .catch(() => { if (!cancelled) setError("No se pudieron cargar los catalizadores."); });
     return () => { cancelled = true; };
-  }, []);
+  }, [hasEnteredViewport]);
 
   return (
-    <section className="flex flex-col gap-4">
+    <section ref={sectionRef} className="flex flex-col gap-4">
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2.5">
           <Radar className="size-5 shrink-0 text-(--color-catalyst-earnings)" aria-hidden />
