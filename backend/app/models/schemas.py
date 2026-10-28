@@ -54,6 +54,11 @@ class OpportunitySchema(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OpportunityFeedSchema(BaseModel):
+    featured: list[OpportunitySchema]
+    by_strategy: dict[str, list[OpportunitySchema]]
+
+
 class OpportunityDetailSchema(OpportunitySchema):
     price_history: list[dict] = []
 

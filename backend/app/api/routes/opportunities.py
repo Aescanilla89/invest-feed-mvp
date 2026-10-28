@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.orm import Explanation, Opportunity, PriceSnapshot, Ticker
-from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunitySchema, StrategyResultSchema, WeinsteinSchema
+from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunityFeedSchema, OpportunitySchema, StrategyResultSchema, WeinsteinSchema
 from app.stock_selection import stock_selection_score
 
 _STRATEGY_NAMES = {"minervini", "lynch", "berkshire", "dividendos"}
@@ -219,6 +219,102 @@ def list_opportunities(limit: int = Query(10, ge=1, le=100), offset: int = Query
     first_detected = _first_detected_dates(db, {opp.ticker_id for opp, _ in rows})
     performance = _first_detected_performance(db, rows, first_detected)
     return [_to_schema(opp, ticker, explanations.get(opp.ticker_id), first_detected.get(opp.ticker_id), requested_strategy=strategy if strategy in _STRATEGY_NAMES else None, performance=performance.get(opp.ticker_id)) for opp, ticker in rows]
+
+
+
+_FEED_STRATEGIES = ("early_stage2", "minervini", "lynch", "berkshire", "dividendos")
+
+
+@router.get("/feed", response_model=OpportunityFeedSchema)
+def opportunity_feed(
+    featured_limit: int = Query(20, ge=1, le=100),
+    strategy_limit: int = Query(6, ge=1, le=100),
+    risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"),
+    sector: str | None = None,
+    db: Session = Depends(get_db),
+) -> OpportunityFeedSchema:
+    """Return the home feed in one request, reusing the current run and enrichment queries."""
+    empty = {name: [] for name in _FEED_STRATEGIES}
+    run_date = _latest_run_date(db)
+    if run_date is None:
+        return OpportunityFeedSchema(featured=[], by_strategy=empty)
+
+    rows = (
+        db.query(Opportunity, Ticker)
+        .join(Ticker, Opportunity.ticker_id == Ticker.id)
+        .filter(Opportunity.run_date == run_date)
+        .order_by(Opportunity.combined_score.desc())
+        .all()
+    )
+    featured = [
+        pair for pair in rows
+        if pair[0].combined_score >= _FEATURED_MIN_SCORE
+        and (risk is None or pair[0].risk_bucket == risk)
+        and (sector is None or pair[1].sector == sector)
+    ][:featured_limit]
+
+    by_strategy: dict[str, list[tuple[Opportunity, Ticker]]] = {}
+    for strategy in _FEED_STRATEGIES:
+        if strategy == _EARLY_STAGE2:
+            candidates = [
+                pair for pair in rows
+                if pair[0].weinstein_stage == 2
+                and pair[0].weeks_in_stage <= _EARLY_STAGE2_MAX_WEEKS
+                and pair[0].weinstein_transition
+            ]
+            candidates.sort(key=lambda pair: (pair[0].weeks_in_stage, -pair[0].combined_score))
+        else:
+            candidates = [
+                pair for pair in rows
+                if _has_strategy_signal(pair[0], strategy)
+            ]
+            candidates.sort(
+                key=lambda pair: (
+                    -float((_parse_strategies(pair[0]).get(strategy) or {}).get("score") or 0),
+                    -pair[0].combined_score,
+                )
+            )
+        by_strategy[strategy] = candidates[:strategy_limit]
+
+    selected: dict[int, tuple[Opportunity, Ticker]] = {}
+    for pair in featured:
+        selected.setdefault(pair[0].ticker_id, pair)
+    for strategy in _FEED_STRATEGIES:
+        for pair in by_strategy[strategy]:
+            selected.setdefault(pair[0].ticker_id, pair)
+
+    ticker_ids = set(selected)
+    explanations = {
+        item.ticker_id: item.text
+        for item in db.query(Explanation)
+        .filter(Explanation.run_date == run_date, Explanation.ticker_id.in_(ticker_ids))
+        .all()
+    } if ticker_ids else {}
+    first_detected = _first_detected_dates(db, ticker_ids)
+    selected_rows = list(selected.values())
+    performance = _first_detected_performance(db, selected_rows, first_detected)
+
+    def to_schema(pair: tuple[Opportunity, Ticker], requested_strategy: str | None = None) -> OpportunitySchema:
+        opp, ticker = pair
+        return _to_schema(
+            opp,
+            ticker,
+            explanations.get(opp.ticker_id),
+            first_detected.get(opp.ticker_id),
+            requested_strategy=requested_strategy,
+            performance=performance.get(opp.ticker_id),
+        )
+
+    return OpportunityFeedSchema(
+        featured=[to_schema(pair) for pair in featured],
+        by_strategy={
+            strategy: [
+                to_schema(pair, strategy if strategy in _STRATEGY_NAMES else None)
+                for pair in by_strategy[strategy]
+            ]
+            for strategy in _FEED_STRATEGIES
+        },
+    )
 
 
 @router.get("/{symbol}", response_model=OpportunityDetailSchema)

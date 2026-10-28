@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 
 from app.api.routes import admin, catalysts, health, market_desk, meta, opportunities, portfolio
@@ -42,6 +43,8 @@ async def request_context(request: Request, call_next):
         response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
     logger.info("request_complete", extra={"request_id": request_id, "method": request.method, "path": request.url.path, "status_code": response.status_code, "elapsed_ms": elapsed_ms})
     return response
+
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=5)
 
 app.add_middleware(
     CORSMiddleware,
