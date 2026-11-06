@@ -66,7 +66,16 @@ export async function getDetectedOpportunities(): Promise<Opportunity[]> {
     const { DEMO_OPPORTUNITIES } = await import("./demo-data");
     return [...DEMO_OPPORTUNITIES].sort((a, b) => (b.first_detected_date ?? "").localeCompare(a.first_detected_date ?? ""));
   }
-  return fetchJson<Opportunity[]>("/opportunities/detected");
+  try {
+    return await fetchJson<Opportunity[]>("/opportunities/detected");
+  } catch (error) {
+    // The API can take longer to deploy than the frontend. Keep the list usable
+    // during that window; the historical endpoint replaces this fallback once live.
+    if (error instanceof Error && error.message.startsWith("Error 404 ")) {
+      return getOpportunities({ limit: 100 });
+    }
+    throw error;
+  }
 }
 async function loadLegacyOpportunityFeed(filters: OpportunityFeedFilters): Promise<OpportunityFeed> {
   const [featured, earlyStage2, minervini, lynch, berkshire, dividendos] = await Promise.all([
