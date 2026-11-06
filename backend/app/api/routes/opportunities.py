@@ -317,56 +317,6 @@ def opportunity_feed(
     )
 
 
-@router.get("/detected", response_model=list[OpportunitySchema])
-def detected_opportunities(db: Session = Depends(get_db)) -> list[OpportunitySchema]:
-    """Return every ticker that has ever crossed the featured-signal threshold."""
-    first_detected = (
-        db.query(
-            Opportunity.ticker_id.label("ticker_id"),
-            func.min(Opportunity.run_date).label("first_detected_date"),
-        )
-        .filter(Opportunity.combined_score >= _FEATURED_MIN_SCORE)
-        .group_by(Opportunity.ticker_id)
-        .subquery()
-    )
-    latest_run = (
-        db.query(
-            Opportunity.ticker_id.label("ticker_id"),
-            func.max(Opportunity.run_date).label("run_date"),
-        )
-        .group_by(Opportunity.ticker_id)
-        .subquery()
-    )
-    rows = (
-        db.query(Opportunity, Ticker, first_detected.c.first_detected_date)
-        .join(Ticker, Opportunity.ticker_id == Ticker.id)
-        .join(latest_run, (Opportunity.ticker_id == latest_run.c.ticker_id) & (Opportunity.run_date == latest_run.c.run_date))
-        .join(first_detected, Opportunity.ticker_id == first_detected.c.ticker_id)
-        .order_by(first_detected.c.first_detected_date.desc(), Ticker.symbol.asc())
-        .all()
-    )
-    ticker_ids = {opp.ticker_id for opp, _, _ in rows}
-    if not ticker_ids:
-        return []
-
-    first_dates = {opp.ticker_id: detected_on for opp, _, detected_on in rows}
-    performance = _first_detected_performance(db, [(opp, ticker) for opp, ticker, _ in rows], first_dates)
-    explanations = {
-        (item.ticker_id, item.run_date): item.text
-        for item in db.query(Explanation).filter(Explanation.ticker_id.in_(ticker_ids)).all()
-    }
-    return [
-        _to_schema(
-            opp,
-            ticker,
-            explanations.get((opp.ticker_id, opp.run_date)),
-            first_detected_date=detected_on,
-            performance=performance.get(opp.ticker_id),
-        )
-        for opp, ticker, detected_on in rows
-    ]
-
-
 @router.get("/{symbol}", response_model=OpportunityDetailSchema)
 def get_opportunity_detail(symbol: str, db: Session = Depends(get_db)) -> OpportunityDetailSchema:
     ticker = db.query(Ticker).filter_by(symbol=symbol.upper()).one_or_none()

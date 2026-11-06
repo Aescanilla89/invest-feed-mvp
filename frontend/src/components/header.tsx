@@ -1,13 +1,9 @@
-"use client";
-
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 export function Header() {
-  const pathname = usePathname();
   return (
     <header className="border-b border-border/60">
       {DEMO_MODE && (
@@ -38,14 +34,6 @@ export function Header() {
           </p>
         </div>
       </div>
-      <nav aria-label="Navegación principal" className="mx-auto flex max-w-6xl gap-6 px-6">
-        <Link href="/" aria-current={pathname === "/" ? "page" : undefined} className={`border-b-2 pb-3 text-sm font-medium transition-colors ${pathname === "/" ? "border-(--color-accent) text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-          Inicio
-        </Link>
-        <Link href="/detectadas" aria-current={pathname === "/detectadas" ? "page" : undefined} className={`border-b-2 pb-3 text-sm font-medium transition-colors ${pathname === "/detectadas" ? "border-(--color-accent) text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-          Oportunidades detectadas
-        </Link>
-      </nav>
     </header>
   );
 }
