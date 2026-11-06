@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getOpportunities, type Opportunity } from "@/lib/api";
+import { getDetectedOpportunities, type Opportunity } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 function formatDate(value: string | null | undefined) {
@@ -23,7 +23,7 @@ export function DetectedOpportunities() {
 
   useEffect(() => {
     let cancelled = false;
-    getOpportunities({ limit: 100 })
+    getDetectedOpportunities()
       .then((data) => { if (!cancelled) setRows(data); })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });

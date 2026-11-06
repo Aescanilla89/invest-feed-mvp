@@ -61,6 +61,13 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
   const query = params.toString();
   return fetchJson<Opportunity[]>("/opportunities" + (query ? "?" + query : ""));
 }
+export async function getDetectedOpportunities(): Promise<Opportunity[]> {
+  if (DEMO_MODE) {
+    const { DEMO_OPPORTUNITIES } = await import("./demo-data");
+    return [...DEMO_OPPORTUNITIES].sort((a, b) => (b.first_detected_date ?? "").localeCompare(a.first_detected_date ?? ""));
+  }
+  return fetchJson<Opportunity[]>("/opportunities/detected");
+}
 async function loadLegacyOpportunityFeed(filters: OpportunityFeedFilters): Promise<OpportunityFeed> {
   const [featured, earlyStage2, minervini, lynch, berkshire, dividendos] = await Promise.all([
     getOpportunities({ limit: 20, risk: filters.risk, sector: filters.sector }),
