@@ -6,7 +6,7 @@ import { OpportunityCard } from "@/components/opportunity-card";
 import { OpportunityCardSkeleton } from "@/components/opportunity-card-skeleton";
 import { EmptyState, ErrorState } from "@/components/empty-state";
 import { FilterBar, type FeedFilters } from "@/components/filter-bar";
-import { getOpportunityFeed, getOpportunities, type Opportunity, type StrategyName } from "@/lib/api";
+import { getOpportunityFeed, type Opportunity, type TrackedOpportunity, type StrategyName } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_FILTERS: FeedFilters = { risk: "todos", sector: "todos" };
@@ -173,17 +173,21 @@ export function FeedSection() {
   const filtersRef = useRef(DEFAULT_FILTERS);
   const skipInitialTopRequest = useRef(true);
   const [top, setTop] = useState<Opportunity[] | null>(null);
+  const [recent, setRecent] = useState<TrackedOpportunity[]>([]);
+  const [historyAvailable, setHistoryAvailable] = useState(false);
   const [topError, setTopError] = useState<string | null>(null);
 
   // La API devuelve todas las listas de la home en una única respuesta.
   useEffect(() => {
     let cancelled = false;
     getOpportunityFeed()
-      .then(({ featured, by_strategy }) => {
+      .then(({ featured, by_strategy, recent }) => {
         if (cancelled) return;
         setStrategyData({ byStrategy: by_strategy });
         if (filtersRef.current.risk === "todos" && filtersRef.current.sector === "todos") {
           setTop(featured);
+          setRecent(recent ?? []);
+          setHistoryAvailable(recent !== undefined);
         }
       })
       .catch(() => {
@@ -205,12 +209,16 @@ export function FeedSection() {
 
     async function load() {
       try {
-        const result = await getOpportunities({
-          limit: 20,
+        const result = await getOpportunityFeed({
           risk: filters.risk === "todos" ? undefined : filters.risk,
           sector: filters.sector === "todos" ? undefined : filters.sector,
         });
-        if (!cancelled) setTop(result);
+        if (!cancelled) {
+          setTop(result.featured);
+          setRecent(result.recent ?? []);
+          setHistoryAvailable(result.recent !== undefined);
+          setTopError(null);
+        }
       } catch {
         if (!cancelled) setTopError("No se pudo conectar con el backend.");
       }
@@ -221,9 +229,9 @@ export function FeedSection() {
   }, [filters]);
 
   const sectors = useMemo(() => {
-    const all = [...(top ?? []), ...Object.values(strategyData?.byStrategy ?? {}).flat()];
+    const all = [...(top ?? []), ...recent, ...Object.values(strategyData?.byStrategy ?? {}).flat()];
     return Array.from(new Set(all.map((o) => o.sector).filter((s): s is string => Boolean(s)))).sort();
-  }, [top, strategyData]);
+  }, [top, recent, strategyData]);
 
   if (topError) {
     return <ErrorState message={topError} />;
@@ -336,6 +344,38 @@ export function FeedSection() {
             );
           })()
         )}
+      </section>
+
+      <section aria-label="Seguimiento de oportunidades">
+        <FeaturedHeader
+          icon={Clock}
+          title="Oportunidades detectadas en los últimos 15 días"
+          sublabel="Se conservan aunque dejen de cumplir el criterio. Una ficha por valor, con su último análisis."
+          count={recent.length}
+        />
+        <div className="mt-4">
+          {!historyAvailable ? (
+            <EmptyState icon={Clock} message="El seguimiento estará disponible cuando se actualice la API." />
+          ) : recent.length === 0 ? (
+            <EmptyState icon={Clock} message="Sin oportunidades detectadas en los últimos 15 días con estos filtros." />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {recent.map((o) => (
+                <div key={o.ticker} className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span className={cn("font-medium", o.tracking_status === "active" ? "text-(--color-risk-low)" : "text-muted-foreground")}>
+                      {o.tracking_status === "active" ? "Sigue activa" : o.tracking_status === "inactive" ? "Ya no cumple el criterio" : "Pendiente de actualizar"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Última señal {new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(`${o.last_detected_date}T12:00:00Z`))}
+                    </span>
+                  </div>
+                  <OpportunityCard opportunity={o} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Sección 2: Estrategias -- vista filtrable en vez de 4 bloques apilados */}
