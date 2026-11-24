@@ -10,7 +10,13 @@ export interface StrategyResult { passed: boolean | null; score: number | null; 
 export interface Opportunity { ticker: string; name: string | null; sector: string | null; combined_score: number; risk_bucket: RiskBucket; weinstein: Weinstein; canslim: Canslim; explanation: string | null; last_updated: string; first_detected_date?: string | null; first_detected_price?: number | null; current_price?: number | null; return_since_first_detected_pct?: number | null; signal_type?: SignalType; strategies: Partial<Record<StrategyName, StrategyResult>>; selection_score?: number | null; selection_method?: string | null; }
 export interface PriceBar { date: string; open: number; high: number; low: number; close: number; volume: number; }
 export interface OpportunityDetail extends Opportunity { price_history: PriceBar[]; }
+export interface TrackedOpportunity extends Opportunity {
+  last_detected_date: string;
+  detected_score: number;
+  tracking_status: "active" | "inactive" | "pending";
+}
 export interface OpportunityFeed {
+  recent?: TrackedOpportunity[];
   featured: Opportunity[];
   by_strategy: Record<FeedStrategyName, Opportunity[]>;
 }
@@ -63,7 +69,7 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
 }
 async function loadLegacyOpportunityFeed(filters: OpportunityFeedFilters): Promise<OpportunityFeed> {
   const [featured, earlyStage2, minervini, lynch, berkshire, dividendos] = await Promise.all([
-    getOpportunities({ limit: 20, risk: filters.risk, sector: filters.sector }),
+    getOpportunities({ limit: 100, risk: filters.risk, sector: filters.sector }),
     getOpportunities({ limit: 6, strategy: "early_stage2" }),
     getOpportunities({ limit: 6, strategy: "minervini" }),
     getOpportunities({ limit: 6, strategy: "lynch" }),

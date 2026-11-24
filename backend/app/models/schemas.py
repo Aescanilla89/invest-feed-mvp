@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class WeinsteinSchema(BaseModel):
@@ -54,8 +56,15 @@ class OpportunitySchema(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TrackedOpportunitySchema(OpportunitySchema):
+    last_detected_date: date
+    detected_score: int
+    tracking_status: Literal["active", "inactive", "pending"]
+
+
 class OpportunityFeedSchema(BaseModel):
     featured: list[OpportunitySchema]
+    recent: list[TrackedOpportunitySchema] = Field(default_factory=list)
     by_strategy: dict[str, list[OpportunitySchema]]
 
 

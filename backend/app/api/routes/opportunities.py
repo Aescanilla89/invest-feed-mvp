@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, or_
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.orm import Explanation, Opportunity, PriceSnapshot, Ticker
-from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunityFeedSchema, OpportunitySchema, StrategyResultSchema, WeinsteinSchema
+from app.models.schemas import CanslimSchema, OpportunityDetailSchema, OpportunityFeedSchema, OpportunitySchema, StrategyResultSchema, TrackedOpportunitySchema, WeinsteinSchema
 from app.stock_selection import stock_selection_score
 
 _STRATEGY_NAMES = {"minervini", "lynch", "berkshire", "dividendos"}
@@ -225,9 +225,63 @@ def list_opportunities(limit: int = Query(10, ge=1, le=100), offset: int = Query
 _FEED_STRATEGIES = ("early_stage2", "minervini", "lynch", "berkshire", "dividendos")
 
 
+def _recent_opportunities(db: Session, run_date: date, risk: str | None, sector: str | None) -> list[TrackedOpportunitySchema]:
+    # Fifteen calendar dates including today, independent of when the job last ran.
+    cutoff = date.today() - timedelta(days=14)
+    detected = (
+        db.query(Opportunity.ticker_id.label("ticker_id"), func.max(Opportunity.run_date).label("detected_on"))
+        .filter(Opportunity.combined_score >= _FEATURED_MIN_SCORE, Opportunity.run_date >= cutoff,
+                Opportunity.run_date <= date.today())
+        .group_by(Opportunity.ticker_id).subquery()
+    )
+    latest = (
+        db.query(Opportunity.ticker_id.label("ticker_id"), func.max(Opportunity.run_date).label("run_date"))
+        .filter(Opportunity.run_date <= date.today())
+        .group_by(Opportunity.ticker_id).subquery()
+    )
+    rows = (
+        db.query(Opportunity, Ticker, detected.c.detected_on)
+        .join(Ticker, Opportunity.ticker_id == Ticker.id)
+        .join(detected, Opportunity.ticker_id == detected.c.ticker_id)
+        .join(latest, (Opportunity.ticker_id == latest.c.ticker_id) & (Opportunity.run_date == latest.c.run_date))
+    )
+    if risk:
+        rows = rows.filter(Opportunity.risk_bucket == risk)
+    if sector:
+        rows = rows.filter(Ticker.sector == sector)
+    rows = rows.order_by(detected.c.detected_on.desc(), Ticker.symbol.asc()).all()
+    ticker_ids = {opp.ticker_id for opp, _, _ in rows}
+    if not ticker_ids:
+        return []
+    first_dates = _first_detected_dates(db, ticker_ids)
+    performance = _first_detected_performance(db, [(opp, ticker) for opp, ticker, _ in rows], first_dates)
+    detection_scores = {
+        (opp.ticker_id, opp.run_date): opp.combined_score
+        for opp in db.query(Opportunity).join(
+            detected, (Opportunity.ticker_id == detected.c.ticker_id) & (Opportunity.run_date == detected.c.detected_on)
+        ).all()
+    }
+    # Only use explanations corresponding to the displayed analysis date.
+    explanations = {
+        (item.ticker_id, item.run_date): item.text
+        for item in db.query(Explanation).filter(Explanation.ticker_id.in_(ticker_ids), Explanation.run_date >= cutoff).all()
+    }
+    return [
+        TrackedOpportunitySchema(
+            **_to_schema(opp, ticker, explanations.get((opp.ticker_id, opp.run_date)),
+                         first_dates.get(opp.ticker_id), performance=performance.get(opp.ticker_id)).model_dump(),
+            last_detected_date=detected_on,
+            detected_score=detection_scores[(opp.ticker_id, detected_on)],
+            tracking_status=("pending" if opp.run_date < run_date or run_date < date.today()
+                             else "active" if opp.combined_score >= _FEATURED_MIN_SCORE else "inactive"),
+        )
+        for opp, ticker, detected_on in rows
+    ]
+
+
 @router.get("/feed", response_model=OpportunityFeedSchema)
 def opportunity_feed(
-    featured_limit: int = Query(20, ge=1, le=100),
+    featured_limit: int = Query(100, ge=1, le=100),
     strategy_limit: int = Query(6, ge=1, le=100),
     risk: str | None = Query(None, pattern="^(bajo|medio|alto)$"),
     sector: str | None = None,
@@ -307,6 +361,7 @@ def opportunity_feed(
 
     return OpportunityFeedSchema(
         featured=[to_schema(pair) for pair in featured],
+        recent=_recent_opportunities(db, run_date, risk, sector),
         by_strategy={
             strategy: [
                 to_schema(pair, strategy if strategy in _STRATEGY_NAMES else None)
